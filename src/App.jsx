@@ -1,10 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Edit2, Trash2, Save, X, Download, FileSpreadsheet, ChevronDown, Check, AlertCircle, Clock, Truck, Package, Image as ImageIcon, Upload, XCircle, Building2, User, MapPin, Map, Loader2, ExternalLink, CalendarCheck, Hash, Wrench, Copy, CopyPlus, ChevronUp, Printer, PieChart, BarChart3, TrendingUp, UserCheck, Mail, Send } from 'lucide-react';
+import { 
+  Plus, Search, Edit2, Trash2, Save, X, Download, FileSpreadsheet, 
+  ChevronDown, Check, AlertCircle, Clock, Truck, Package, 
+  Image as ImageIcon, Upload, XCircle, Building2, User, 
+  MapPin, Map, Loader2, ExternalLink, CalendarCheck, Hash, 
+  Wrench, Copy, CopyPlus, ChevronUp, Printer, Mail, Send 
+} from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 
-// --- CONFIGURAÇÃO DO SEU FIREBASE APLICADA ---
+// --- CONFIGURAÇÃO DO SEU FIREBASE ---
 const firebaseConfig = {
   apiKey: "AIzaSyByTLQL0dpLBB3m5nzI1Soy1p0VJpFIt1Y",
   authDomain: "alfa-sistema.firebaseapp.com",
@@ -15,12 +21,16 @@ const firebaseConfig = {
   measurementId: "G-RDEW2PWBKC"
 };
 
+// Inicialização do Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+
+// Identificador único para a coleção do seu sistema
 const finalAppId = 'alfa-tecnologia-hospitalar-prod';
 
 const App = () => {
+  // Estados da Aplicação
   const [user, setUser] = useState(null); 
   const [orders, setOrders] = useState([]); 
   const [clients, setClients] = useState([]); 
@@ -46,19 +56,23 @@ const App = () => {
     "Em reparo", "Em rota de entrega", "Entregue"
   ];
 
+  // Autenticação Silenciosa
   useEffect(() => {
     const initAuth = async () => {
       try {
         await signInAnonymously(auth);
-      } catch (e) { console.error(e); }
+      } catch (e) { console.error("Erro Auth:", e); }
     };
     initAuth();
     const unsubscribe = onAuthStateChanged(auth, setUser);
     return () => unsubscribe();
   }, []);
 
+  // Sincronização em Tempo Real com Firestore
   useEffect(() => {
     if (!user) return;
+
+    // Ordens de Serviço
     const ordersRef = collection(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders');
     const unsubscribeOrders = onSnapshot(ordersRef, (snap) => {
       const list = snap.docs.map(d => ({ firestoreId: d.id, ...d.data() }));
@@ -75,9 +89,11 @@ const App = () => {
       setIsLoading(false);
     });
 
+    // Clientes
     const clientsRef = collection(db, 'artifacts', finalAppId, 'public', 'data', 'clients');
     onSnapshot(clientsRef, (snap) => setClients(snap.docs.map(d => d.data()).sort((a,b) => a.name.localeCompare(b.name))));
     
+    // Listas auxiliares (Fabricantes e Materiais)
     onSnapshot(collection(db, 'artifacts', finalAppId, 'public', 'data', 'manufacturers'), 
       (snap) => setSavedManufacturers(snap.docs.map(d => d.data().name).sort()));
 
@@ -87,6 +103,7 @@ const App = () => {
     return () => unsubscribeOrders();
   }, [user]);
 
+  // Gerador de Número de OS Sequencial
   const generateNextOsNumber = () => {
     const currentYear = new Date().getFullYear();
     const yearSuffix = `/${currentYear}`;
@@ -103,7 +120,14 @@ const App = () => {
     if (name === 'client') {
         const selected = clients.find(c => c.name.toLowerCase() === value.toLowerCase());
         if (selected) {
-            setFormData(prev => ({ ...prev, [name]: value, cnpj: selected.cnpj, contactPerson: selected.contactPerson, email: selected.email, address: selected.address }));
+            setFormData(prev => ({ 
+              ...prev, 
+              [name]: value, 
+              cnpj: selected.cnpj || '', 
+              contactPerson: selected.contactPerson || '', 
+              email: selected.email || '', 
+              address: selected.address || '' 
+            }));
             return;
         }
     }
@@ -149,9 +173,9 @@ const App = () => {
   };
 
   const sendEmail = (order) => {
-    if (!order.email) return alert("Sem e-mail cadastrado.");
-    const subject = `Status OS ${order.osNumber} - Alfa Tecnologia`;
-    const body = `Olá ${order.contactPerson || 'Cliente'},\n\nO status da sua OS ${order.osNumber} (${order.material}) mudou para: ${order.status}.\n\nAtenciosamente,\nAlfa Tecnologia Hospitalar.`;
+    if (!order.email) return alert("O cliente não possui e-mail cadastrado.");
+    const subject = `Status da OS ${order.osNumber} - Alfa Tecnologia`;
+    const body = `Olá ${order.contactPerson || 'Cliente'},\n\nO status da sua OS ${order.osNumber} (${order.material}) foi atualizado para: ${order.status}.\n\nAtenciosamente,\nAlfa Tecnologia Hospitalar.`;
     window.open(`mailto:${order.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`, '_blank');
   };
 
@@ -162,7 +186,7 @@ const App = () => {
       const { firestoreId, ...dataToSave } = formData;
       await saveOrderToDb(dataToSave, !!editingOrder, editingOrder?.firestoreId);
       if (editingOrder && editingOrder.status !== dataToSave.status && dataToSave.email) {
-          if (confirm("Status alterado. Notificar cliente por e-mail?")) sendEmail(dataToSave);
+          if (confirm("Deseja notificar o cliente por e-mail sobre a mudança de status?")) sendEmail(dataToSave);
       }
       setIsModalOpen(false);
     } catch (err) { console.error(err); } finally { setIsSaving(false); }
@@ -198,19 +222,15 @@ const App = () => {
   const filtered = orders.filter(o => o.client?.toLowerCase().includes(searchTerm.toLowerCase()) || o.osNumber?.toLowerCase().includes(searchTerm.toLowerCase()));
 
   const handleDelete = async (firestoreId) => {
-    if (!confirm('Tem certeza que deseja excluir esta Ordem de Serviço?')) return;
+    if (!confirm('Excluir esta Ordem de Serviço permanentemente?')) return;
     try {
       await deleteDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', firestoreId));
       setSelectedOrders(prev => prev.filter(id => id !== firestoreId));
-    } catch (error) {
-      console.error("Erro ao excluir:", error);
-      alert("Erro ao excluir. Tente novamente.");
-    }
+    } catch (e) { console.error(e); }
   };
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800 font-sans p-2 sm:p-4 md:p-6 lg:p-8 w-full overflow-x-hidden">
-      {/* Container Principal sem max-w-7xl para ocupar toda a tela */}
       <div className="w-full mx-auto space-y-6">
         <header className="flex flex-col sm:flex-row justify-between items-center bg-white p-4 sm:p-6 rounded-2xl shadow-sm border sticky top-4 z-10 gap-4">
           <div className="flex items-center gap-4">
@@ -245,7 +265,7 @@ const App = () => {
               <table className="w-full text-sm text-left border-collapse">
                 <thead className="bg-gray-50/80 border-b text-[11px] font-black uppercase text-gray-500 tracking-wider">
                   <tr>
-                    <th className="px-6 py-5 text-center w-12"><input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" onChange={(e) => setSelectedOrders(e.target.checked ? filtered.map(o => o.firestoreId) : [])} checked={selectedOrders.length === filtered.length && filtered.length > 0} /></th>
+                    <th className="px-6 py-5 text-center w-12"><input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-blue-600" onChange={(e) => setSelectedOrders(e.target.checked ? filtered.map(o => o.firestoreId) : [])} checked={selectedOrders.length === filtered.length && filtered.length > 0} /></th>
                     <th className="px-6 py-5 w-40">Status</th>
                     <th className="px-6 py-5 w-32">OS</th>
                     <th className="px-6 py-5">Cliente</th>
@@ -254,13 +274,13 @@ const App = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {isLoading ? <tr><td colSpan="6" className="py-24 text-center"><Loader2 className="animate-spin mx-auto text-blue-600 mb-2" size={32}/><p className="text-gray-400 font-medium">Carregando ordens de serviço...</p></td></tr> : 
+                  {isLoading ? <tr><td colSpan="6" className="py-24 text-center"><Loader2 className="animate-spin mx-auto text-blue-600 mb-2" size={32}/><p className="text-gray-400 font-medium">Carregando dados...</p></td></tr> : 
                     filtered.length === 0 ? <tr><td colSpan="6" className="py-24 text-center"><AlertCircle className="mx-auto text-gray-300 mb-2" size={32}/><p className="text-gray-400 font-medium">Nenhuma ordem encontrada.</p></td></tr> :
                     filtered.map(o => (
                       <tr key={o.firestoreId} className={`group hover:bg-blue-50/30 transition-colors ${selectedOrders.includes(o.firestoreId) ? 'bg-blue-50/50' : ''}`}>
-                        <td className="px-6 py-4 text-center"><input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" checked={selectedOrders.includes(o.firestoreId)} onChange={() => setSelectedOrders(prev => prev.includes(o.firestoreId) ? prev.filter(id => id !== o.firestoreId) : [...prev, o.firestoreId])} /></td>
+                        <td className="px-6 py-4 text-center"><input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-blue-600" checked={selectedOrders.includes(o.firestoreId)} onChange={() => setSelectedOrders(prev => prev.includes(o.firestoreId) ? prev.filter(id => id !== o.firestoreId) : [...prev, o.firestoreId])} /></td>
                         <td className="px-6 py-4">
-                          <span className="px-3 py-1 bg-white rounded-full text-[10px] font-black border-2 border-gray-100 whitespace-nowrap shadow-sm text-gray-600">
+                          <span className="px-3 py-1 bg-white rounded-full text-[10px] font-black border-2 border-gray-100 shadow-sm text-gray-600">
                             {o.status}
                           </span>
                         </td>
@@ -302,18 +322,19 @@ const App = () => {
                 <button type="button" onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-gray-200 rounded-full transition-colors"><X size={24}/></button>
               </div>
               <div className="p-5 sm:p-8 space-y-8 max-h-[85vh] overflow-y-auto custom-scrollbar">
-                {/* Identificação da OS */}
+                
+                {/* Cabeçalho Modal */}
                 <div className="flex flex-col sm:flex-row gap-6 items-end">
                     <div className="w-full sm:w-48">
                       <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 block">Número da OS</label>
-                      <input required name="osNumber" value={formData.osNumber} onChange={handleInputChange} className="w-full p-3 border-2 border-gray-100 rounded-xl text-sm font-black bg-gray-50 focus:border-blue-300 outline-none transition-all" />
+                      <input required name="osNumber" value={formData.osNumber} onChange={handleInputChange} className="w-full p-3 border-2 border-gray-100 rounded-xl text-sm font-black bg-gray-50 outline-none" />
                     </div>
-                    <div className="flex-1 text-right text-[11px] font-bold text-red-500 uppercase tracking-tighter">* Campos de preenchimento obrigatório</div>
+                    <div className="flex-1 text-right text-[11px] font-bold text-red-500 uppercase tracking-tighter">* Campos obrigatórios</div>
                 </div>
 
-                {/* Seção Cliente */}
+                {/* Bloco Cliente */}
                 <div className="bg-blue-50/30 p-6 rounded-2xl border-2 border-blue-50 space-y-5">
-                  <h3 className="text-xs font-black text-blue-800 uppercase flex items-center gap-2"><Building2 size={16}/> Identificação do Cliente</h3>
+                  <h3 className="text-xs font-black text-blue-800 uppercase flex items-center gap-2"><Building2 size={16}/> Cliente</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
                     <div className="lg:col-span-2">
                       <label className="text-[10px] font-bold text-blue-700 uppercase mb-1 block">Razão Social / Empresa *</label>
@@ -342,9 +363,9 @@ const App = () => {
                   </div>
                 </div>
 
-                {/* Seção Equipamento */}
+                {/* Bloco Equipamento */}
                 <div className="space-y-5">
-                  <h3 className="text-xs font-black text-gray-400 uppercase flex items-center gap-2"><Package size={16}/> Detalhes do Equipamento</h3>
+                  <h3 className="text-xs font-black text-gray-400 uppercase flex items-center gap-2"><Package size={16}/> Equipamento</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-5">
                     <div>
                       <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Fabricante</label>
@@ -389,7 +410,7 @@ const App = () => {
                   </div>
                 </div>
 
-                {/* Seção Diagnóstico */}
+                {/* Bloco Diagnóstico */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   <div className="space-y-5">
                     <h3 className="text-xs font-black text-gray-400 uppercase flex items-center gap-2"><Wrench size={16}/> Diagnóstico e fotos</h3>
@@ -431,11 +452,6 @@ const App = () => {
                             </button>
                           </div>
                         ))}
-                        {[...Array(3 - formData.images.length)].map((_, i) => (
-                          <div key={i} className="aspect-square rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 flex items-center justify-center text-gray-300">
-                            <ImageIcon size={24} />
-                          </div>
-                        ))}
                       </div>
                     </div>
                   </div>
@@ -444,19 +460,19 @@ const App = () => {
                     <h3 className="text-xs font-black text-gray-400 uppercase flex items-center gap-2"><AlertCircle size={16}/> Relatório Técnico</h3>
                     <div>
                       <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Defeito Identificado *</label>
-                      <textarea required name="defect" value={formData.defect} onChange={handleInputChange} className="w-full p-4 border-2 border-gray-100 rounded-2xl text-sm focus:border-blue-400 outline-none resize-none" placeholder="Descreva os sintomas apresentados pelo equipamento..." rows="4"/>
+                      <textarea required name="defect" value={formData.defect} onChange={handleInputChange} className="w-full p-4 border-2 border-gray-100 rounded-2xl text-sm focus:border-blue-400 outline-none resize-none" placeholder="Sintomas relatados..." rows="4"/>
                     </div>
                     <div>
-                      <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Solução Técnica Aplicada</label>
-                      <textarea name="solution" value={formData.solution} onChange={handleInputChange} className="w-full p-4 border-2 border-gray-100 rounded-2xl text-sm focus:border-blue-400 outline-none resize-none" placeholder="Descreva as peças trocadas e procedimentos realizados..." rows="4"/>
+                      <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Solução Técnica</label>
+                      <textarea name="solution" value={formData.solution} onChange={handleInputChange} className="w-full p-4 border-2 border-gray-100 rounded-2xl text-sm focus:border-blue-400 outline-none resize-none" placeholder="Procedimentos realizados..." rows="4"/>
                     </div>
                   </div>
                 </div>
               </div>
               <div className="p-6 sm:p-8 border-t bg-gray-50/80 flex flex-col sm:flex-row justify-end gap-4 rounded-b-3xl">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="px-8 py-3 text-sm font-black text-gray-500 hover:text-gray-700 transition-colors uppercase tracking-widest order-2 sm:order-1">Sair sem salvar</button>
+                <button type="button" onClick={() => setIsModalOpen(false)} className="px-8 py-3 text-sm font-black text-gray-500 hover:text-gray-700 transition-colors uppercase tracking-widest order-2 sm:order-1">Cancelar</button>
                 <button type="submit" disabled={isSaving} className="px-10 py-4 bg-blue-600 text-white rounded-2xl text-sm font-black shadow-xl shadow-blue-200 flex items-center justify-center gap-3 hover:bg-blue-700 active:scale-95 transition-all uppercase tracking-widest order-1 sm:order-2">
-                    {isSaving ? <Loader2 className="animate-spin" size={20}/> : <Save size={20}/>} {editingOrder ? 'Atualizar Dados' : 'Criar Ordem de Serviço'}
+                    {isSaving ? <Loader2 className="animate-spin" size={20}/> : <Save size={20}/>} Salvar Ordem
                 </button>
               </div>
             </form>
@@ -465,18 +481,15 @@ const App = () => {
       )}
       
       <style>{`
-        /* FORÇAR LARGURA TOTAL NO ROOT DO VITE */
+        /* AJUSTE PARA OCUPAR TELA TODA NO VITE */
         #root {
           max-width: 100% !important;
           width: 100% !important;
           margin: 0 !important;
           padding: 0 !important;
         }
-
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
         @keyframes fadeIn { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
         .animate-fadeIn { animation: fadeIn 0.2s ease-out forwards; }
       `}</style>
