@@ -508,10 +508,42 @@ export default function MainApp() {
 
     // === FUNÇÕES PRINCIPAIS ===
     const generateNextOsNumber = (currentOrders) => {
-        const year = new Date().getFullYear();
-        const lastNum = currentOrders.filter(o => o.osNumber?.endsWith(`/${year}`)).length + 1;
-        return `${String(lastNum).padStart(4, '0')}/${year}`;
-    };
+    const currentYear = new Date().getFullYear();
+    
+    // Filtrar OSs do ano atual
+    const thisYearOrders = currentOrders.filter(order => {
+        if (!order.osNumber) return false;
+        const [number, year] = order.osNumber.split('/');
+        return year && parseInt(year) === currentYear;
+    });
+    
+    // Encontrar o maior número do ano atual
+    let highestNumber = 0;
+    
+    thisYearOrders.forEach(order => {
+        if (order.osNumber) {
+            const [numberStr] = order.osNumber.split('/');
+            const number = parseInt(numberStr);
+            if (number > highestNumber) {
+                highestNumber = number;
+            }
+        }
+    });
+    
+    // Calcular próximo número
+    let nextNumber;
+    
+    if (currentYear === 2026) {
+        // Em 2026, começar do 32 se não houver números maiores
+        nextNumber = Math.max(highestNumber + 1, 32);
+    } else {
+        // Em outros anos, sequência normal
+        nextNumber = highestNumber + 1;
+    }
+    
+    // Formatar: 4 dígitos + / + ano
+    return `${String(nextNumber).padStart(4, '0')}/${currentYear}`;
+};
 
     const openModal = (order = null) => {
         setTempSolution('');
