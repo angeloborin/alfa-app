@@ -9,7 +9,8 @@ import {
     BarChart3, TrendingUp, Wallet, CheckCircle2, Calculator,
     ChevronDown, ChevronUp, Filter, MousePointerClick,
     ArrowUpRight, ArrowDownRight, Percent, FileSignature,
-    CheckSquare, CalendarDays, Receipt, Eye, EyeOff, Shield, LogOut
+    CheckSquare, CalendarDays, Receipt, Eye, EyeOff, Shield, LogOut,
+    ArrowDownWideNarrow, ArrowUpNarrowWide, Check // Ícones adicionados
 } from 'lucide-react';
 import {
     collection, addDoc, updateDoc, deleteDoc,
@@ -172,6 +173,16 @@ export default function MainApp() {
     const [clients, setClients] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
+    const [sortOrder, setSortOrder] = useState('desc'); // Novo: ordenação
+
+    // Estados de sugestões/autocomplete
+    const [showClientSuggestions, setShowClientSuggestions] = useState(false);
+    const [showDefectSuggestions, setShowDefectSuggestions] = useState(false);
+    const [showSolutionSuggestions, setShowSolutionSuggestions] = useState(false);
+    const [showItemSuggestions, setShowItemSuggestions] = useState(false);
+    const [showManufacturerSuggestions, setShowManufacturerSuggestions] = useState(false);
+    const [showModelSuggestions, setShowModelSuggestions] = useState(false);
+    const [showSerialSuggestions, setShowSerialSuggestions] = useState(false);
 
     // Estados dos Modais
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -185,23 +196,30 @@ export default function MainApp() {
     const [isSaving, setIsSaving] = useState(false);
     const [selectedOrders, setSelectedOrders] = useState([]);
 
-    // Estados temporários para adicionar itens à lista de soluções
+    // Estados temporários para adicionar itens às listas
     const [tempSolution, setTempSolution] = useState('');
     const [tempCost, setTempCost] = useState('');
+    const [tempDefect, setTempDefect] = useState(''); // Novo: para lista de defeitos
+    const [tempManualSolution, setTempManualSolution] = useState(''); // Novo: para soluções manuais simples
 
-    // --- ESTADO DO FORMULÁRIO OS ---
+    // --- ESTADO DO FORMULÁRIO OS (ATUALIZADO) ---
     const [formData, setFormData] = useState({
         client: '', cnpj: '', contactPerson: '', address: '', email: '',
         billingType: 'Avulso', maintenanceVisit: '',
         item: '', manufacturer: '', model: '', serial: '',
-        defect: '',
+        defect: '', // Mantido para compatibilidade
+        defectsList: [], // NOVO: lista de defeitos
         solutionType: 'Manual',
-        solution: '',
-        solutionsList: [],
+        solution: '', // Mantido para compatibilidade
+        manualSolutionsList: [], // NOVO: lista de soluções manuais (sem custo)
+        solutionsList: [], // Lista existente de soluções com custo
         notRepairableDetail: '',
         costThirdPartyName: '', costThirdPartyShipping: '', costClientShipping: '', costParts: '',
         chargedAmount: '', paymentCondition: 'À vista', installments: '',
-        status: 'Recebido', trackingCode: '', sentToThirdParty: 'Não',
+        status: 'Recebido',
+        statusDate: new Date().toISOString().split('T')[0], // NOVO: data do status atual
+        statusHistory: [], // NOVO: histórico de status
+        trackingCode: '', sentToThirdParty: 'Não',
         thirdPartyInfo: '', thirdPartyTracking: '', thirdPartyDate: '',
         osNumber: ''
     });
@@ -238,11 +256,18 @@ export default function MainApp() {
         type: 'error',
     });
 
-    const statusOptions = [
-        "Recebido", "Em inspeção", "Em orçamento", "Aguardando aprovação do orçamento",
-        "Em manutenção", "Em rota de entrega", "Finalizado"
+    // DEFINIÇÃO ORDENADA DAS ETAPAS DA TIMELINE (NOVO)
+    const TIMELINE_STEPS = [
+        { value: "Recebido", label: "Recebido" },
+        { value: "Em inspeção", label: "Inspeção" },
+        { value: "Em orçamento", label: "Orçamento" },
+        { value: "Aguardando aprovação do orçamento", label: "Aprovação" },
+        { value: "Em manutenção", label: "Manutenção" },
+        { value: "Em rota de entrega", label: "Entrega" },
+        { value: "Finalizado", label: "Finalizado" }
     ];
 
+    const statusOptions = TIMELINE_STEPS.map(s => s.value);
     const billingOptions = ["Avulso", "Cortesia (visita sem custo)", "Contrato de manutenção"];
     const currentMonthName = MESES[new Date().getMonth()];
 
@@ -301,12 +326,15 @@ export default function MainApp() {
             newFieldErrors.item = true;
         }
 
-        if (!formData.defect.trim()) {
+        // Validação para lista de defeitos
+        if ((!formData.defectsList || formData.defectsList.length === 0) && !formData.defect.trim()) {
             errors.push("• Descrição do defeito é obrigatória");
             newFieldErrors.defect = true;
         }
 
-        if (formData.solutionType === "Manual" && !formData.solution.trim()) {
+        if (formData.solutionType === "Manual" && 
+            (!formData.manualSolutionsList || formData.manualSolutionsList.length === 0) && 
+            !formData.solution.trim()) {
             errors.push("• Descrição da solução é obrigatória no modo manual");
             newFieldErrors.solution = true;
         }
@@ -343,10 +371,12 @@ export default function MainApp() {
                 hasError = !formData.item.trim();
                 break;
             case 'defect':
-                hasError = !formData.defect.trim();
+                hasError = (!formData.defectsList || formData.defectsList.length === 0) && !formData.defect.trim();
                 break;
             case 'solution':
-                hasError = formData.solutionType === "Manual" && !formData.solution.trim();
+                hasError = formData.solutionType === "Manual" && 
+                          (!formData.manualSolutionsList || formData.manualSolutionsList.length === 0) && 
+                          !formData.solution.trim();
                 break;
             case 'notRepairableDetail':
                 hasError = formData.solutionType === "Não passível de conserto" && !formData.notRepairableDetail;
@@ -358,6 +388,93 @@ export default function MainApp() {
 
         setFieldErrors(prev => ({ ...prev, [field]: hasError }));
     };
+
+    // --- AUTOCOMPLETE: DADOS ÚNICOS ---
+    const uniqueClients = useMemo(() => {
+        const map = new Map();
+        contracts.forEach(c => {
+            if (c.clientName) map.set(c.clientName.trim(), {
+                client: c.clientName,
+                cnpj: c.cnpj,
+                contactPerson: c.contactPerson,
+                email: c.email,
+                address: c.address
+            });
+        });
+        [...orders].reverse().forEach(o => {
+            if (o.client && !map.has(o.client.trim())) {
+                map.set(o.client.trim(), {
+                    client: o.client,
+                    cnpj: o.cnpj || '',
+                    contactPerson: o.contactPerson || '',
+                    email: o.email || '',
+                    address: o.address || ''
+                });
+            } else if (o.client && map.has(o.client.trim())) {
+                const existing = map.get(o.client.trim());
+                if (!existing.cnpj && o.cnpj) existing.cnpj = o.cnpj;
+                if (!existing.address && o.address) existing.address = o.address;
+                if (!existing.contactPerson && o.contactPerson) existing.contactPerson = o.contactPerson;
+                if (!existing.email && o.email) existing.email = o.email;
+            }
+        });
+        return Array.from(map.values()).sort((a, b) => a.client.localeCompare(b.client));
+    }, [orders, contracts]);
+
+    // Autocomplete de Defeitos
+    const uniqueDefects = useMemo(() => {
+        const allDefects = new Set();
+        orders.forEach(o => {
+            if (o.defect && o.defect.length > 3) allDefects.add(o.defect);
+            if (o.defectsList && Array.isArray(o.defectsList)) {
+                o.defectsList.forEach(d => { if (d && d.length > 2) allDefects.add(d) });
+            }
+        });
+        return [...allDefects].sort();
+    }, [orders]);
+
+    // Autocomplete de Soluções
+    const uniqueSolutions = useMemo(() => {
+        const allSolutions = new Set();
+        orders.forEach(o => {
+            if (o.solution && o.solution.length > 3) allSolutions.add(o.solution);
+            if (o.manualSolutionsList && Array.isArray(o.manualSolutionsList)) {
+                o.manualSolutionsList.forEach(s => { if (s && s.length > 2) allSolutions.add(s) });
+            }
+            if (o.solutionsList && Array.isArray(o.solutionsList)) {
+                o.solutionsList.forEach(s => { if (s.text && s.text.length > 2) allSolutions.add(s.text) });
+            }
+        });
+        return [...allSolutions].sort();
+    }, [orders]);
+
+    // Autocomplete de Equipamentos
+    const uniqueItems = useMemo(() => {
+        return [...new Set(orders.map(o => o.item).filter(i => i && i.length > 1))].sort();
+    }, [orders]);
+
+    const uniqueManufacturers = useMemo(() => {
+        return [...new Set(orders.map(o => o.manufacturer).filter(i => i && i.length > 1))].sort();
+    }, [orders]);
+
+    const uniqueModels = useMemo(() => {
+        return [...new Set(orders.map(o => o.model).filter(i => i && i.length > 1))].sort();
+    }, [orders]);
+
+    const uniqueSerials = useMemo(() => {
+        return [...new Set(orders.map(o => o.serial).filter(i => i && i.length > 1))].sort();
+    }, [orders]);
+
+    // --- ORDENAÇÃO DE OS ---
+    const sortedOrders = useMemo(() => {
+        return [...orders].sort((a, b) => {
+            if (sortOrder === 'desc') {
+                return b.osNumber?.localeCompare(a.osNumber);
+            } else {
+                return a.osNumber?.localeCompare(b.osNumber);
+            }
+        });
+    }, [orders, sortOrder]);
 
     // --- CÁLCULO FINANCEIRO GLOBAL ---
     const globalFinancials = useMemo(() => {
@@ -508,47 +625,58 @@ export default function MainApp() {
 
     // === FUNÇÕES PRINCIPAIS ===
     const generateNextOsNumber = (currentOrders) => {
-    const currentYear = new Date().getFullYear();
-    
-    // Filtrar OSs do ano atual
-    const thisYearOrders = currentOrders.filter(order => {
-        if (!order.osNumber) return false;
-        const [number, year] = order.osNumber.split('/');
-        return year && parseInt(year) === currentYear;
-    });
-    
-    // Encontrar o maior número do ano atual
-    let highestNumber = 0;
-    
-    thisYearOrders.forEach(order => {
-        if (order.osNumber) {
-            const [numberStr] = order.osNumber.split('/');
-            const number = parseInt(numberStr);
-            if (number > highestNumber) {
-                highestNumber = number;
+        const currentYear = new Date().getFullYear();
+        
+        // Filtrar OSs do ano atual
+        const thisYearOrders = currentOrders.filter(order => {
+            if (!order.osNumber) return false;
+            const [number, year] = order.osNumber.split('/');
+            return year && parseInt(year) === currentYear;
+        });
+        
+        // Encontrar o maior número do ano atual
+        let highestNumber = 0;
+        
+        thisYearOrders.forEach(order => {
+            if (order.osNumber) {
+                const [numberStr] = order.osNumber.split('/');
+                const number = parseInt(numberStr);
+                if (number > highestNumber) {
+                    highestNumber = number;
+                }
             }
+        });
+        
+        // Calcular próximo número
+        let nextNumber;
+        
+        if (currentYear === 2026) {
+            // Em 2026, começar do 32 se não houver números maiores
+            nextNumber = Math.max(highestNumber + 1, 32);
+        } else {
+            // Em outros anos, sequência normal
+            nextNumber = highestNumber + 1;
         }
-    });
-    
-    // Calcular próximo número
-    let nextNumber;
-    
-    if (currentYear === 2026) {
-        // Em 2026, começar do 32 se não houver números maiores
-        nextNumber = Math.max(highestNumber + 1, 32);
-    } else {
-        // Em outros anos, sequência normal
-        nextNumber = highestNumber + 1;
-    }
-    
-    // Formatar: 4 dígitos + / + ano
-    return `${String(nextNumber).padStart(4, '0')}/${currentYear}`;
-};
+        
+        // Formatar: 4 dígitos + / + ano
+        return `${String(nextNumber).padStart(4, '0')}/${currentYear}`;
+    };
 
     const openModal = (order = null) => {
         setTempSolution('');
         setTempCost('');
+        setTempDefect('');
+        setTempManualSolution('');
         setIsFinancialOpen(false);
+
+        // Resetar todos os autocompletes
+        setShowClientSuggestions(false);
+        setShowDefectSuggestions(false);
+        setShowSolutionSuggestions(false);
+        setShowItemSuggestions(false);
+        setShowManufacturerSuggestions(false);
+        setShowModelSuggestions(false);
+        setShowSerialSuggestions(false);
 
         // Reset erros ao abrir modal
         setFieldErrors({
@@ -562,19 +690,402 @@ export default function MainApp() {
 
         if (order) {
             setEditingOrder(order);
-            setFormData({ ...order, solutionsList: order.solutionsList || [] });
+            setFormData({ 
+                ...order, 
+                solutionsList: order.solutionsList || [],
+                defectsList: order.defectsList || (order.defect ? [order.defect] : []),
+                manualSolutionsList: order.manualSolutionsList || (order.solutionType === "Manual" && order.solution ? [order.solution] : []),
+                statusDate: order.statusDate || new Date().toISOString().split('T')[0],
+                statusHistory: order.statusHistory || []
+            });
         } else {
             setEditingOrder(null);
             setFormData({
                 client: '', cnpj: '', contactPerson: '', address: '', email: '',
-                billingType: 'Avulso', maintenanceVisit: '', item: '', manufacturer: '', model: '', serial: '', defect: '', solutionType: 'Manual', solution: '', solutionsList: [], notRepairableDetail: '',
+                billingType: 'Avulso', maintenanceVisit: '', item: '', manufacturer: '', model: '', serial: '',
+                defect: '', defectsList: [],
+                solutionType: 'Manual',
+                solution: '', manualSolutionsList: [],
+                solutionsList: [],
+                notRepairableDetail: '',
                 costThirdPartyName: '', costThirdPartyShipping: '', costClientShipping: '', costParts: '',
                 chargedAmount: '', paymentCondition: 'À vista', installments: '',
-                status: 'Recebido', trackingCode: '', sentToThirdParty: 'Não',
-                thirdPartyInfo: '', thirdPartyTracking: '', thirdPartyDate: '', osNumber: generateNextOsNumber(orders)
+                status: 'Recebido',
+                statusDate: new Date().toISOString().split('T')[0],
+                statusHistory: [],
+                trackingCode: '', sentToThirdParty: 'Não',
+                thirdPartyInfo: '', thirdPartyTracking: '', thirdPartyDate: '',
+                osNumber: generateNextOsNumber(orders)
             });
         }
         setIsModalOpen(true);
+    };
+
+    // Função para selecionar cliente do autocomplete
+    const handleClientSelect = (clientData) => {
+        setFormData(prev => ({
+            ...prev,
+            client: clientData.client,
+            cnpj: clientData.cnpj,
+            contactPerson: clientData.contactPerson,
+            email: clientData.email,
+            address: clientData.address
+        }));
+        setShowClientSuggestions(false);
+    };
+
+    // --- FUNÇÕES DE LISTAS (NOVAS) ---
+    const addDefectItem = () => {
+        if (!tempDefect.trim()) {
+            showNotification("Descrição do defeito é obrigatória", 'error');
+            return;
+        }
+        setFormData(prev => ({ 
+            ...prev, 
+            defectsList: [...prev.defectsList, tempDefect.trim()] 
+        }));
+        setTempDefect('');
+        setShowDefectSuggestions(false);
+    };
+
+    const removeDefectItem = (index) => {
+        setFormData(prev => ({ 
+            ...prev, 
+            defectsList: prev.defectsList.filter((_, i) => i !== index) 
+        }));
+    };
+
+    const addManualSolutionItem = () => {
+        if (!tempManualSolution.trim()) {
+            showNotification("Descrição da solução é obrigatória", 'error');
+            return;
+        }
+        setFormData(prev => ({ 
+            ...prev, 
+            manualSolutionsList: [...prev.manualSolutionsList, tempManualSolution.trim()] 
+        }));
+        setTempManualSolution('');
+        setShowSolutionSuggestions(false);
+    };
+
+    const removeManualSolutionItem = (index) => {
+        setFormData(prev => ({ 
+            ...prev, 
+            manualSolutionsList: prev.manualSolutionsList.filter((_, i) => i !== index) 
+        }));
+    };
+
+    const addSolutionItem = () => {
+        if (!tempSolution.trim()) {
+            showNotification("Descrição do item/serviço é obrigatória", 'error');
+            return;
+        }
+        setFormData(prev => ({
+            ...prev,
+            solutionsList: [...prev.solutionsList, {
+                id: Date.now(),
+                text: tempSolution,
+                cost: tempCost || "0,00"
+            }]
+        }));
+        setTempSolution('');
+        setTempCost('');
+        setShowSolutionSuggestions(false);
+    };
+
+    const removeSolutionItem = (id) => {
+        setFormData(prev => ({
+            ...prev,
+            solutionsList: prev.solutionsList.filter(item => item.id !== id)
+        }));
+    };
+
+    // --- PREPARAR DADOS PARA SALVAR (NOVO) ---
+    const prepareDataForSave = () => {
+        const { firestoreId, ...cleanData } = formData;
+        
+        // Converter lista de defeitos para string única (para compatibilidade)
+        if (cleanData.defectsList && cleanData.defectsList.length > 0) {
+            cleanData.defect = cleanData.defectsList.join('\n');
+        } else {
+            if (!cleanData.defectsList) cleanData.defect = cleanData.defect || '';
+        }
+        
+        // Converter lista de soluções manuais para string única (para compatibilidade)
+        if (cleanData.solutionType === "Manual") {
+            if (cleanData.manualSolutionsList && cleanData.manualSolutionsList.length > 0) {
+                cleanData.solution = cleanData.manualSolutionsList.join('\n');
+            }
+        }
+
+        // Lógica de histórico de status
+        let history = cleanData.statusHistory ? [...cleanData.statusHistory] : [];
+        const currentStatusDate = cleanData.statusDate || new Date().toISOString().split('T')[0];
+
+        const lastEntry = history.length > 0 ? history[history.length - 1] : null;
+
+        if (!lastEntry || lastEntry.status !== cleanData.status) {
+            // Adiciona novo registro ao histórico
+            history.push({
+                status: cleanData.status,
+                date: currentStatusDate,
+                timestamp: Date.now()
+            });
+        } else {
+            // Se o status é o mesmo, atualiza a data do último registro
+            history[history.length - 1].date = currentStatusDate;
+        }
+
+        cleanData.statusHistory = history;
+        cleanData.statusDate = currentStatusDate;
+
+        return cleanData;
+    };
+
+    const handleSubmit = async (e) => {
+        if (e) e.preventDefault();
+
+        // Validação
+        const hasErrors = validateForm();
+        if (hasErrors) {
+            return;
+        }
+
+        setIsSaving(true);
+        try {
+            const cleanData = prepareDataForSave();
+            if (editingOrder) {
+                await updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', editingOrder.firestoreId), cleanData);
+                showNotification("OS atualizada com sucesso!", 'success');
+            } else {
+                await addDoc(collection(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders'), cleanData);
+                showNotification("OS criada com sucesso!", 'success');
+            }
+            setIsModalOpen(false);
+        } catch (err) {
+            console.error(err);
+            showNotification(`Erro ao salvar: ${err.message}`, 'error');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleSaveAndNewWithSameClient = async () => {
+        // Validação
+        const hasErrors = validateForm();
+        if (hasErrors) {
+            return;
+        }
+
+        setIsSaving(true);
+        try {
+            const cleanData = prepareDataForSave();
+            if (editingOrder) {
+                await updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', editingOrder.firestoreId), cleanData);
+            } else {
+                await addDoc(collection(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders'), cleanData);
+            }
+            showNotification("OS salva e nova em branco criada!", 'success');
+            setFormData({
+                ...formData,
+                osNumber: generateNextOsNumber([...orders, formData]),
+                item: '',
+                manufacturer: '',
+                model: '',
+                serial: '',
+                defect: '',
+                defectsList: [],
+                solutionType: 'Manual',
+                solution: '',
+                manualSolutionsList: [],
+                solutionsList: [],
+                notRepairableDetail: '',
+                costThirdPartyName: '',
+                costThirdPartyShipping: '',
+                costClientShipping: '',
+                costParts: '',
+                chargedAmount: '',
+                paymentCondition: 'À vista',
+                installments: '',
+                status: 'Recebido',
+                statusDate: new Date().toISOString().split('T')[0],
+                statusHistory: [],
+                trackingCode: '',
+                sentToThirdParty: 'Não',
+                thirdPartyInfo: '',
+                thirdPartyTracking: '',
+                thirdPartyDate: ''
+            });
+            setEditingOrder(null);
+        } catch (err) {
+            console.error(err);
+            showNotification(`Erro ao salvar: ${err.message}`, 'error');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    // --- FUNÇÕES DE TIMELINE (NOVAS) ---
+    const getStatusTimelineDate = (statusStep) => {
+        // 1. Se for o status ATUAL, usa a data do formulário
+        if (formData.status === statusStep) {
+            if (formData.statusDate) {
+                const parts = formData.statusDate.split('-');
+                return `${parts[2]}/${parts[1]}`; // Retorna DD/MM
+            }
+            return 'Hoje';
+        }
+        // 2. Se for um status PASSADO, busca no histórico
+        if (formData.statusHistory && formData.statusHistory.length > 0) {
+            // Busca a entrada mais recente para este status
+            const entry = [...formData.statusHistory].reverse().find(h => h.status === statusStep);
+            if (entry && entry.date) {
+                const parts = entry.date.split('-');
+                return `${parts[2]}/${parts[1]}`;
+            }
+        }
+        return null;
+    };
+
+    // Helper para índice da timeline
+    const currentStatusIndex = TIMELINE_STEPS.findIndex(s => s.value === formData.status);
+    const activeWidthPercent = currentStatusIndex === -1 ? 0 : (currentStatusIndex / (TIMELINE_STEPS.length - 1)) * 100;
+
+    // --- FUNÇÃO PARA IMPRIMIR DO MODAL (NOVA) ---
+    const handleModalPrint = (printType) => {
+        const printData = prepareDataForSave();
+        const groups = {};
+        const key = `${printData.client}-${printData.cnpj || 'no-cnpj'}-${printData.billingType}-${printData.maintenanceVisit || 'no-visit'}`;
+        groups[key] = {
+            header: { 
+                client: printData.client, 
+                cnpj: printData.cnpj, 
+                contactPerson: printData.contactPerson, 
+                email: printData.email, 
+                address: printData.address, 
+                billingType: printData.billingType, 
+                maintenanceVisit: printData.maintenanceVisit 
+            },
+            items: [printData]
+        };
+
+        const printWindow = window.open('', '_blank');
+        const title = printType === 'internal' ? 'Relatório INTERNO - Alfa Tecnologia' : 'Relatório de Atendimento - Alfa Tecnologia';
+
+        const content = `<html><head><title>${title}</title><style>
+@media print{@page{margin:1cm}}body{font-family:'Segoe UI',sans-serif;color:#333;line-height:1.4;padding:0;margin:0}
+.report-page{page-break-after:always;padding:20px;position:relative;min-height:27cm;border-bottom:1px solid #eee}
+.header{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #1a56db;padding-bottom:15px;margin-bottom:20px}
+.logo-area{color:#1a56db}.logo-text{font-size:28px;font-weight:900;margin:0}
+.logo-sub{font-size:10px;letter-spacing:2px;text-transform:uppercase;margin:0}
+.report-info{text-align:right}.report-title{font-size:16px;font-weight:900;color:#1a56db;text-transform:uppercase}
+.internal-badge{background:#b91c1c;color:white;padding:2px 6px;font-size:10px;border-radius:4px;font-weight:bold;margin-bottom:4px;display:inline-block}
+.section{margin-bottom:25px}.section-title{background:#f8fafc;padding:6px 12px;font-size:11px;font-weight:900;text-transform:uppercase;border-left:5px solid #1a56db;margin-bottom:12px;color:#1e40af}
+.client-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:15px;font-size:12px;margin-bottom:20px}
+.items-table{width:100%;border-collapse:collapse;margin-top:10px}
+.items-table th{background:#f8fafc;text-align:left;padding:10px;font-size:10px;text-transform:uppercase;color:#64748b;border-bottom:2px solid #e2e8f0}
+.items-table td{padding:12px 10px;font-size:11px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+.os-tag{font-weight:900;color:#1a56db;display:block;margin-bottom:4px}
+.cost-list-table{width:100%;margin-top:8px;border:1px solid #f1f5f9;font-size:10px;border-radius:4px}
+.cost-list-table th{background:#f8fafc;padding:4px 8px;font-size:9px}
+.cost-list-table td{padding:4px 8px;border-bottom:1px solid #f8fafc}
+.total-row{background:#f1f5f9;font-weight:bold}
+.internal-costs{margin-top:8px;padding:8px;background:#fff1f2;border:1px dashed #fda4af;border-radius:4px;font-size:10px;color:#9f1239}
+.signature-area{display:flex;justify-content:space-around;margin-top:80px}
+.signature-box{border-top:1px solid #333;width:250px;text-align:center;padding-top:8px;font-size:11px;font-weight:600}</style></head><body>${Object.values(groups).map(group => `
+        <div class="report-page">
+            <div class="header">
+                <div class="logo-area">
+                    <h1 class="logo-text">ALFA</h1>
+                    <p class="logo-sub">TECNOLOGIA HOSPITALAR</p>
+                </div>
+                <div class="report-info">
+                    ${printType === 'internal' ? '<div class="internal-badge">USO INTERNO - CONFIDENCIAL</div>' : ''}
+                    <div class="report-title">${printType === 'internal' ? 'Relatório Gerencial' : 'Relatório de Atendimento'}</div>
+                    <div style="font-size:10px;">Data: ${new Date().toLocaleDateString()}</div>
+                </div>
+            </div>
+            <div class="section">
+                <div class="section-title">Dados do Cliente</div>
+                <div class="client-grid">
+                    <div><strong>Cliente:</strong><br>${group.header.client}</div>
+                    <div><strong>CNPJ:</strong><br>${group.header.cnpj || '---'}</div>
+                    <div><strong>Atendimento:</strong><br>${group.header.billingType} ${group.header.maintenanceVisit ? '- ' + group.header.maintenanceVisit : ''}</div>
+                    <div><strong>Contato:</strong><br>${group.header.contactPerson || '---'}</div>
+                    <div><strong>E-mail:</strong><br>${group.header.email || '---'}</div>
+                    <div><strong>Endereço:</strong><br>${group.header.address || '---'}</div>
+                </div>
+            </div>
+            <div class="section">
+                <div class="section-title">Lista de Equipamentos</div>
+                <table class="items-table">
+                    <thead>
+                        <tr>
+                            <th width="15%">OS</th>
+                            <th width="30%">Equipamento</th>
+                            <th width="55%">Laudo Técnico</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${group.items.map(item => {
+                            const list = item.solutionsList || [];
+                            const total = list.reduce((acc, curr) => acc + parseFloat(curr.cost.replace('.', '').replace(',', '.') || 0), 0);
+                            const internalBlock = printType === 'internal' ?
+                                `<div class="internal-costs">
+                                    <strong>CONTROLE FINANCEIRO:</strong><br/>
+                                    Cobrado: <b>R$ ${item.chargedAmount || '0,00'}</b> (${item.paymentCondition} ${item.installments ? item.installments : ''})<br/>
+                                    Custos Operacionais: Frete Terceiro R$ ${item.costThirdPartyShipping || '0,00'} | Peças R$ ${item.costParts || '0,00'} | Frete Cliente R$ ${item.costClientShipping || '0,00'}
+                                </div>`
+                                : '';
+
+                            return `<tr>
+                                <td>
+                                    <span class="os-tag">${item.osNumber}</span>
+                                    <small>${item.status}</small>
+                                </td>
+                                <td>
+                                    <strong>${item.item}</strong><br>
+                                    <div style="font-size:9px;color:#666;margin-bottom:2px;">${item.manufacturer || ''} ${item.model || ''}</div>
+                                    <small>NS: ${item.serial || 'N/D'}</small>
+                                </td>
+                                <td>
+                                    <div><strong>Defeito:</strong> ${item.defect || 'N/A'}</div>
+                                    <div><strong>Solução:</strong> ${item.solutionType === "Não passível de conserto" ? `NÃO PASSÍVEL (${item.notRepairableDetail})` : (item.solutionType === "Preenchimento manual, com custo" ? 'Detalhamento abaixo:' : (item.solution || 'Em análise...'))}</div>
+                                    ${item.solutionType === "Preenchimento manual, com custo" && list.length > 0 ?
+                                    `<table class="cost-list-table">
+                                        <thead>
+                                            <tr>
+                                                <th style="text-align:left">Item / Serviço</th>
+                                                <th style="text-align:right">Valor</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${list.map(s => `<tr><td>${s.text}</td><td style="text-align:right">R$ ${s.cost}</td></tr>`).join('')}
+                                            <tr class="total-row">
+                                                <td>TOTAL</td>
+                                                <td style="text-align:right">R$ ${total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>`
+                                    : ''
+                                }
+                                    ${internalBlock}
+                                </td>
+                            </tr>`;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+            <div class="signature-area">
+                <div class="signature-box">Técnico Responsável</div>
+                <div class="signature-box">Cliente / Recebedor</div>
+            </div>
+        </div>`
+        ).join('')
+        }<script>window.onload=function(){window.print();window.close()}</script></body></html>`;
+
+        printWindow.document.write(content);
+        printWindow.document.close();
     };
 
     const handleNewContract = () => {
@@ -628,109 +1139,6 @@ export default function MainApp() {
             setOrderToDelete(null);
         } catch (err) {
             showNotification("Erro ao excluir: " + err.message, 'error');
-        }
-    };
-
-    const addSolutionItem = () => {
-        if (!tempSolution.trim()) {
-            showNotification("Descrição do item/serviço é obrigatória", 'error');
-            return;
-        }
-        setFormData(prev => ({
-            ...prev,
-            solutionsList: [...prev.solutionsList, {
-                id: Date.now(),
-                text: tempSolution,
-                cost: tempCost || "0,00"
-            }]
-        }));
-        setTempSolution('');
-        setTempCost('');
-    };
-
-    const removeSolutionItem = (id) => {
-        setFormData(prev => ({
-            ...prev,
-            solutionsList: prev.solutionsList.filter(item => item.id !== id)
-        }));
-    };
-
-    const handleSubmit = async (e) => {
-        if (e) e.preventDefault();
-
-        // Validação
-        const hasErrors = validateForm();
-        if (hasErrors) {
-            return;
-        }
-
-        setIsSaving(true);
-        try {
-            const { firestoreId, ...cleanData } = formData;
-            if (editingOrder) {
-                await updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', editingOrder.firestoreId), cleanData);
-                showNotification("OS atualizada com sucesso!", 'success');
-            } else {
-                await addDoc(collection(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders'), cleanData);
-                showNotification("OS criada com sucesso!", 'success');
-            }
-            setIsModalOpen(false);
-        } catch (err) {
-            console.error(err);
-            showNotification(`Erro ao salvar: ${err.message}`, 'error');
-        } finally {
-            setIsSaving(false);
-        }
-    };
-
-    const handleSaveAndNewWithSameClient = async () => {
-        // Validação
-        const hasErrors = validateForm();
-        if (hasErrors) {
-            return;
-        }
-
-        setIsSaving(true);
-        try {
-            const { firestoreId, ...cleanData } = formData;
-            if (editingOrder) {
-                await updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', editingOrder.firestoreId), cleanData);
-            } else {
-                await addDoc(collection(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders'), cleanData);
-            }
-            showNotification("OS salva e nova em branco criada!", 'success');
-            setFormData({
-                ...formData,
-                osNumber: generateNextOsNumber([...orders, formData]),
-                item: '',
-                manufacturer: '',
-                model: '',
-                serial: '',
-                defect: '',
-                solutionType: 'Manual',
-                solution: '',
-                solutionsList: [],
-                notRepairableDetail: '',
-                costThirdPartyName: '',
-                costThirdPartyShipping: '',
-                costClientShipping: '',
-                costParts: '',
-                chargedAmount: '',
-                paymentCondition: 'À vista',
-                installments: '',
-                status: 'Recebido',
-                trackingCode: '',
-                sentToThirdParty: 'Não',
-                thirdPartyInfo: '',
-                thirdPartyTracking: '',
-                thirdPartyDate: ''
-            });
-            setEditingOrder(null);
-        } catch (err) {
-            console.error(err);
-            showNotification(`Erro ao salvar: ${err.message}`, 'error');
-        } finally {
-            setIsSaving(false);
         }
     };
 
@@ -789,7 +1197,7 @@ export default function MainApp() {
 .report-info{text-align:right}.report-title{font-size:16px;font-weight:900;color:#1a56db;text-transform:uppercase}
 .internal-badge{background:#b91c1c;color:white;padding:2px 6px;font-size:10px;border-radius:4px;font-weight:bold;margin-bottom:4px;display:inline-block}
 .section{margin-bottom:25px}.section-title{background:#f8fafc;padding:6px 12px;font-size:11px;font-weight:900;text-transform:uppercase;border-left:5px solid #1a56db;margin-bottom:12px;color:#1e40af}
-.client-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px;margin-bottom:20px}
+.client-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:15px;font-size:12px;margin-bottom:20px}
 .items-table{width:100%;border-collapse:collapse;margin-top:10px}
 .items-table th{background:#f8fafc;text-align:left;padding:10px;font-size:10px;text-transform:uppercase;color:#64748b;border-bottom:2px solid #e2e8f0}
 .items-table td{padding:12px 10px;font-size:11px;border-bottom:1px solid #f1f5f9;vertical-align:top}
@@ -816,9 +1224,12 @@ export default function MainApp() {
             <div class="section">
                 <div class="section-title">Dados do Cliente</div>
                 <div class="client-grid">
-                    <div><strong>Cliente:</strong> ${group.header.client}</div>
-                    <div><strong>Atendimento:</strong> ${group.header.billingType} ${group.header.maintenanceVisit ? '- ' + group.header.maintenanceVisit : ''}</div>
-                    <div style="grid-column:span 2;"><strong>Endereço:</strong> ${group.header.address || '---'}</div>
+                    <div><strong>Cliente:</strong><br>${group.header.client}</div>
+                    <div><strong>CNPJ:</strong><br>${group.header.cnpj || '---'}</div>
+                    <div><strong>Atendimento:</strong><br>${group.header.billingType} ${group.header.maintenanceVisit ? '- ' + group.header.maintenanceVisit : ''}</div>
+                    <div><strong>Contato:</strong><br>${group.header.contactPerson || '---'}</div>
+                    <div><strong>E-mail:</strong><br>${group.header.email || '---'}</div>
+                    <div><strong>Endereço:</strong><br>${group.header.address || '---'}</div>
                 </div>
             </div>
             <div class="section">
@@ -833,17 +1244,17 @@ export default function MainApp() {
                     </thead>
                     <tbody>
                         ${group.items.map(item => {
-            const list = item.solutionsList || [];
-            const total = list.reduce((acc, curr) => acc + parseFloat(curr.cost.replace('.', '').replace(',', '.') || 0), 0);
-            const internalBlock = printType === 'internal' ?
-                `<div class="internal-costs">
+                            const list = item.solutionsList || [];
+                            const total = list.reduce((acc, curr) => acc + parseFloat(curr.cost.replace('.', '').replace(',', '.') || 0), 0);
+                            const internalBlock = printType === 'internal' ?
+                                `<div class="internal-costs">
                                     <strong>CONTROLE FINANCEIRO:</strong><br/>
                                     Cobrado: <b>R$ ${item.chargedAmount || '0,00'}</b> (${item.paymentCondition} ${item.installments ? item.installments : ''})<br/>
                                     Custos Operacionais: Frete Terceiro R$ ${item.costThirdPartyShipping || '0,00'} | Peças R$ ${item.costParts || '0,00'} | Frete Cliente R$ ${item.costClientShipping || '0,00'}
                                 </div>`
-                : '';
+                                : '';
 
-            return `<tr>
+                            return `<tr>
                                 <td>
                                     <span class="os-tag">${item.osNumber}</span>
                                     <small>${item.status}</small>
@@ -857,27 +1268,27 @@ export default function MainApp() {
                                     <div><strong>Defeito:</strong> ${item.defect || 'N/A'}</div>
                                     <div><strong>Solução:</strong> ${item.solutionType === "Não passível de conserto" ? `NÃO PASSÍVEL (${item.notRepairableDetail})` : (item.solutionType === "Preenchimento manual, com custo" ? 'Detalhamento abaixo:' : (item.solution || 'Em análise...'))}</div>
                                     ${item.solutionType === "Preenchimento manual, com custo" && list.length > 0 ?
-                    `<table class="cost-list-table">
-                                            <thead>
-                                                <tr>
-                                                    <th style="text-align:left">Item / Serviço</th>
-                                                    <th style="text-align:right">Valor</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                ${list.map(s => `<tr><td>${s.text}</td><td style="text-align:right">R$ ${s.cost}</td></tr>`).join('')}
-                                                <tr class="total-row">
-                                                    <td>TOTAL</td>
-                                                    <td style="text-align:right">R$ ${total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                                                </tr>
-                                            </tbody>
-                                        </table>`
-                    : ''
-                }
+                                    `<table class="cost-list-table">
+                                        <thead>
+                                            <tr>
+                                                <th style="text-align:left">Item / Serviço</th>
+                                                <th style="text-align:right">Valor</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${list.map(s => `<tr><td>${s.text}</td><td style="text-align:right">R$ ${s.cost}</td></tr>`).join('')}
+                                            <tr class="total-row">
+                                                <td>TOTAL</td>
+                                                <td style="text-align:right">R$ ${total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>`
+                                    : ''
+                                }
                                     ${internalBlock}
                                 </td>
                             </tr>`;
-        }).join('')}
+                        }).join('')}
                     </tbody>
                 </table>
             </div>
@@ -887,7 +1298,7 @@ export default function MainApp() {
             </div>
         </div>`
         ).join('')
-            }<script>window.onload=function(){window.print();window.close()}</script></body></html>`;
+        }<script>window.onload=function(){window.print();window.close()}</script></body></html>`;
 
         printWindow.document.write(content);
         printWindow.document.close();
@@ -934,6 +1345,11 @@ export default function MainApp() {
                         <div className="bg-blue-600 p-2 rounded-lg text-white shadow-lg"><FileSpreadsheet size={20} /></div>
                         {isSidebarOpen && <span className="font-black tracking-tighter text-lg">ALFA</span>}
                     </div>
+                    {isSidebarOpen && (
+                        <button onClick={() => setShowValues(!showValues)} className="text-slate-400 hover:text-white transition-colors" title={showValues ? "Ocultar Valores" : "Mostrar Valores"}>
+                            {showValues ? <Eye size={18} /> : <EyeOff size={18} />}
+                        </button>
+                    )}
                 </div>
                 <nav className="flex-1 p-4 space-y-2">
                     <NavItem icon={<LayoutDashboard size={20} />} label="Painel de OS" active={currentPage === 'os'} onClick={() => setCurrentPage('os')} isSidebarOpen={isSidebarOpen} />
@@ -950,11 +1366,14 @@ export default function MainApp() {
                     </div>
                 </nav>
 
-                {/* Área inferior da sidebar com botões lado a lado */}
-                <div className="border-t border-slate-800 p-4">
-                    <div className="flex items-center justify-between">
-
-
+                {/* Área inferior da sidebar */}
+                <div className="flex flex-col border-t border-slate-800">
+                    {!isSidebarOpen && (
+                        <button onClick={() => setShowValues(!showValues)} className="p-6 hover:bg-slate-800 flex justify-center text-slate-400 hover:text-white" title="Ocultar/Mostrar Valores">
+                            {showValues ? <Eye size={20} /> : <EyeOff size={20} />}
+                        </button>
+                    )}
+                    <div className="flex items-center justify-between p-4">
                         {/* Botão de recolher sidebar (ícone) */}
                         <button
                             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -1002,28 +1421,35 @@ export default function MainApp() {
                             </div>
                         </div>
 
-                        <div className="relative group z-20">
-                            <Search className="absolute left-5 top-5 text-slate-400 group-focus-within:text-blue-600 transition-colors" size={24} />
-                            <input className="w-full pl-14 pr-6 py-5 rounded-[1.5rem] border-none shadow-xl shadow-slate-200/50 focus:ring-4 focus:ring-blue-500/10 text-lg font-medium outline-none bg-white relative z-10" placeholder="Pesquise por cliente, OS ou equipamento..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-                            {searchTerm && (
-                                <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden animate-in slide-in-from-top-2 z-50">
-                                    {orders.filter(o => o.client?.toLowerCase().includes(searchTerm.toLowerCase()) || o.osNumber?.includes(searchTerm) || o.item?.toLowerCase().includes(searchTerm.toLowerCase())).slice(0, 5).map(o => (
-                                        <div key={o.firestoreId} onClick={() => { openModal(o); setSearchTerm(''); }} className="p-4 border-b border-slate-50 hover:bg-blue-50 cursor-pointer flex justify-between items-center group/item transition-colors">
-                                            <div><div className="font-bold text-slate-800 flex items-center gap-2">{o.client}<span className="text-[10px] bg-slate-100 text-slate-500 px-2 rounded-full uppercase">{o.status}</span></div><div className="text-xs text-slate-500 mt-1"><span className="font-mono text-blue-600 font-bold">{o.osNumber}</span> - {o.item}</div></div>
-                                            <div className="text-xs font-bold text-blue-600 opacity-0 group-hover/item:opacity-100 flex items-center gap-1 transition-all">Abrir <ExternalLink size={14} /></div>
-                                        </div>
-                                    ))}
-                                    {orders.filter(o => o.client?.toLowerCase().includes(searchTerm.toLowerCase()) || o.osNumber?.includes(searchTerm) || o.item?.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 && (
-                                        <div className="p-6 text-center text-slate-400 text-sm font-medium">Nenhum resultado encontrado.</div>
-                                    )}
-                                </div>
-                            )}
+                        {/* Barra de busca com ordenação (NOVO) */}
+                        <div className="relative group z-20 flex gap-2">
+                            <div className="relative flex-1">
+                                <Search className="absolute left-5 top-5 text-slate-400 group-focus-within:text-blue-600 transition-colors" size={24} />
+                                <input className="w-full pl-14 pr-6 py-5 rounded-[1.5rem] border-none shadow-xl shadow-slate-200/50 focus:ring-4 focus:ring-blue-500/10 text-lg font-medium outline-none bg-white relative z-10" placeholder="Pesquise por cliente, OS ou equipamento..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                                {searchTerm && (
+                                    <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden animate-in slide-in-from-top-2 z-50">
+                                        {orders.filter(o => o.client?.toLowerCase().includes(searchTerm.toLowerCase()) || o.osNumber?.includes(searchTerm) || o.item?.toLowerCase().includes(searchTerm.toLowerCase())).slice(0, 5).map(o => (
+                                            <div key={o.firestoreId} onClick={() => { openModal(o); setSearchTerm(''); }} className="p-4 border-b border-slate-50 hover:bg-blue-50 cursor-pointer flex justify-between items-center group/item transition-colors">
+                                                <div><div className="font-bold text-slate-800 flex items-center gap-2">{o.client}<span className="text-[10px] bg-slate-100 text-slate-500 px-2 rounded-full uppercase">{o.status}</span></div><div className="text-xs text-slate-500 mt-1"><span className="font-mono text-blue-600 font-bold">{o.osNumber}</span> - {o.item}</div></div>
+                                                <div className="text-xs font-bold text-blue-600 opacity-0 group-hover/item:opacity-100 flex items-center gap-1 transition-all">Abrir <ExternalLink size={14} /></div>
+                                            </div>
+                                        ))}
+                                        {orders.filter(o => o.client?.toLowerCase().includes(searchTerm.toLowerCase()) || o.osNumber?.includes(searchTerm) || o.item?.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 && (
+                                            <div className="p-6 text-center text-slate-400 text-sm font-medium">Nenhum resultado encontrado.</div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                            <button onClick={() => setSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')} className="bg-white p-5 rounded-[1.5rem] shadow-xl shadow-slate-200/50 border-none hover:bg-slate-50 transition-colors text-slate-600" title={sortOrder === 'desc' ? "Mais Recentes Primeiro" : "Mais Antigos Primeiro"}>
+                                {sortOrder === 'desc' ? <ArrowDownWideNarrow size={24} /> : <ArrowUpNarrowWide size={24} />}
+                            </button>
                         </div>
+                        
                         <div className="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden overflow-x-auto relative z-0">
                             <table className="w-full text-left min-w-[800px]">
                                 <thead className="bg-slate-50/50 border-b text-[10px] font-black uppercase text-slate-400 tracking-widest">
                                     <tr>
-                                        <th className="px-6 py-6 text-center w-12"><input type="checkbox" className="w-4 h-4 rounded border-slate-300 text-blue-600" onChange={(e) => setSelectedOrders(e.target.checked ? orders.filter(o => o.client?.toLowerCase().includes(searchTerm.toLowerCase()) || o.osNumber?.includes(searchTerm)).map(o => o.firestoreId) : [])} checked={selectedOrders.length > 0 && selectedOrders.length === orders.length} /></th>
+                                        <th className="px-6 py-6 text-center w-12"><input type="checkbox" className="w-4 h-4 rounded border-slate-300 text-blue-600" onChange={(e) => setSelectedOrders(e.target.checked ? sortedOrders.filter(o => o.client?.toLowerCase().includes(searchTerm.toLowerCase()) || o.osNumber?.includes(searchTerm)).map(o => o.firestoreId) : [])} checked={selectedOrders.length > 0 && selectedOrders.length === sortedOrders.length} /></th>
                                         <th className="px-8 py-6">Identificação</th>
                                         <th className="px-8 py-6">Equipamento</th>
                                         <th className="px-8 py-6">Tipo</th>
@@ -1033,11 +1459,11 @@ export default function MainApp() {
                                 </thead>
                                 <tbody className="divide-y divide-slate-50">
                                     {isLoading ? <tr><td colSpan="6" className="p-20 text-center"><Loader2 className="animate-spin mx-auto text-blue-600" size={32} /></td></tr> :
-                                        orders.filter(o => o.client?.toLowerCase().includes(searchTerm.toLowerCase()) || o.osNumber?.includes(searchTerm)).map(o => (
+                                        sortedOrders.filter(o => o.client?.toLowerCase().includes(searchTerm.toLowerCase()) || o.osNumber?.includes(searchTerm)).map(o => (
                                             <tr key={o.firestoreId} className={`hover:bg-blue-50/30 transition-colors group ${selectedOrders.includes(o.firestoreId) ? 'bg-blue-50/50' : ''}`}>
                                                 <td className="px-6 py-4 text-center"><input type="checkbox" className="w-4 h-4 rounded border-slate-300 text-blue-600" checked={selectedOrders.includes(o.firestoreId)} onChange={() => setSelectedOrders(prev => prev.includes(o.firestoreId) ? prev.filter(id => id !== o.firestoreId) : [...prev, o.firestoreId])} /></td>
                                                 <td className="px-8 py-6"><div className="font-black text-blue-700 text-lg">{o.osNumber}</div><div className="font-bold text-slate-900 text-sm">{o.client}</div></td>
-                                                <td className="px-8 py-6"><div className="font-bold text-slate-900 text-sm">{o.item}</div><div className="text-[10px] text-slate-400 font-mono">NS: {o.serial || 'N/D'}</div></td>
+                                                <td className="px-8 py-6"><div className="font-bold text-slate-900 text-sm">{o.item}</div>{(o.manufacturer || o.model) && (<div className="text-xs text-slate-500 font-medium mb-0.5">{o.manufacturer || ''} {o.model || ''}</div>)}<div className="text-[10px] text-slate-400 font-mono">NS: {o.serial || 'N/D'}</div></td>
                                                 <td className="px-8 py-6"><div className="text-xs font-bold text-slate-500 uppercase tracking-tighter">{o.billingType}</div></td>
                                                 <td className="px-8 py-6"><div className="px-4 py-2 rounded-xl text-[10px] font-black uppercase inline-block border bg-slate-100 text-slate-600">{o.status}</div></td>
                                                 <td className="px-8 py-6 text-right">
@@ -1057,6 +1483,7 @@ export default function MainApp() {
                     </div>
                 )}
 
+                {/* ... (Resto das páginas - status, financial, contracts, etc.) mantido igual ... */}
                 {currentPage === 'status' && canAccessPage() && (
                     <div className="space-y-6 animate-in fade-in duration-500 max-w-7xl mx-auto h-full flex flex-col">
                         <div className="flex justify-between items-end shrink-0">
@@ -1185,7 +1612,7 @@ export default function MainApp() {
                 {currentPage === 'about' && <div className="p-20 text-center"><Info size={80} className="mx-auto text-slate-200 mb-6" /><h3 className="text-2xl font-black">Sobre o Sistema</h3></div>}
             </main>
 
-            {/* MODAL PRINCIPAL OS */}
+            {/* MODAL PRINCIPAL OS (ATUALIZADO COM TODAS AS NOVAS FUNCIONALIDADES) */}
             {isModalOpen && (
                 <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
                     <div className="bg-white rounded-[2.5rem] w-full max-w-5xl my-auto shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-200">
@@ -1198,52 +1625,65 @@ export default function MainApp() {
                                 <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-8">
                                     <div className="space-y-4">
                                         <div className="flex items-center gap-2 text-blue-600 font-bold uppercase text-xs tracking-widest"><User size={16} /> Cliente</div>
+                                        {/* Autocomplete Cliente */}
+                                        <div className="relative">
+                                            <input
+                                                placeholder="Nome da Empresa"
+                                                className={`w-full p-4 bg-white border ${fieldErrors.client ? 'border-red-500' : 'border-slate-200'} rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-bold`}
+                                                value={formData.client}
+                                                onChange={e => {
+                                                    setFormData({ ...formData, client: e.target.value });
+                                                    setShowClientSuggestions(true);
+                                                    if (fieldErrors.client) setFieldErrors(prev => ({ ...prev, client: false }));
+                                                }}
+                                                onFocus={() => setShowClientSuggestions(true)}
+                                                onBlur={() => setTimeout(() => setShowClientSuggestions(false), 200)}
+                                            />
+                                            {showClientSuggestions && formData.client && (
+                                                <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-60 overflow-y-auto animate-in slide-in-from-top-2">
+                                                    {uniqueClients.filter(c => c.client.toLowerCase().includes(formData.client.toLowerCase())).slice(0, 5).map((c, idx) => (
+                                                        <div key={idx} className="p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 flex flex-col" onMouseDown={(e) => { e.preventDefault(); handleClientSelect(c); }}>
+                                                            <span className="font-bold text-slate-800 text-sm">{c.client}</span>
+                                                            <span className="text-[10px] text-slate-400">{c.cnpj || 'Sem CNPJ'}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                            {fieldErrors.client && <p className="text-red-500 text-xs mt-1 ml-4">Cliente é obrigatório</p>}
+                                        </div>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <div>
-                                                <input
-                                                    placeholder="Nome da Empresa"
-                                                    className={`w-full p-4 bg-white border ${fieldErrors.client ? 'border-red-500' : 'border-slate-200'} rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-bold`}
-                                                    value={formData.client}
-                                                    onChange={e => {
-                                                        setFormData({ ...formData, client: e.target.value });
-                                                        if (fieldErrors.client) setFieldErrors(prev => ({ ...prev, client: false }));
-                                                    }}
-                                                    onBlur={() => handleBlur('client')}
-                                                />
-                                                {fieldErrors.client && <p className="text-red-500 text-xs mt-1 ml-4">Cliente é obrigatório</p>}
-                                            </div>
                                             <input
                                                 placeholder="CNPJ"
                                                 className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-bold"
                                                 value={formData.cnpj}
                                                 onChange={e => setFormData({ ...formData, cnpj: e.target.value })}
                                             />
-                                        </div>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             <input
                                                 placeholder="Responsável"
                                                 className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-bold"
                                                 value={formData.contactPerson}
                                                 onChange={e => setFormData({ ...formData, contactPerson: e.target.value })}
                                             />
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             <input
                                                 placeholder="E-mail"
                                                 className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-bold"
                                                 value={formData.email}
                                                 onChange={e => setFormData({ ...formData, email: e.target.value })}
                                             />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-black text-slate-400 uppercase ml-2 flex justify-between">
-                                                Endereço
-                                                {formData.address && (<a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formData.address)}`} target="_blank" className="text-blue-600 hover:underline flex items-center gap-1"><ExternalLink size={10} /> Ver no Maps</a>)}
-                                            </label>
-                                            <input
-                                                placeholder="Endereço Completo"
-                                                className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-bold"
-                                                value={formData.address}
-                                                onChange={e => setFormData({ ...formData, address: e.target.value })}
-                                            />
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-black text-slate-400 uppercase ml-2 flex justify-between">
+                                                    Endereço
+                                                    {formData.address && (<a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formData.address)}`} target="_blank" className="text-blue-600 hover:underline flex items-center gap-1"><ExternalLink size={10} /> Ver no Maps</a>)}
+                                                </label>
+                                                <input
+                                                    placeholder="Endereço Completo"
+                                                    className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-bold"
+                                                    value={formData.address}
+                                                    onChange={e => setFormData({ ...formData, address: e.target.value })}
+                                                />
+                                            </div>
                                         </div>
                                     </div>
                                     <hr className="border-slate-200/50" />
@@ -1268,82 +1708,208 @@ export default function MainApp() {
                                 <div className="space-y-6">
                                     <div className="flex items-center gap-2 text-orange-600 font-bold uppercase text-xs tracking-widest"><Package size={16} /> Equipamento</div>
                                     <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                                        <div>
+                                        {/* Autocomplete Item */}
+                                        <div className="relative">
                                             <input
                                                 placeholder="Item / Nome"
                                                 className={`w-full p-4 bg-slate-50 border ${fieldErrors.item ? 'border-red-500' : 'border-slate-200'} rounded-2xl outline-none font-bold`}
                                                 value={formData.item}
                                                 onChange={e => {
                                                     setFormData({ ...formData, item: e.target.value });
+                                                    setShowItemSuggestions(true);
                                                     if (fieldErrors.item) setFieldErrors(prev => ({ ...prev, item: false }));
                                                 }}
-                                                onBlur={() => handleBlur('item')}
+                                                onFocus={() => setShowItemSuggestions(true)}
+                                                onBlur={() => setTimeout(() => setShowItemSuggestions(false), 200)}
                                             />
+                                            {showItemSuggestions && uniqueItems.length > 0 && (
+                                                <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
+                                                    <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400">Sugestões de Itens</div>
+                                                    {uniqueItems.filter(i => i.toLowerCase().includes(formData.item.toLowerCase())).slice(0, 5).map((i, idx) => (
+                                                        <div key={idx} className="p-3 hover:bg-orange-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700 font-bold" onMouseDown={(e) => { e.preventDefault(); setFormData({ ...formData, item: i }); setShowItemSuggestions(false); }}>{i}</div>
+                                                    ))}
+                                                </div>
+                                            )}
                                             {fieldErrors.item && <p className="text-red-500 text-xs mt-1 ml-4">Item/Equipamento é obrigatório</p>}
                                         </div>
-                                        <input
-                                            placeholder="Marca"
-                                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
-                                            value={formData.manufacturer}
-                                            onChange={e => setFormData({ ...formData, manufacturer: e.target.value })}
-                                        />
-                                        <input
-                                            placeholder="Modelo"
-                                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
-                                            value={formData.model}
-                                            onChange={e => setFormData({ ...formData, model: e.target.value })}
-                                        />
-                                        <input
-                                            placeholder="Número de Série"
-                                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold font-mono"
-                                            value={formData.serial}
-                                            onChange={e => setFormData({ ...formData, serial: e.target.value })}
-                                        />
+                                        {/* Autocomplete Marca */}
+                                        <div className="relative">
+                                            <input
+                                                placeholder="Marca"
+                                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
+                                                value={formData.manufacturer}
+                                                onChange={e => {
+                                                    setFormData({ ...formData, manufacturer: e.target.value });
+                                                    setShowManufacturerSuggestions(true);
+                                                }}
+                                                onFocus={() => setShowManufacturerSuggestions(true)}
+                                                onBlur={() => setTimeout(() => setShowManufacturerSuggestions(false), 200)}
+                                            />
+                                            {showManufacturerSuggestions && uniqueManufacturers.length > 0 && (
+                                                <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
+                                                    <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400">Sugestões de Marcas</div>
+                                                    {uniqueManufacturers.filter(m => m.toLowerCase().includes(formData.manufacturer.toLowerCase())).slice(0, 5).map((m, idx) => (
+                                                        <div key={idx} className="p-3 hover:bg-orange-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700 font-bold" onMouseDown={(e) => { e.preventDefault(); setFormData({ ...formData, manufacturer: m }); setShowManufacturerSuggestions(false); }}>{m}</div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                        {/* Autocomplete Modelo */}
+                                        <div className="relative">
+                                            <input
+                                                placeholder="Modelo"
+                                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
+                                                value={formData.model}
+                                                onChange={e => {
+                                                    setFormData({ ...formData, model: e.target.value });
+                                                    setShowModelSuggestions(true);
+                                                }}
+                                                onFocus={() => setShowModelSuggestions(true)}
+                                                onBlur={() => setTimeout(() => setShowModelSuggestions(false), 200)}
+                                            />
+                                            {showModelSuggestions && uniqueModels.length > 0 && (
+                                                <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
+                                                    <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400">Sugestões de Modelos</div>
+                                                    {uniqueModels.filter(m => m.toLowerCase().includes(formData.model.toLowerCase())).slice(0, 5).map((m, idx) => (
+                                                        <div key={idx} className="p-3 hover:bg-orange-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700 font-bold" onMouseDown={(e) => { e.preventDefault(); setFormData({ ...formData, model: m }); setShowModelSuggestions(false); }}>{m}</div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                        {/* Autocomplete Serial */}
+                                        <div className="relative">
+                                            <input
+                                                placeholder="Número de Série"
+                                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold font-mono"
+                                                value={formData.serial}
+                                                onChange={e => {
+                                                    setFormData({ ...formData, serial: e.target.value });
+                                                    setShowSerialSuggestions(true);
+                                                }}
+                                                onFocus={() => setShowSerialSuggestions(true)}
+                                                onBlur={() => setTimeout(() => setShowSerialSuggestions(false), 200)}
+                                            />
+                                            {showSerialSuggestions && uniqueSerials.length > 0 && (
+                                                <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
+                                                    <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400">Sugestões de NS</div>
+                                                    {uniqueSerials.filter(s => s.toLowerCase().includes(formData.serial.toLowerCase())).slice(0, 5).map((s, idx) => (
+                                                        <div key={idx} className="p-3 hover:bg-orange-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700 font-mono font-bold" onMouseDown={(e) => { e.preventDefault(); setFormData({ ...formData, serial: s }); setShowSerialSuggestions(false); }}>{s}</div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="space-y-6">
                                     <div className="flex items-center gap-2 text-emerald-600 font-bold uppercase text-xs tracking-widest"><Wrench size={16} /> Laudo Técnico</div>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                        <div>
-                                            <textarea
-                                                rows="8"
-                                                placeholder="Descrição detalhada do defeito..."
-                                                className={`w-full p-4 bg-slate-50 border ${fieldErrors.defect ? 'border-red-500' : 'border-slate-200'} rounded-2xl outline-none font-medium`}
-                                                value={formData.defect}
-                                                onChange={e => {
-                                                    setFormData({ ...formData, defect: e.target.value });
-                                                    if (fieldErrors.defect) setFieldErrors(prev => ({ ...prev, defect: false }));
-                                                }}
-                                                onBlur={() => handleBlur('defect')}
-                                            />
-                                            {fieldErrors.defect && <p className="text-red-500 text-xs mt-1 ml-4">Descrição do defeito é obrigatória</p>}
+                                        {/* LISTA DE DEFEITOS (NOVO) */}
+                                        <div className="space-y-4">
+                                            <label className="text-xs font-bold text-slate-500 uppercase">Defeitos Encontrados</label>
+                                            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-3">
+                                                <div className="relative flex gap-2">
+                                                    <input
+                                                        placeholder="Descreva um defeito..."
+                                                        className="flex-1 p-3 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500/20"
+                                                        value={tempDefect}
+                                                        onChange={e => { setTempDefect(e.target.value); setShowDefectSuggestions(true); }}
+                                                        onFocus={() => setShowDefectSuggestions(true)}
+                                                        onBlur={() => setTimeout(() => setShowDefectSuggestions(false), 200)}
+                                                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addDefectItem(); } }}
+                                                    />
+                                                    <button type="button" onClick={addDefectItem} className="bg-emerald-600 text-white p-3 rounded-xl shadow-lg shadow-emerald-200 hover:bg-emerald-700 transition-colors"><Plus size={20} /></button>
+
+                                                    {/* AUTOCOMPLETE DEFEITO */}
+                                                    {showDefectSuggestions && uniqueDefects.length > 0 && (
+                                                        <div className="absolute top-full left-0 right-14 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
+                                                            <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400">Sugestões</div>
+                                                            {uniqueDefects.filter(d => d.toLowerCase().includes(tempDefect.toLowerCase())).slice(0, 5).map((d, idx) => (
+                                                                <div key={idx} className="p-3 hover:bg-emerald-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700" onMouseDown={(e) => { e.preventDefault(); setTempDefect(d); setShowDefectSuggestions(false); }}>{d.length > 50 ? d.substring(0, 50) + '...' : d}</div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                                                    {formData.defectsList && formData.defectsList.map((d, i) => (
+                                                        <div key={i} className="flex justify-between items-start p-3 bg-white border rounded-xl shadow-sm animate-in slide-in-from-left-2">
+                                                            <div className="text-sm font-medium text-slate-700 leading-snug">{d}</div>
+                                                            <button type="button" onClick={() => removeDefectItem(i)} className="text-slate-300 hover:text-red-500 transition-colors p-1"><X size={16} /></button>
+                                                        </div>
+                                                    ))}
+                                                    {(!formData.defectsList || formData.defectsList.length === 0) && <div className="text-center text-xs text-slate-400 italic py-2">Nenhum defeito listado.</div>}
+                                                </div>
+                                            </div>
                                         </div>
+
                                         <div className="space-y-4">
                                             <select className="w-full p-4 bg-slate-900 text-white border-none rounded-2xl outline-none cursor-pointer font-bold" value={formData.solutionType} onChange={e => setFormData({ ...formData, solutionType: e.target.value })}>
                                                 <option value="Manual">Preenchimento Manual</option>
                                                 <option value="Preenchimento manual, com custo">Manual com Custos Detalhados (+)</option>
                                                 <option value="Não passível de conserto">Não Passível de Conserto</option>
                                             </select>
+
+                                            {/* SOLUÇÃO MANUAL (LISTA SIMPLES - NOVO) */}
                                             {formData.solutionType === "Manual" && (
-                                                <div>
-                                                    <textarea
-                                                        rows="4"
-                                                        placeholder="Descrição da solução aplicada..."
-                                                        className={`w-full p-4 bg-slate-50 border ${fieldErrors.solution ? 'border-red-500' : 'border-slate-200'} rounded-2xl outline-none font-medium`}
-                                                        value={formData.solution}
-                                                        onChange={e => {
-                                                            setFormData({ ...formData, solution: e.target.value });
-                                                            if (fieldErrors.solution) setFieldErrors(prev => ({ ...prev, solution: false }));
-                                                        }}
-                                                        onBlur={() => handleBlur('solution')}
-                                                    />
-                                                    {fieldErrors.solution && <p className="text-red-500 text-xs mt-1 ml-4">Descrição da solução é obrigatória</p>}
+                                                <div className="space-y-4 animate-in fade-in">
+                                                    <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100 space-y-3">
+                                                        <div className="relative flex gap-2">
+                                                            <input
+                                                                placeholder="Descreva uma etapa da solução..."
+                                                                className="flex-1 p-3 bg-white border border-indigo-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                                                value={tempManualSolution}
+                                                                onChange={e => { setTempManualSolution(e.target.value); setShowSolutionSuggestions(true); }}
+                                                                onFocus={() => setShowSolutionSuggestions(true)}
+                                                                onBlur={() => setTimeout(() => setShowSolutionSuggestions(false), 200)}
+                                                                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addManualSolutionItem(); } }}
+                                                            />
+                                                            <button type="button" onClick={addManualSolutionItem} className="bg-indigo-600 text-white p-3 rounded-xl shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-colors"><Plus size={20} /></button>
+
+                                                            {/* AUTOCOMPLETE SOLUÇÃO */}
+                                                            {showSolutionSuggestions && uniqueSolutions.length > 0 && (
+                                                                <div className="absolute top-full left-0 right-14 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
+                                                                    <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400">Sugestões</div>
+                                                                    {uniqueSolutions.filter(s => s.toLowerCase().includes(tempManualSolution.toLowerCase())).slice(0, 5).map((s, idx) => (
+                                                                        <div key={idx} className="p-3 hover:bg-indigo-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700" onMouseDown={(e) => { e.preventDefault(); setTempManualSolution(s); setShowSolutionSuggestions(false); }}>{s.length > 50 ? s.substring(0, 50) + '...' : s}</div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                                                        {formData.manualSolutionsList && formData.manualSolutionsList.map((s, i) => (
+                                                            <div key={i} className="flex justify-between items-start p-3 bg-white border rounded-xl shadow-sm animate-in slide-in-from-left-2">
+                                                                <div className="text-sm font-medium text-slate-700 leading-snug">{s}</div>
+                                                                <button type="button" onClick={() => removeManualSolutionItem(i)} className="text-slate-300 hover:text-red-500 transition-colors p-1"><X size={16} /></button>
+                                                            </div>
+                                                        ))}
+                                                        {(!formData.manualSolutionsList || formData.manualSolutionsList.length === 0) && <div className="text-center text-xs text-slate-400 italic py-2">Nenhuma solução listada.</div>}
+                                                    </div>
                                                 </div>
                                             )}
+
+                                            {/* SOLUÇÃO COM CUSTO (LISTA JÁ EXISTENTE) */}
                                             {formData.solutionType === "Preenchimento manual, com custo" && (
                                                 <div className="space-y-4 animate-in fade-in">
                                                     <div className="bg-green-50 p-4 rounded-2xl border border-green-100 space-y-3">
-                                                        <input placeholder="Item, Peça ou Serviço" className="w-full p-2 bg-white border border-green-200 rounded-lg text-sm" value={tempSolution} onChange={e => setTempSolution(e.target.value)} />
+                                                        <div className="relative">
+                                                            <input
+                                                                placeholder="Item, Peça ou Serviço"
+                                                                className="w-full p-2 bg-white border border-green-200 rounded-lg text-sm"
+                                                                value={tempSolution}
+                                                                onChange={e => { setTempSolution(e.target.value); setShowSolutionSuggestions(true); }}
+                                                                onFocus={() => setShowSolutionSuggestions(true)}
+                                                                onBlur={() => setTimeout(() => setShowSolutionSuggestions(false), 200)}
+                                                            />
+                                                            {/* AUTOCOMPLETE TAMBÉM AQUI */}
+                                                            {showSolutionSuggestions && uniqueSolutions.length > 0 && (
+                                                                <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
+                                                                    <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400">Sugestões</div>
+                                                                    {uniqueSolutions.filter(s => s.toLowerCase().includes(tempSolution.toLowerCase())).slice(0, 5).map((s, idx) => (
+                                                                        <div key={idx} className="p-3 hover:bg-green-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700" onMouseDown={(e) => { e.preventDefault(); setTempSolution(s); setShowSolutionSuggestions(false); }}>{s}</div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
                                                         <div className="flex gap-2">
                                                             <input placeholder="Valor R$ 0,00" className="flex-1 p-2 bg-white border border-green-200 rounded-lg text-sm" value={tempCost} onChange={e => setTempCost(e.target.value)} />
                                                             <button type="button" onClick={addSolutionItem} className="bg-green-600 text-white p-2.5 rounded-lg shadow-lg shadow-green-200"><Plus size={20} /></button>
@@ -1416,8 +1982,76 @@ export default function MainApp() {
                                 </div>
                                 <div className="space-y-6 pt-6 border-t">
                                     <div className="flex items-center gap-2 text-slate-900 font-bold uppercase text-xs tracking-widest"><Truck size={16} /> Logística e Status Final</div>
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                        <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase">Status Geral</label><select className="w-full p-4 bg-slate-100 border-none rounded-2xl outline-none font-bold" value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value })}>{statusOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}</select></div>
+
+                                    {/* NOVA LINHA DO TEMPO HORIZONTAL */}
+                                    <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-6">
+                                        <div className="w-full overflow-x-auto py-2">
+                                            <div className="flex items-center justify-between min-w-[600px] relative px-4">
+                                                {/* Linha de Fundo */}
+                                                <div className="absolute left-4 right-4 top-1/2 -translate-y-1/2 h-0.5 bg-slate-200 z-0"></div>
+                                                {/* Linha Ativa */}
+                                                <div
+                                                    className="absolute left-4 top-1/2 -translate-y-1/2 h-0.5 bg-blue-600 z-0 transition-all duration-500 ease-in-out"
+                                                    style={{ width: `${activeWidthPercent}%` }}
+                                                ></div>
+
+                                                {TIMELINE_STEPS.map((step, index) => {
+                                                    const isCompleted = index <= currentStatusIndex;
+                                                    const isCurrent = index === currentStatusIndex;
+                                                    const stepDate = getStatusTimelineDate(step.value);
+
+                                                    return (
+                                                        <div
+                                                            key={index}
+                                                            className="relative z-10 flex flex-col items-center gap-3 cursor-pointer group min-w-[80px]"
+                                                            onClick={() => setFormData({ ...formData, status: step.value, statusDate: new Date().toISOString().split('T')[0] })}
+                                                        >
+                                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 transition-all duration-300 shadow-sm ${isCompleted ? 'bg-blue-600 border-blue-600 text-white scale-110' : 'bg-white border-slate-300 text-slate-300 group-hover:border-blue-300'}`}>
+                                                                {isCompleted ? <Check size={14} strokeWidth={4} /> : <div className="w-2 h-2 rounded-full bg-slate-200" />}
+                                                            </div>
+                                                            <div className="text-center flex flex-col items-center">
+                                                                <span className={`text-[10px] font-bold uppercase tracking-wide transition-colors ${isCurrent ? 'text-blue-700' : 'text-slate-400'}`}>{step.label}</span>
+                                                                {/* DATA VISÍVEL SEMPRE */}
+                                                                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded mt-1 whitespace-nowrap ${stepDate ? 'bg-white text-slate-600 shadow-sm border border-slate-200' : 'text-slate-300'}`}>
+                                                                    {stepDate || '---'}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start pt-4 border-t border-slate-200/50">
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-black text-slate-400 uppercase">Status Geral (Seleção Manual)</label>
+                                                <select
+                                                    className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none font-bold"
+                                                    value={formData.status}
+                                                    onChange={e => {
+                                                        setFormData({
+                                                            ...formData,
+                                                            status: e.target.value,
+                                                            statusDate: new Date().toISOString().split('T')[0]
+                                                        })
+                                                    }}
+                                                >
+                                                    {statusOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                                </select>
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-black text-slate-400 uppercase">Data do Status Atual</label>
+                                                <input
+                                                    type="date"
+                                                    className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none font-bold"
+                                                    value={formData.statusDate}
+                                                    onChange={e => setFormData({ ...formData, statusDate: e.target.value })}
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         {formData.status !== 'Recebido' && (<div className="space-y-1 animate-in fade-in"><label className="text-[10px] font-black text-slate-400 uppercase">Enviado para Terceiro?</label><select className="w-full p-4 bg-slate-100 border-none rounded-2xl outline-none font-bold" value={formData.sentToThirdParty} onChange={e => setFormData({ ...formData, sentToThirdParty: e.target.value })}><option value="Não">Não</option><option value="Sim">Sim</option></select></div>)}
                                         {formData.status === "Em rota de entrega" && (<div className="space-y-1 animate-in zoom-in-95"><label className="text-[10px] font-black text-blue-600 uppercase">Rastreamento</label><input placeholder="Código de Rastreio" className="w-full p-4 bg-blue-50 border border-blue-100 rounded-2xl outline-none font-bold" value={formData.trackingCode} onChange={e => setFormData({ ...formData, trackingCode: e.target.value })} /></div>)}
                                     </div>
@@ -1431,7 +2065,16 @@ export default function MainApp() {
                                 </div>
                             </div>
                             <div className="flex flex-col md:flex-row gap-4 pt-10 border-t">
-                                <button type="button" onClick={() => setIsModalOpen(false)} className="px-8 py-5 bg-slate-100 text-slate-600 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-200 transition-colors">Cancelar</button>
+                                <div className="flex gap-2">
+                                    <button type="button" onClick={() => setIsModalOpen(false)} className="px-6 py-5 bg-slate-100 text-slate-600 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-200 transition-colors">Cancelar</button>
+                                    {/* BOTÕES DE IMPRESSÃO - Apenas em modo edição (NOVO) */}
+                                    {editingOrder && (
+                                        <>
+                                            <button type="button" onClick={() => handleModalPrint('client')} className="p-5 bg-blue-50 text-blue-600 rounded-2xl hover:bg-blue-100 transition-colors border border-blue-100" title="Imprimir Relatório do Cliente"><Printer size={20} /></button>
+                                            <button type="button" onClick={() => handleModalPrint('internal')} className="p-5 bg-slate-50 text-slate-600 rounded-2xl hover:bg-slate-100 transition-colors border border-slate-200" title="Imprimir Relatório Interno"><ShieldAlert size={20} /></button>
+                                        </>
+                                    )}
+                                </div>
                                 <div className="flex-1 flex flex-col md:flex-row gap-4">
                                     <button type="button" onClick={handleSaveAndNewWithSameClient} disabled={isSaving} className="flex-1 bg-indigo-50 text-indigo-700 border-2 border-indigo-100 p-5 rounded-2xl font-black text-xs hover:bg-indigo-100 transition-all flex items-center justify-center gap-3">{isSaving ? <Loader2 className="animate-spin" size={18} /> : <RefreshCw size={18} />} NOVA OS COM MESMO CLIENTE</button>
                                     <button type="submit" disabled={isSaving} className="flex-1 bg-blue-600 text-white p-5 rounded-2xl font-black text-lg hover:bg-blue-700 shadow-xl shadow-blue-200 transition-all flex items-center justify-center gap-3">{isSaving ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />} SALVAR OS</button>
