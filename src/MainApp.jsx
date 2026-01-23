@@ -207,21 +207,22 @@ export default function MainApp() {
         client: '', cnpj: '', contactPerson: '', address: '', email: '',
         billingType: 'Avulso', maintenanceVisit: '',
         item: '', manufacturer: '', model: '', serial: '',
-        defect: '', // Mantido para compatibilidade
-        defectsList: [], // NOVO: lista de defeitos
+        defect: '',
+        defectsList: [],
         solutionType: 'Manual',
-        solution: '', // Mantido para compatibilidade
-        manualSolutionsList: [], // NOVO: lista de soluções manuais (sem custo)
-        solutionsList: [], // Lista existente de soluções com custo
+        solution: '',
+        manualSolutionsList: [],
+        solutionsList: [],
         notRepairableDetail: '',
         costThirdPartyName: '', costThirdPartyShipping: '', costClientShipping: '', costParts: '',
         chargedAmount: '', paymentCondition: 'À vista', installments: '',
         status: 'Recebido',
-        statusDate: new Date().toISOString().split('T')[0], // NOVO: data do status atual
-        statusHistory: [], // NOVO: histórico de status
+        statusDate: new Date().toISOString().split('T')[0],
+        statusHistory: [],
         trackingCode: '', sentToThirdParty: 'Não',
         thirdPartyInfo: '', thirdPartyTracking: '', thirdPartyDate: '',
-        osNumber: ''
+        osNumber: '',
+        deliveryDeadline: '' // ← ADICIONE ESTA LINHA
     });
 
     // --- ESTADO DO FORMULÁRIO DE CONTRATO ---
@@ -332,8 +333,8 @@ export default function MainApp() {
             newFieldErrors.defect = true;
         }
 
-        if (formData.solutionType === "Manual" && 
-            (!formData.manualSolutionsList || formData.manualSolutionsList.length === 0) && 
+        if (formData.solutionType === "Manual" &&
+            (!formData.manualSolutionsList || formData.manualSolutionsList.length === 0) &&
             !formData.solution.trim()) {
             errors.push("• Descrição da solução é obrigatória no modo manual");
             newFieldErrors.solution = true;
@@ -374,9 +375,9 @@ export default function MainApp() {
                 hasError = (!formData.defectsList || formData.defectsList.length === 0) && !formData.defect.trim();
                 break;
             case 'solution':
-                hasError = formData.solutionType === "Manual" && 
-                          (!formData.manualSolutionsList || formData.manualSolutionsList.length === 0) && 
-                          !formData.solution.trim();
+                hasError = formData.solutionType === "Manual" &&
+                    (!formData.manualSolutionsList || formData.manualSolutionsList.length === 0) &&
+                    !formData.solution.trim();
                 break;
             case 'notRepairableDetail':
                 hasError = formData.solutionType === "Não passível de conserto" && !formData.notRepairableDetail;
@@ -626,17 +627,17 @@ export default function MainApp() {
     // === FUNÇÕES PRINCIPAIS ===
     const generateNextOsNumber = (currentOrders) => {
         const currentYear = new Date().getFullYear();
-        
+
         // Filtrar OSs do ano atual
         const thisYearOrders = currentOrders.filter(order => {
             if (!order.osNumber) return false;
             const [number, year] = order.osNumber.split('/');
             return year && parseInt(year) === currentYear;
         });
-        
+
         // Encontrar o maior número do ano atual
         let highestNumber = 0;
-        
+
         thisYearOrders.forEach(order => {
             if (order.osNumber) {
                 const [numberStr] = order.osNumber.split('/');
@@ -646,10 +647,10 @@ export default function MainApp() {
                 }
             }
         });
-        
+
         // Calcular próximo número
         let nextNumber;
-        
+
         if (currentYear === 2026) {
             // Em 2026, começar do 32 se não houver números maiores
             nextNumber = Math.max(highestNumber + 1, 32);
@@ -657,7 +658,7 @@ export default function MainApp() {
             // Em outros anos, sequência normal
             nextNumber = highestNumber + 1;
         }
-        
+
         // Formatar: 4 dígitos + / + ano
         return `${String(nextNumber).padStart(4, '0')}/${currentYear}`;
     };
@@ -690,13 +691,14 @@ export default function MainApp() {
 
         if (order) {
             setEditingOrder(order);
-            setFormData({ 
-                ...order, 
+            setFormData({
+                ...order,
                 solutionsList: order.solutionsList || [],
                 defectsList: order.defectsList || (order.defect ? [order.defect] : []),
                 manualSolutionsList: order.manualSolutionsList || (order.solutionType === "Manual" && order.solution ? [order.solution] : []),
                 statusDate: order.statusDate || new Date().toISOString().split('T')[0],
-                statusHistory: order.statusHistory || []
+                statusHistory: order.statusHistory || [],
+                deliveryDeadline: order.deliveryDeadline || ''
             });
         } else {
             setEditingOrder(null);
@@ -715,7 +717,8 @@ export default function MainApp() {
                 statusHistory: [],
                 trackingCode: '', sentToThirdParty: 'Não',
                 thirdPartyInfo: '', thirdPartyTracking: '', thirdPartyDate: '',
-                osNumber: generateNextOsNumber(orders)
+                osNumber: generateNextOsNumber(orders),
+                deliveryDeadline: ''
             });
         }
         setIsModalOpen(true);
@@ -740,18 +743,18 @@ export default function MainApp() {
             showNotification("Descrição do defeito é obrigatória", 'error');
             return;
         }
-        setFormData(prev => ({ 
-            ...prev, 
-            defectsList: [...prev.defectsList, tempDefect.trim()] 
+        setFormData(prev => ({
+            ...prev,
+            defectsList: [...prev.defectsList, tempDefect.trim()]
         }));
         setTempDefect('');
         setShowDefectSuggestions(false);
     };
 
     const removeDefectItem = (index) => {
-        setFormData(prev => ({ 
-            ...prev, 
-            defectsList: prev.defectsList.filter((_, i) => i !== index) 
+        setFormData(prev => ({
+            ...prev,
+            defectsList: prev.defectsList.filter((_, i) => i !== index)
         }));
     };
 
@@ -760,18 +763,18 @@ export default function MainApp() {
             showNotification("Descrição da solução é obrigatória", 'error');
             return;
         }
-        setFormData(prev => ({ 
-            ...prev, 
-            manualSolutionsList: [...prev.manualSolutionsList, tempManualSolution.trim()] 
+        setFormData(prev => ({
+            ...prev,
+            manualSolutionsList: [...prev.manualSolutionsList, tempManualSolution.trim()]
         }));
         setTempManualSolution('');
         setShowSolutionSuggestions(false);
     };
 
     const removeManualSolutionItem = (index) => {
-        setFormData(prev => ({ 
-            ...prev, 
-            manualSolutionsList: prev.manualSolutionsList.filter((_, i) => i !== index) 
+        setFormData(prev => ({
+            ...prev,
+            manualSolutionsList: prev.manualSolutionsList.filter((_, i) => i !== index)
         }));
     };
 
@@ -803,14 +806,14 @@ export default function MainApp() {
     // --- PREPARAR DADOS PARA SALVAR (NOVO) ---
     const prepareDataForSave = () => {
         const { firestoreId, ...cleanData } = formData;
-        
+
         // Converter lista de defeitos para string única (para compatibilidade)
         if (cleanData.defectsList && cleanData.defectsList.length > 0) {
             cleanData.defect = cleanData.defectsList.join('\n');
         } else {
             if (!cleanData.defectsList) cleanData.defect = cleanData.defect || '';
         }
-        
+
         // Converter lista de soluções manuais para string única (para compatibilidade)
         if (cleanData.solutionType === "Manual") {
             if (cleanData.manualSolutionsList && cleanData.manualSolutionsList.length > 0) {
@@ -953,46 +956,161 @@ export default function MainApp() {
 
     // --- FUNÇÃO PARA IMPRIMIR DO MODAL (NOVA) ---
     const handleModalPrint = (printType) => {
-        const printData = prepareDataForSave();
-        const groups = {};
-        const key = `${printData.client}-${printData.cnpj || 'no-cnpj'}-${printData.billingType}-${printData.maintenanceVisit || 'no-visit'}`;
-        groups[key] = {
-            header: { 
-                client: printData.client, 
-                cnpj: printData.cnpj, 
-                contactPerson: printData.contactPerson, 
-                email: printData.email, 
-                address: printData.address, 
-                billingType: printData.billingType, 
-                maintenanceVisit: printData.maintenanceVisit 
-            },
-            items: [printData]
-        };
-
-        const printWindow = window.open('', '_blank');
-        const title = printType === 'internal' ? 'Relatório INTERNO - Alfa Tecnologia' : 'Relatório de Atendimento - Alfa Tecnologia';
-
-        const content = `<html><head><title>${title}</title><style>
-@media print{@page{margin:1cm}}body{font-family:'Segoe UI',sans-serif;color:#333;line-height:1.4;padding:0;margin:0}
-.report-page{page-break-after:always;padding:20px;position:relative;min-height:27cm;border-bottom:1px solid #eee}
-.header{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #1a56db;padding-bottom:15px;margin-bottom:20px}
-.logo-area{color:#1a56db}.logo-text{font-size:28px;font-weight:900;margin:0}
-.logo-sub{font-size:10px;letter-spacing:2px;text-transform:uppercase;margin:0}
-.report-info{text-align:right}.report-title{font-size:16px;font-weight:900;color:#1a56db;text-transform:uppercase}
-.internal-badge{background:#b91c1c;color:white;padding:2px 6px;font-size:10px;border-radius:4px;font-weight:bold;margin-bottom:4px;display:inline-block}
-.section{margin-bottom:25px}.section-title{background:#f8fafc;padding:6px 12px;font-size:11px;font-weight:900;text-transform:uppercase;border-left:5px solid #1a56db;margin-bottom:12px;color:#1e40af}
-.client-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:15px;font-size:12px;margin-bottom:20px}
-.items-table{width:100%;border-collapse:collapse;margin-top:10px}
-.items-table th{background:#f8fafc;text-align:left;padding:10px;font-size:10px;text-transform:uppercase;color:#64748b;border-bottom:2px solid #e2e8f0}
-.items-table td{padding:12px 10px;font-size:11px;border-bottom:1px solid #f1f5f9;vertical-align:top}
-.os-tag{font-weight:900;color:#1a56db;display:block;margin-bottom:4px}
-.cost-list-table{width:100%;margin-top:8px;border:1px solid #f1f5f9;font-size:10px;border-radius:4px}
-.cost-list-table th{background:#f8fafc;padding:4px 8px;font-size:9px}
-.cost-list-table td{padding:4px 8px;border-bottom:1px solid #f8fafc}
-.total-row{background:#f1f5f9;font-weight:bold}
-.internal-costs{margin-top:8px;padding:8px;background:#fff1f2;border:1px dashed #fda4af;border-radius:4px;font-size:10px;color:#9f1239}
-.signature-area{display:flex;justify-content:space-around;margin-top:80px}
-.signature-box{border-top:1px solid #333;width:250px;text-align:center;padding-top:8px;font-size:11px;font-weight:600}</style></head><body>${Object.values(groups).map(group => `
+    const printData = prepareDataForSave();
+    
+    // VERIFICAR STATUS PARA DEFINIR TÍTULO
+    const isBudgetStage = printData.status === 'Em orçamento' || 
+                         printData.status === 'Aguardando aprovação do orçamento';
+    
+    const title = printType === 'internal' ? 
+        'Relatório INTERNO - Alfa Tecnologia' : 
+        (isBudgetStage ? 'Proposta de orçamento - Alfa Tecnologia' : 'Relatório de atendimento - Alfa Tecnologia');
+    
+    // Preparar condições de pagamento
+    const paymentConditions = `${printData.paymentCondition}${printData.installments ? ` ${printData.installments}` : ''}`;
+    
+    // Construir o HTML de forma limpa
+    let htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>${title}</title>
+        <style>
+            @media print {
+                @page { margin: 1cm; }
+            }
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                color: #333;
+                line-height: 1.4;
+                padding: 0;
+                margin: 0;
+                font-size: 12px;
+            }
+            .report-page {
+                padding: 20px;
+                position: relative;
+                min-height: 27cm;
+            }
+            .header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                border-bottom: 2px solid #1a56db;
+                padding-bottom: 15px;
+                margin-bottom: 20px;
+            }
+            .logo-area {
+                color: #1a56db;
+            }
+            .logo-text {
+                font-size: 28px;
+                font-weight: 900;
+                margin: 0;
+            }
+            .logo-sub {
+                font-size: 10px;
+                letter-spacing: 2px;
+                text-transform: uppercase;
+                margin: 0;
+            }
+            .report-info {
+                text-align: right;
+            }
+            .report-title {
+                font-size: 16px;
+                font-weight: 900;
+                color: #1a56db;
+                text-transform: uppercase;
+            }
+            .internal-badge {
+                background: #b91c1c;
+                color: white;
+                padding: 2px 6px;
+                font-size: 10px;
+                border-radius: 4px;
+                font-weight: bold;
+                margin-bottom: 4px;
+                display: inline-block;
+            }
+            .section {
+                margin-bottom: 25px;
+            }
+            .section-title {
+                background: #f8fafc;
+                padding: 6px 12px;
+                font-size: 11px;
+                font-weight: 900;
+                text-transform: uppercase;
+                border-left: 5px solid #1a56db;
+                margin-bottom: 12px;
+                color: #1e40af;
+            }
+            .client-grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr 1fr;
+                gap: 15px;
+                font-size: 12px;
+                margin-bottom: 20px;
+            }
+            .items-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 10px;
+            }
+            .items-table th {
+                background: #f8fafc;
+                text-align: left;
+                padding: 10px;
+                font-size: 10px;
+                text-transform: uppercase;
+                color: #64748b;
+                border-bottom: 2px solid #e2e8f0;
+            }
+            .items-table td {
+                padding: 12px 10px;
+                font-size: 11px;
+                border-bottom: 1px solid #f1f5f9;
+                vertical-align: top;
+            }
+            .os-tag {
+                font-weight: 900;
+                color: #1a56db;
+                display: block;
+                margin-bottom: 4px;
+            }
+            .signature-area {
+                display: flex;
+                justify-content: space-around;
+                margin-top: 80px;
+            }
+            .signature-box {
+                border-top: 1px solid #333;
+                width: 250px;
+                text-align: center;
+                padding-top: 8px;
+                font-size: 11px;
+                font-weight: 600;
+            }
+            .footer-notes {
+                margin-top: 40px;
+                font-size: 10px;
+                color: #666;
+                border-top: 1px solid #ccc;
+                padding-top: 15px;
+                line-height: 1.4;
+            }
+            .footer-notes p {
+                margin: 5px 0;
+            }
+            .footer-title {
+                font-weight: bold;
+                color: #1a56db;
+                margin-bottom: 3px;
+            }
+        </style>
+    </head>
+    <body>
         <div class="report-page">
             <div class="header">
                 <div class="logo-area">
@@ -1001,23 +1119,25 @@ export default function MainApp() {
                 </div>
                 <div class="report-info">
                     ${printType === 'internal' ? '<div class="internal-badge">USO INTERNO - CONFIDENCIAL</div>' : ''}
-                    <div class="report-title">${printType === 'internal' ? 'Relatório Gerencial' : 'Relatório de Atendimento'}</div>
-                    <div style="font-size:10px;">Data: ${new Date().toLocaleDateString()}</div>
+                    <div class="report-title">${title}</div>
+                    <div style="font-size:10px;">Data: ${new Date().toLocaleDateString('pt-BR')}</div>
                 </div>
             </div>
+            
             <div class="section">
                 <div class="section-title">Dados do Cliente</div>
                 <div class="client-grid">
-                    <div><strong>Cliente:</strong><br>${group.header.client}</div>
-                    <div><strong>CNPJ:</strong><br>${group.header.cnpj || '---'}</div>
-                    <div><strong>Atendimento:</strong><br>${group.header.billingType} ${group.header.maintenanceVisit ? '- ' + group.header.maintenanceVisit : ''}</div>
-                    <div><strong>Contato:</strong><br>${group.header.contactPerson || '---'}</div>
-                    <div><strong>E-mail:</strong><br>${group.header.email || '---'}</div>
-                    <div><strong>Endereço:</strong><br>${group.header.address || '---'}</div>
+                    <div><strong>Cliente:</strong><br>${printData.client || '---'}</div>
+                    <div><strong>CNPJ:</strong><br>${printData.cnpj || '---'}</div>
+                    <div><strong>Atendimento:</strong><br>${printData.billingType} ${printData.maintenanceVisit ? '- ' + printData.maintenanceVisit : ''}</div>
+                    <div><strong>Contato:</strong><br>${printData.contactPerson || '---'}</div>
+                    <div><strong>E-mail:</strong><br>${printData.email || '---'}</div>
+                    <div><strong>Endereço:</strong><br>${printData.address || '---'}</div>
                 </div>
             </div>
+            
             <div class="section">
-                <div class="section-title">Lista de Equipamentos</div>
+                <div class="section-title">Equipamento</div>
                 <table class="items-table">
                     <thead>
                         <tr>
@@ -1027,66 +1147,96 @@ export default function MainApp() {
                         </tr>
                     </thead>
                     <tbody>
-                        ${group.items.map(item => {
-                            const list = item.solutionsList || [];
-                            const total = list.reduce((acc, curr) => acc + parseFloat(curr.cost.replace('.', '').replace(',', '.') || 0), 0);
-                            const internalBlock = printType === 'internal' ?
-                                `<div class="internal-costs">
-                                    <strong>CONTROLE FINANCEIRO:</strong><br/>
-                                    Cobrado: <b>R$ ${item.chargedAmount || '0,00'}</b> (${item.paymentCondition} ${item.installments ? item.installments : ''})<br/>
-                                    Custos Operacionais: Frete Terceiro R$ ${item.costThirdPartyShipping || '0,00'} | Peças R$ ${item.costParts || '0,00'} | Frete Cliente R$ ${item.costClientShipping || '0,00'}
-                                </div>`
-                                : '';
-
-                            return `<tr>
-                                <td>
-                                    <span class="os-tag">${item.osNumber}</span>
-                                    <small>${item.status}</small>
-                                </td>
-                                <td>
-                                    <strong>${item.item}</strong><br>
-                                    <div style="font-size:9px;color:#666;margin-bottom:2px;">${item.manufacturer || ''} ${item.model || ''}</div>
-                                    <small>NS: ${item.serial || 'N/D'}</small>
-                                </td>
-                                <td>
-                                    <div><strong>Defeito:</strong> ${item.defect || 'N/A'}</div>
-                                    <div><strong>Solução:</strong> ${item.solutionType === "Não passível de conserto" ? `NÃO PASSÍVEL (${item.notRepairableDetail})` : (item.solutionType === "Preenchimento manual, com custo" ? 'Detalhamento abaixo:' : (item.solution || 'Em análise...'))}</div>
-                                    ${item.solutionType === "Preenchimento manual, com custo" && list.length > 0 ?
-                                    `<table class="cost-list-table">
-                                        <thead>
+                        <tr>
+                            <td>
+                                <span class="os-tag">${printData.osNumber || '---'}</span>
+                                <small>${printData.status || '---'}</small>
+                            </td>
+                            <td>
+                                <strong>${printData.item || '---'}</strong><br>
+                                <div style="font-size:9px;color:#666;margin-bottom:2px;">
+                                    ${printData.manufacturer || ''} ${printData.model || ''}
+                                </div>
+                                <small>NS: ${printData.serial || 'N/D'}</small>
+                            </td>
+                            <td>
+                                <div><strong>Defeito:</strong> ${printData.defect || 'N/A'}</div>
+                                <div><strong>Solução:</strong> ${printData.solutionType === "Não passível de conserto" ? 
+                                    `NÃO PASSÍVEL (${printData.notRepairableDetail})` : 
+                                    (printData.solutionType === "Preenchimento manual, com custo" ? 
+                                        'Detalhamento na lista abaixo:' : 
+                                        (printData.solution || 'Em análise...'))}
+                                </div>`;
+    
+    // Adicionar lista de soluções se houver
+    if (printData.solutionType === "Preenchimento manual, com custo" && printData.solutionsList && printData.solutionsList.length > 0) {
+        const total = printData.solutionsList.reduce((acc, curr) => acc + parseFloat(curr.cost.replace('.', '').replace(',', '.') || 0), 0);
+        htmlContent += `
+                                <table style="width:100%; margin-top:8px; border:1px solid #f1f5f9; font-size:10px; border-radius:4px;">
+                                    <thead>
+                                        <tr>
+                                            <th style="text-align:left; background:#f8fafc; padding:4px 8px; font-size:9px;">Item / Serviço</th>
+                                            <th style="text-align:right; background:#f8fafc; padding:4px 8px; font-size:9px;">Valor</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${printData.solutionsList.map(s => `
                                             <tr>
-                                                <th style="text-align:left">Item / Serviço</th>
-                                                <th style="text-align:right">Valor</th>
+                                                <td style="padding:4px 8px; border-bottom:1px solid #f8fafc;">${s.text}</td>
+                                                <td style="text-align:right; padding:4px 8px; border-bottom:1px solid #f8fafc;">R$ ${s.cost}</td>
                                             </tr>
-                                        </thead>
-                                        <tbody>
-                                            ${list.map(s => `<tr><td>${s.text}</td><td style="text-align:right">R$ ${s.cost}</td></tr>`).join('')}
-                                            <tr class="total-row">
-                                                <td>TOTAL</td>
-                                                <td style="text-align:right">R$ ${total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                                            </tr>
-                                        </tbody>
-                                    </table>`
-                                    : ''
-                                }
-                                    ${internalBlock}
-                                </td>
-                            </tr>`;
-                        }).join('')}
+                                        `).join('')}
+                                        <tr style="background:#f1f5f9; font-weight:bold;">
+                                            <td style="padding:4px 8px;">TOTAL</td>
+                                            <td style="text-align:right; padding:4px 8px;">R$ ${total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>`;
+    }
+    
+    htmlContent += `
+                            </td>
+                        </tr>
                     </tbody>
                 </table>
-            </div>
+            </div>`;
+    
+    // Adicionar rodapé se for cliente e estiver em estágio de orçamento
+    if (printType === 'client' && isBudgetStage) {
+        htmlContent += `
+            <div class="footer-notes">
+                <div class="footer-title">INFORMAÇÕES IMPORTANTES:</div>
+                <p><strong>• Garantia:</strong> 3 meses. Não está coberto por garantia os danos causados por uso inadequado, queda ou choque mecânico, acondicionamento inadequado e/ou acondicionamento fora dos padrões recomendados pelo fabricante.</p>
+                <p><strong>• Prazo de entrega:</strong> ${printData.deliveryDeadline || 'A ser definido após aprovação do orçamento'}</p>
+                <p><strong>• Condições de pagamento:</strong> ${paymentConditions}</p>
+            </div>`;
+    }
+    
+    htmlContent += `
             <div class="signature-area">
                 <div class="signature-box">Técnico Responsável</div>
                 <div class="signature-box">Cliente / Recebedor</div>
             </div>
-        </div>`
-        ).join('')
-        }<script>window.onload=function(){window.print();window.close()}</script></body></html>`;
-
-        printWindow.document.write(content);
-        printWindow.document.close();
-    };
+        </div>
+    </body>
+    </html>`;
+    
+    // Abrir nova janela e escrever conteúdo
+    const printWindow = window.open('', 'printWindow', 'width=800,height=600,scrollbars=yes');
+    if (!printWindow) {
+        showNotification('Permita pop-ups para imprimir o documento', 'error');
+        return;
+    }
+    
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+    
+    // Focar e imprimir após carregar
+    setTimeout(() => {
+        printWindow.focus();
+        printWindow.print();
+    }, 500);
+};
 
     const handleNewContract = () => {
         setContractForm({
@@ -1171,44 +1321,195 @@ export default function MainApp() {
     };
 
     const handlePrint = (printType) => {
-        const selectedData = orders.filter(o => selectedOrders.includes(o.firestoreId));
-        if (selectedData.length === 0) return;
-        const groups = {};
-        selectedData.forEach(os => {
-            const key = `${os.client}-${os.cnpj || 'no-cnpj'}-${os.billingType}-${os.maintenanceVisit || 'no-visit'}`;
-            if (!groups[key]) {
-                groups[key] = {
-                    header: { client: os.client, cnpj: os.cnpj, contactPerson: os.contactPerson, email: os.email, address: os.address, billingType: os.billingType, maintenanceVisit: os.maintenanceVisit },
-                    items: []
-                };
+    const selectedData = orders.filter(o => selectedOrders.includes(o.firestoreId));
+    if (selectedData.length === 0) {
+        showNotification('Selecione pelo menos uma OS para imprimir', 'error');
+        return;
+    }
+    
+    // Agrupar por cliente
+    const groups = {};
+    selectedData.forEach(os => {
+        const key = `${os.client}-${os.cnpj || 'no-cnpj'}-${os.billingType}-${os.maintenanceVisit || 'no-visit'}`;
+        if (!groups[key]) {
+            groups[key] = {
+                header: { 
+                    client: os.client, 
+                    cnpj: os.cnpj, 
+                    contactPerson: os.contactPerson, 
+                    email: os.email, 
+                    address: os.address, 
+                    billingType: os.billingType, 
+                    maintenanceVisit: os.maintenanceVisit 
+                },
+                items: []
+            };
+        }
+        groups[key].items.push(os);
+    });
+
+    // VERIFICAR SE ALGUMA OS ESTÁ EM ESTÁGIO DE ORÇAMENTO
+    const hasBudgetStage = selectedData.some(os => 
+        os.status === 'Em orçamento' || os.status === 'Aguardando aprovação do orçamento'
+    );
+    
+    const title = printType === 'internal' ? 
+        'Relatório INTERNO - Alfa Tecnologia' : 
+        (hasBudgetStage ? 'Proposta de orçamento - Alfa Tecnologia' : 'Relatório de atendimento - Alfa Tecnologia');
+    
+    // Construir HTML
+    let htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>${title}</title>
+        <style>
+            @media print {
+                @page { margin: 1cm; }
             }
-            groups[key].items.push(os);
-        });
-
-        const printWindow = window.open('', '_blank');
-        const title = printType === 'internal' ? 'Relatório INTERNO - Alfa Tecnologia' : 'Relatório de Atendimento - Alfa Tecnologia';
-
-        const content = `<html><head><title>${title}</title><style>
-@media print{@page{margin:1cm}}body{font-family:'Segoe UI',sans-serif;color:#333;line-height:1.4;padding:0;margin:0}
-.report-page{page-break-after:always;padding:20px;position:relative;min-height:27cm;border-bottom:1px solid #eee}
-.header{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #1a56db;padding-bottom:15px;margin-bottom:20px}
-.logo-area{color:#1a56db}.logo-text{font-size:28px;font-weight:900;margin:0}
-.logo-sub{font-size:10px;letter-spacing:2px;text-transform:uppercase;margin:0}
-.report-info{text-align:right}.report-title{font-size:16px;font-weight:900;color:#1a56db;text-transform:uppercase}
-.internal-badge{background:#b91c1c;color:white;padding:2px 6px;font-size:10px;border-radius:4px;font-weight:bold;margin-bottom:4px;display:inline-block}
-.section{margin-bottom:25px}.section-title{background:#f8fafc;padding:6px 12px;font-size:11px;font-weight:900;text-transform:uppercase;border-left:5px solid #1a56db;margin-bottom:12px;color:#1e40af}
-.client-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:15px;font-size:12px;margin-bottom:20px}
-.items-table{width:100%;border-collapse:collapse;margin-top:10px}
-.items-table th{background:#f8fafc;text-align:left;padding:10px;font-size:10px;text-transform:uppercase;color:#64748b;border-bottom:2px solid #e2e8f0}
-.items-table td{padding:12px 10px;font-size:11px;border-bottom:1px solid #f1f5f9;vertical-align:top}
-.os-tag{font-weight:900;color:#1a56db;display:block;margin-bottom:4px}
-.cost-list-table{width:100%;margin-top:8px;border:1px solid #f1f5f9;font-size:10px;border-radius:4px}
-.cost-list-table th{background:#f8fafc;padding:4px 8px;font-size:9px}
-.cost-list-table td{padding:4px 8px;border-bottom:1px solid #f8fafc}
-.total-row{background:#f1f5f9;font-weight:bold}
-.internal-costs{margin-top:8px;padding:8px;background:#fff1f2;border:1px dashed #fda4af;border-radius:4px;font-size:10px;color:#9f1239}
-.signature-area{display:flex;justify-content:space-around;margin-top:80px}
-.signature-box{border-top:1px solid #333;width:250px;text-align:center;padding-top:8px;font-size:11px;font-weight:600}</style></head><body>${Object.values(groups).map(group => `
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                color: #333;
+                line-height: 1.4;
+                padding: 0;
+                margin: 0;
+                font-size: 12px;
+            }
+            .report-page {
+                padding: 20px;
+                position: relative;
+                min-height: 27cm;
+                page-break-after: always;
+            }
+            .header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                border-bottom: 2px solid #1a56db;
+                padding-bottom: 15px;
+                margin-bottom: 20px;
+            }
+            .logo-area {
+                color: #1a56db;
+            }
+            .logo-text {
+                font-size: 28px;
+                font-weight: 900;
+                margin: 0;
+            }
+            .logo-sub {
+                font-size: 10px;
+                letter-spacing: 2px;
+                text-transform: uppercase;
+                margin: 0;
+            }
+            .report-info {
+                text-align: right;
+            }
+            .report-title {
+                font-size: 16px;
+                font-weight: 900;
+                color: #1a56db;
+                text-transform: uppercase;
+            }
+            .internal-badge {
+                background: #b91c1c;
+                color: white;
+                padding: 2px 6px;
+                font-size: 10px;
+                border-radius: 4px;
+                font-weight: bold;
+                margin-bottom: 4px;
+                display: inline-block;
+            }
+            .section {
+                margin-bottom: 25px;
+            }
+            .section-title {
+                background: #f8fafc;
+                padding: 6px 12px;
+                font-size: 11px;
+                font-weight: 900;
+                text-transform: uppercase;
+                border-left: 5px solid #1a56db;
+                margin-bottom: 12px;
+                color: #1e40af;
+            }
+            .client-grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr 1fr;
+                gap: 15px;
+                font-size: 12px;
+                margin-bottom: 20px;
+            }
+            .items-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 10px;
+            }
+            .items-table th {
+                background: #f8fafc;
+                text-align: left;
+                padding: 10px;
+                font-size: 10px;
+                text-transform: uppercase;
+                color: #64748b;
+                border-bottom: 2px solid #e2e8f0;
+            }
+            .items-table td {
+                padding: 12px 10px;
+                font-size: 11px;
+                border-bottom: 1px solid #f1f5f9;
+                vertical-align: top;
+            }
+            .os-tag {
+                font-weight: 900;
+                color: #1a56db;
+                display: block;
+                margin-bottom: 4px;
+            }
+            .signature-area {
+                display: flex;
+                justify-content: space-around;
+                margin-top: 80px;
+            }
+            .signature-box {
+                border-top: 1px solid #333;
+                width: 250px;
+                text-align: center;
+                padding-top: 8px;
+                font-size: 11px;
+                font-weight: 600;
+            }
+            .footer-notes {
+                margin-top: 40px;
+                font-size: 10px;
+                color: #666;
+                border-top: 1px solid #ccc;
+                padding-top: 15px;
+                line-height: 1.4;
+            }
+            .footer-notes p {
+                margin: 5px 0;
+            }
+            .footer-title {
+                font-weight: bold;
+                color: #1a56db;
+                margin-bottom: 3px;
+            }
+        </style>
+    </head>
+    <body>`;
+    
+    // Para cada grupo (cliente)
+    Object.values(groups).forEach((group, groupIndex) => {
+        // Verificar se há OSs em orçamento neste grupo
+        const budgetItems = group.items.filter(item => 
+            item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento'
+        );
+        const hasBudgetInGroup = budgetItems.length > 0;
+        
+        htmlContent += `
         <div class="report-page">
             <div class="header">
                 <div class="logo-area">
@@ -1217,14 +1518,15 @@ export default function MainApp() {
                 </div>
                 <div class="report-info">
                     ${printType === 'internal' ? '<div class="internal-badge">USO INTERNO - CONFIDENCIAL</div>' : ''}
-                    <div class="report-title">${printType === 'internal' ? 'Relatório Gerencial' : 'Relatório de Atendimento'}</div>
-                    <div style="font-size:10px;">Data: ${new Date().toLocaleDateString()}</div>
+                    <div class="report-title">${title}</div>
+                    <div style="font-size:10px;">Data: ${new Date().toLocaleDateString('pt-BR')}</div>
                 </div>
             </div>
+            
             <div class="section">
                 <div class="section-title">Dados do Cliente</div>
                 <div class="client-grid">
-                    <div><strong>Cliente:</strong><br>${group.header.client}</div>
+                    <div><strong>Cliente:</strong><br>${group.header.client || '---'}</div>
                     <div><strong>CNPJ:</strong><br>${group.header.cnpj || '---'}</div>
                     <div><strong>Atendimento:</strong><br>${group.header.billingType} ${group.header.maintenanceVisit ? '- ' + group.header.maintenanceVisit : ''}</div>
                     <div><strong>Contato:</strong><br>${group.header.contactPerson || '---'}</div>
@@ -1232,6 +1534,7 @@ export default function MainApp() {
                     <div><strong>Endereço:</strong><br>${group.header.address || '---'}</div>
                 </div>
             </div>
+            
             <div class="section">
                 <div class="section-title">Lista de Equipamentos</div>
                 <table class="items-table">
@@ -1242,67 +1545,112 @@ export default function MainApp() {
                             <th width="55%">Laudo Técnico</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        ${group.items.map(item => {
-                            const list = item.solutionsList || [];
-                            const total = list.reduce((acc, curr) => acc + parseFloat(curr.cost.replace('.', '').replace(',', '.') || 0), 0);
-                            const internalBlock = printType === 'internal' ?
-                                `<div class="internal-costs">
-                                    <strong>CONTROLE FINANCEIRO:</strong><br/>
-                                    Cobrado: <b>R$ ${item.chargedAmount || '0,00'}</b> (${item.paymentCondition} ${item.installments ? item.installments : ''})<br/>
-                                    Custos Operacionais: Frete Terceiro R$ ${item.costThirdPartyShipping || '0,00'} | Peças R$ ${item.costParts || '0,00'} | Frete Cliente R$ ${item.costClientShipping || '0,00'}
-                                </div>`
-                                : '';
-
-                            return `<tr>
-                                <td>
-                                    <span class="os-tag">${item.osNumber}</span>
-                                    <small>${item.status}</small>
-                                </td>
-                                <td>
-                                    <strong>${item.item}</strong><br>
-                                    <div style="font-size:9px;color:#666;margin-bottom:2px;">${item.manufacturer || ''} ${item.model || ''}</div>
-                                    <small>NS: ${item.serial || 'N/D'}</small>
-                                </td>
-                                <td>
-                                    <div><strong>Defeito:</strong> ${item.defect || 'N/A'}</div>
-                                    <div><strong>Solução:</strong> ${item.solutionType === "Não passível de conserto" ? `NÃO PASSÍVEL (${item.notRepairableDetail})` : (item.solutionType === "Preenchimento manual, com custo" ? 'Detalhamento abaixo:' : (item.solution || 'Em análise...'))}</div>
-                                    ${item.solutionType === "Preenchimento manual, com custo" && list.length > 0 ?
-                                    `<table class="cost-list-table">
-                                        <thead>
+                    <tbody>`;
+        
+        // Para cada item do grupo
+        group.items.forEach(item => {
+            const list = item.solutionsList || [];
+            const total = list.reduce((acc, curr) => acc + parseFloat(curr.cost.replace('.', '').replace(',', '.') || 0), 0);
+            
+            htmlContent += `
+                        <tr>
+                            <td>
+                                <span class="os-tag">${item.osNumber || '---'}</span>
+                                <small>${item.status || '---'}</small>
+                            </td>
+                            <td>
+                                <strong>${item.item || '---'}</strong><br>
+                                <div style="font-size:9px;color:#666;margin-bottom:2px;">
+                                    ${item.manufacturer || ''} ${item.model || ''}
+                                </div>
+                                <small>NS: ${item.serial || 'N/D'}</small>
+                            </td>
+                            <td>
+                                <div><strong>Defeito:</strong> ${item.defect || 'N/A'}</div>
+                                <div><strong>Solução:</strong> ${item.solutionType === "Não passível de conserto" ? 
+                                    `NÃO PASSÍVEL (${item.notRepairableDetail})` : 
+                                    (item.solutionType === "Preenchimento manual, com custo" ? 
+                                        'Detalhamento na lista abaixo:' : 
+                                        (item.solution || 'Em análise...'))}
+                                </div>`;
+            
+            // Adicionar lista de soluções se houver
+            if (item.solutionType === "Preenchimento manual, com custo" && list.length > 0) {
+                htmlContent += `
+                                <table style="width:100%; margin-top:8px; border:1px solid #f1f5f9; font-size:10px; border-radius:4px;">
+                                    <thead>
+                                        <tr>
+                                            <th style="text-align:left; background:#f8fafc; padding:4px 8px; font-size:9px;">Item / Serviço</th>
+                                            <th style="text-align:right; background:#f8fafc; padding:4px 8px; font-size:9px;">Valor</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${list.map(s => `
                                             <tr>
-                                                <th style="text-align:left">Item / Serviço</th>
-                                                <th style="text-align:right">Valor</th>
+                                                <td style="padding:4px 8px; border-bottom:1px solid #f8fafc;">${s.text}</td>
+                                                <td style="text-align:right; padding:4px 8px; border-bottom:1px solid #f8fafc;">R$ ${s.cost}</td>
                                             </tr>
-                                        </thead>
-                                        <tbody>
-                                            ${list.map(s => `<tr><td>${s.text}</td><td style="text-align:right">R$ ${s.cost}</td></tr>`).join('')}
-                                            <tr class="total-row">
-                                                <td>TOTAL</td>
-                                                <td style="text-align:right">R$ ${total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                                            </tr>
-                                        </tbody>
-                                    </table>`
-                                    : ''
-                                }
-                                    ${internalBlock}
-                                </td>
-                            </tr>`;
-                        }).join('')}
+                                        `).join('')}
+                                        <tr style="background:#f1f5f9; font-weight:bold;">
+                                            <td style="padding:4px 8px;">TOTAL</td>
+                                            <td style="text-align:right; padding:4px 8px;">R$ ${total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>`;
+            }
+            
+            htmlContent += `
+                            </td>
+                        </tr>`;
+        });
+        
+        htmlContent += `
                     </tbody>
                 </table>
-            </div>
+            </div>`;
+        
+        // Adicionar rodapé se for cliente e houver OSs em orçamento neste grupo
+        if (printType === 'client' && hasBudgetInGroup) {
+            // Pegar dados da primeira OS em orçamento
+            const budgetItem = budgetItems[0];
+            const deliveryDeadline = budgetItem.deliveryDeadline || 'A ser definido após aprovação do orçamento';
+            const paymentConditions = `${budgetItem.paymentCondition || 'À vista'}${budgetItem.installments ? ` ${budgetItem.installments}` : ''}`;
+            
+            htmlContent += `
+            <div class="footer-notes">
+                <div class="footer-title">INFORMAÇÕES IMPORTANTES:</div>
+                <p><strong>• Garantia:</strong> 3 meses. Não está coberto por garantia os danos causados por uso inadequado, queda ou choque mecânico, acondicionamento inadequado e/ou acondicionamento fora dos padrões recomendados pelo fabricante.</p>
+                <p><strong>• Prazo de entrega:</strong> ${deliveryDeadline}</p>
+                <p><strong>• Condições de pagamento:</strong> ${paymentConditions}</p>
+            </div>`;
+        }
+        
+        htmlContent += `
             <div class="signature-area">
                 <div class="signature-box">Técnico Responsável</div>
                 <div class="signature-box">Cliente / Recebedor</div>
             </div>
-        </div>`
-        ).join('')
-        }<script>window.onload=function(){window.print();window.close()}</script></body></html>`;
-
-        printWindow.document.write(content);
-        printWindow.document.close();
-    };
+        </div>`;
+    });
+    
+    htmlContent += `</body></html>`;
+    
+    // Abrir nova janela e escrever conteúdo
+    const printWindow = window.open('', 'printWindow', 'width=800,height=600,scrollbars=yes');
+    if (!printWindow) {
+        showNotification('Permita pop-ups para imprimir o documento', 'error');
+        return;
+    }
+    
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+    
+    // Focar e imprimir após carregar
+    setTimeout(() => {
+        printWindow.focus();
+        printWindow.print();
+    }, 500);
+};
 
     // === RENDERIZAÇÃO ===
     if (authLoading) {
@@ -1444,7 +1792,7 @@ export default function MainApp() {
                                 {sortOrder === 'desc' ? <ArrowDownWideNarrow size={24} /> : <ArrowUpNarrowWide size={24} />}
                             </button>
                         </div>
-                        
+
                         <div className="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden overflow-x-auto relative z-0">
                             <table className="w-full text-left min-w-[800px]">
                                 <thead className="bg-slate-50/50 border-b text-[10px] font-black uppercase text-slate-400 tracking-widest">
@@ -1971,7 +2319,7 @@ export default function MainApp() {
                                                 <div className="space-y-2"><label className="text-[10px] font-bold text-purple-600 uppercase">Soma Itens Laudo</label><div className="w-full p-4 bg-purple-50/50 border border-purple-100 rounded-2xl font-black text-purple-700 cursor-not-allowed text-sm">R$ {formatMoney(solutionsTotal)}</div></div>
                                                 <div className="space-y-2"><label className="text-[10px] font-bold text-green-600 uppercase">Valor Cobrado (R$)</label><input placeholder="0,00" className="w-full p-4 bg-green-50 border border-green-100 rounded-2xl outline-none font-black text-green-700 text-sm" value={formData.chargedAmount} onChange={e => setFormData({ ...formData, chargedAmount: e.target.value })} /></div>
                                                 <div className="space-y-2"><label className="text-[10px] font-bold text-slate-500 uppercase">Condição Pagamento</label><select className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none font-bold text-sm" value={formData.paymentCondition} onChange={e => setFormData({ ...formData, paymentCondition: e.target.value, installments: '' })}><option value="À vista">À vista</option><option value="Boleto">Boleto</option><option value="Cartão">Cartão</option></select></div>
-                                                {(formData.paymentCondition === 'Boleto' || formData.paymentCondition === 'Cartão') && (<div className="space-y-2 animate-in fade-in"><label className="text-[10px] font-bold text-slate-500 uppercase">Parcelas</label><select className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none font-bold text-sm" value={formData.installments} onChange={e => setFormData({ ...formData, installments: e.target.value })}><option value="">Selecione...</option><option value="1x">1x</option><option value="2x">2x</option><option value="3x">3x</option><option value="4x">4x</option></select></div>)}
+                                                {(formData.paymentCondition === 'Boleto' || formData.paymentCondition === 'Cartão') && (<div className="space-y-2 animate-in fade-in"><label className="text-[10px] font-bold text-slate-500 uppercase">Parcelas</label><select className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none font-bold text-sm" value={formData.installments} onChange={e => setFormData({ ...formData, installments: e.target.value })}><option value="">Selecione...</option><option value="1x (30 Dias)">1x (30 Dias)</option><option value="2x (30/60 Dias)">2x (30/60 Dias)</option><option value="3x (30/60/90 Dias)">3x (30/60/90 Dias)</option><option value="4x (30/60/90/120 Dias)">4x (30/60/90/120 Dias)</option></select></div>)}
                                             </div>
                                             <div className={`p-6 rounded-2xl flex flex-col md:flex-row justify-between items-center gap-4 transition-colors ${profit >= 0 ? 'bg-green-100/50 border border-green-200' : 'bg-red-100/50 border border-red-200'}`}>
                                                 <div className="flex items-center gap-3"><div className={`p-3 rounded-full ${profit >= 0 ? 'bg-green-200 text-green-700' : 'bg-red-200 text-red-700'}`}><Calculator size={24} /></div><div><div className="text-[10px] font-black uppercase text-slate-500">Resultado Operacional</div><div className={`text-2xl font-black ${profit >= 0 ? 'text-green-700' : 'text-red-700'}`}>{profit >= 0 ? 'LUCRO' : 'PREJUÍZO'}</div></div></div>
@@ -1999,6 +2347,20 @@ export default function MainApp() {
                                                     const isCompleted = index <= currentStatusIndex;
                                                     const isCurrent = index === currentStatusIndex;
                                                     const stepDate = getStatusTimelineDate(step.value);
+
+                                                    {
+                                                        (formData.status === "Em orçamento" || formData.status === "Aguardando aprovação do orçamento") ? (
+                                                            <div className="space-y-1">
+                                                                <label className="text-[10px] font-black text-slate-400 uppercase">Prazo de Entrega</label>
+                                                                <input
+                                                                    placeholder="Ex: 15 dias úteis"
+                                                                    className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none font-bold"
+                                                                    value={formData.deliveryDeadline}
+                                                                    onChange={e => setFormData({ ...formData, deliveryDeadline: e.target.value })}
+                                                                />
+                                                            </div>
+                                                        ) : null
+                                                    }
 
                                                     return (
                                                         <div
