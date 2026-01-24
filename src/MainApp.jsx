@@ -503,6 +503,7 @@ export default function MainApp() {
 
     const [selectedMonth, setSelectedMonth] = useState('');
     const [selectedYear, setSelectedYear] = useState('');
+    const [selectedDay, setSelectedDay] = useState(''); // NOVO: Estado para filtro por dia
 
     // Estados
     const [currentPage, setCurrentPage] = useState('os');
@@ -551,6 +552,7 @@ export default function MainApp() {
         billingType: 'Avulso', maintenanceVisit: '',
         item: '', manufacturer: '', model: '', serial: '',
         equipmentObservation: '',
+        quantity: '1', // NOVO CAMPO ADICIONADO
         defect: '',
         defectsList: [],
         solutionType: 'Preenchimento manual',
@@ -1199,6 +1201,7 @@ export default function MainApp() {
             setFormData({
                 ...order,
                 equipmentObservation: order.equipmentObservation || '',
+                quantity: order.quantity || '1', // NOVO: Carregar quantidade existente
                 solutionsList: order.solutionsList || [],
                 defectsList: order.defectsList || (order.defect ? [order.defect] : []),
                 manualSolutionsList: order.manualSolutionsList || [],
@@ -1216,6 +1219,7 @@ export default function MainApp() {
                 client: '', cnpj: '', contactPerson: '', address: '', email: '',
                 billingType: 'Avulso', maintenanceVisit: '', item: '', manufacturer: '', model: '', serial: '',
                 equipmentObservation: '',
+                quantity: '1', // NOVO: Valor padrão
                 defect: '', defectsList: [],
                 solutionType: 'Preenchimento manual',
                 solution: '', manualSolutionsList: [],
@@ -1341,6 +1345,11 @@ export default function MainApp() {
     const prepareDataForSave = () => {
         const { firestoreId, ...cleanData } = formData;
 
+        // Garantir que a quantidade seja um número válido
+        if (!cleanData.quantity || isNaN(parseInt(cleanData.quantity))) {
+            cleanData.quantity = '1';
+        }
+
         if (cleanData.discount5Days && cleanData.chargedAmount) {
             const charged = parseCurrency(cleanData.chargedAmount);
             cleanData.discountAmount = charged * 0.05;
@@ -1453,6 +1462,8 @@ export default function MainApp() {
                 manufacturer: '',
                 model: '',
                 serial: '',
+                equipmentObservation: '',
+                quantity: '1', // NOVO: Resetar quantidade para 1
                 defect: '',
                 defectsList: [],
                 solutionType: 'Preenchimento manual',
@@ -1477,7 +1488,6 @@ export default function MainApp() {
                 thirdPartyTracking: '',
                 thirdPartyDate: '',
                 deliveryDeadline: '',
-                equipmentObservation: '', // ← ADICIONAR ESTA LINHA PARA LIMPAR O CAMPO
                 discount5Days: false,
                 discountAmount: 0,
                 finalChargedAmount: 0
@@ -1838,6 +1848,9 @@ export default function MainApp() {
                     <div class="equipment-name">${item.item || '---'}</div>
                     <div class="equipment-details">${item.manufacturer || ''} ${item.model || ''}</div>
                     <div class="serial">NS: ${item.serial || 'N/D'}</div>
+                    ${item.quantity && parseInt(item.quantity) > 1 ? 
+                        `<div class="quantity" style="font-size:9px;color:#666;margin-top:2px;"><strong>Quantidade:</strong> ${item.quantity}</div>` : 
+                        ''}
                 </td>
                 <td>
                     <div><strong>Defeito:</strong> ${(item.defect || 'N/A').replace(/\n/g, '<br>')}</div>
@@ -2181,6 +2194,9 @@ export default function MainApp() {
                                 ${printData.manufacturer || ''} ${printData.model || ''}
                             </div>
                             <small>NS: ${printData.serial || 'N/D'}</small>
+                            ${printData.quantity && parseInt(printData.quantity) > 1 ? 
+                                `<div style="font-size:9px;color:#666;margin-top:2px;"><strong>Quantidade:</strong> ${printData.quantity}</div>` : 
+                                ''}
                         </td>
                         <td>
                             <div><strong>Defeito:</strong> ${printData.defect || 'N/A'}</div>
@@ -2696,6 +2712,9 @@ export default function MainApp() {
                                     ${item.manufacturer || ''} ${item.model || ''}
                                 </div>
                                 <small>NS: ${item.serial || 'N/D'}</small>
+                                ${item.quantity && parseInt(item.quantity) > 1 ? 
+                                    `<div style="font-size:9px;color:#666;margin-top:2px;"><strong>Quantidade:</strong> ${item.quantity}</div>` : 
+                                    ''}
                             </td>
                             <td>
                                 <div><strong>Defeito:</strong> ${item.defect || 'N/A'}</div>
@@ -3113,6 +3132,11 @@ export default function MainApp() {
                                                         </div>
                                                     )}
                                                     <div className="text-[10px] text-slate-400 font-mono">NS: {o.serial || 'N/D'}</div>
+                                                    {o.quantity && parseInt(o.quantity) > 1 && (
+                                                        <div className="text-[10px] text-blue-600 font-bold mt-0.5">
+                                                            Quantidade: {o.quantity}
+                                                        </div>
+                                                    )}
                                                 </td>
                                                 <td className="px-8 py-6">
                                                     <div className="text-xs font-bold text-slate-500 uppercase tracking-tighter">{o.billingType}</div>
@@ -3157,12 +3181,25 @@ export default function MainApp() {
                             {dashboardData.isFiltered && (<button onClick={() => setSelectedOrders([])} className="text-sm font-bold text-blue-600 hover:underline">Limpar filtro e ver geral</button>)}
                         </div>
 
-                        {/* Novo Filtro por Mês/Ano */}
+                        {/* NOVO FILTRO POR DIA, MÊS E ANO */}
                         <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
                             <div className="text-sm font-bold text-slate-700 flex items-center gap-2">
-                                <Filter size={16} /> Filtrar por Período:
+                                <Filter size={16} /> Filtrar por Data:
                             </div>
                             <div className="flex flex-wrap gap-3">
+                                <div className="flex items-center gap-2">
+                                    <label className="text-xs font-bold text-slate-500">Dia:</label>
+                                    <select
+                                        className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-medium focus:ring-2 focus:ring-blue-500/20 outline-none"
+                                        value={selectedDay}
+                                        onChange={(e) => setSelectedDay(e.target.value)}
+                                    >
+                                        <option value="">Todos</option>
+                                        {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                                            <option key={day} value={day}>{day}</option>
+                                        ))}
+                                    </select>
+                                </div>
                                 <div className="flex items-center gap-2">
                                     <label className="text-xs font-bold text-slate-500">Mês:</label>
                                     <select
@@ -3192,9 +3229,9 @@ export default function MainApp() {
                                         ))}
                                     </select>
                                 </div>
-                                {(selectedMonth || selectedYear) && (
+                                {(selectedDay || selectedMonth || selectedYear) && (
                                     <button
-                                        onClick={() => { setSelectedMonth(''); setSelectedYear(''); }}
+                                        onClick={() => { setSelectedDay(''); setSelectedMonth(''); setSelectedYear(''); }}
                                         className="text-xs font-bold text-red-600 hover:text-red-700 flex items-center gap-1"
                                     >
                                         <X size={12} /> Limpar filtro
@@ -3273,15 +3310,30 @@ export default function MainApp() {
                                             const searchMatch = o.client?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                                                 o.osNumber?.includes(searchTerm);
 
-                                            // Filtro por mês/ano
+                                            // Filtro por dia, mês e ano
                                             let dateMatch = true;
-                                            if (selectedMonth || selectedYear) {
+                                            if (selectedDay || selectedMonth || selectedYear) {
                                                 const statusDate = o.statusDate ? new Date(o.statusDate) : new Date();
+                                                const day = statusDate.getDate();
                                                 const month = statusDate.getMonth() + 1;
                                                 const year = statusDate.getFullYear();
 
-                                                if (selectedMonth && selectedYear) {
-                                                    dateMatch = month === parseInt(selectedMonth) && year === parseInt(selectedYear);
+                                                // Lógica de filtragem combinada
+                                                if (selectedDay && selectedMonth && selectedYear) {
+                                                    dateMatch = day === parseInt(selectedDay) &&
+                                                        month === parseInt(selectedMonth) &&
+                                                        year === parseInt(selectedYear);
+                                                } else if (selectedDay && selectedMonth) {
+                                                    dateMatch = day === parseInt(selectedDay) &&
+                                                        month === parseInt(selectedMonth);
+                                                } else if (selectedDay && selectedYear) {
+                                                    dateMatch = day === parseInt(selectedDay) &&
+                                                        year === parseInt(selectedYear);
+                                                } else if (selectedDay) {
+                                                    dateMatch = day === parseInt(selectedDay);
+                                                } else if (selectedMonth && selectedYear) {
+                                                    dateMatch = month === parseInt(selectedMonth) &&
+                                                        year === parseInt(selectedYear);
                                                 } else if (selectedMonth) {
                                                     dateMatch = month === parseInt(selectedMonth);
                                                 } else if (selectedYear) {
@@ -3723,15 +3775,31 @@ export default function MainApp() {
                                             )}
                                         </div>
                                     </div>
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-bold text-slate-500 uppercase">Observações (opcional)</label>
-                                        <textarea
-                                            placeholder="Observações adicionais sobre o equipamento, como estado de conservação, acessórios, etc..."
-                                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold resize-none"
-                                            value={formData.equipmentObservation || ''}
-                                            onChange={e => setFormData({ ...formData, equipmentObservation: e.target.value })}
-                                            rows={3}
-                                        />
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold text-slate-500 uppercase">Observações (opcional)</label>
+                                            <textarea
+                                                placeholder="Observações adicionais sobre o equipamento, como estado de conservação, acessórios, etc..."
+                                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold resize-none"
+                                                value={formData.equipmentObservation || ''}
+                                                onChange={e => setFormData({ ...formData, equipmentObservation: e.target.value })}
+                                                rows={3}
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold text-slate-500 uppercase">Quantidade</label>
+                                            <div className="flex items-center">
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    placeholder="1"
+                                                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-center"
+                                                    value={formData.quantity || '1'}
+                                                    onChange={e => setFormData({ ...formData, quantity: e.target.value })}
+                                                />
+                                            </div>
+                                            <p className="text-[10px] text-slate-400 mt-1 ml-2">Quantidade do item/equipamento</p>
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="space-y-6">
