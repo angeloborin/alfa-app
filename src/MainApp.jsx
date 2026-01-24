@@ -21,6 +21,7 @@ import { auth, db } from "./firebase/firebase";
 import { useAuth } from "./auth/AuthContext";
 import UserManagement from './components/UserManagement';
 import Login from './components/Login';
+import logo from './assets/logo.png';
 
 import { Document, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, Packer } from 'docx';
 import { saveAs } from 'file-saver';
@@ -2846,7 +2847,7 @@ export default function MainApp() {
                     {!isSidebarOpen && (
                         <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-full shadow-lg flex items-center justify-center w-12 h-12">
                             <img
-                                src="public/logo.png"
+                                src={logo}
                                 alt="Logo Alfa"
                                 className="w-10 h-10 object-contain"
                             />
@@ -2858,7 +2859,7 @@ export default function MainApp() {
                         <div className="w-full h-full flex items-center justify-center">
                             <div className="w-full h-full bg-gradient-to-br from-blue-600 to-indigo-700 rounded-xl flex items-center justify-center">
                                 <img
-                                    src="public/logo.png"
+                                    src={logo}
                                     alt="Logo Alfa Tecnologia Hospitalar"
                                     className="h-20 object-contain"
                                 />
