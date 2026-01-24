@@ -163,7 +163,7 @@ const CreateUserModal = ({ onClose, onSuccess }) => {
                     )}
 
                     <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Nome Completo *</label>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Nome *</label>
                         <div className="relative">
                             <User className="absolute left-3 top-3 text-slate-400" size={18} />
                             <input
@@ -422,7 +422,7 @@ const EditUserModal = ({ user, onClose, onSuccess }) => {
                     )}
 
                     <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Nome Completo</label>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Nome</label>
                         <div className="relative">
                             <User className="absolute left-3 top-3 text-slate-400" size={18} />
                             <input
