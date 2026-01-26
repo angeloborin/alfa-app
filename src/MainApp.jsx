@@ -11,19 +11,19 @@ import {
     ArrowUpRight, ArrowDownRight, Percent, FileSignature,
     CheckSquare, CalendarDays, Receipt, Eye, EyeOff, Shield, LogOut,
     ArrowDownWideNarrow, ArrowUpNarrowWide, Check, ArrowRight,
-    FileText
+    FileText, Upload, Image as ImageIcon, Camera
 } from 'lucide-react';
 import {
     collection, addDoc, updateDoc, deleteDoc,
     doc, onSnapshot, setDoc
 } from 'firebase/firestore';
-import { auth, db } from "./firebase/firebase";
+import { auth, db, storage } from "./firebase/firebase";
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { useAuth } from "./auth/AuthContext";
 import UserManagement from './components/UserManagement';
 import Login from './components/Login';
 import logo from './assets/logo.png';
 
-import { Document, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, Packer } from 'docx';
 import { saveAs } from 'file-saver';
 
 const finalAppId = 'alfa-tecnologia-hospitalar-prod';
@@ -182,7 +182,7 @@ const NavItem = ({ icon, label, active, onClick, isSidebarOpen }) => (
             ${isSidebarOpen ? 'gap-4 p-3' : 'justify-center p-2'}
             ${active ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}
         `}
-        title={!isSidebarOpen ? label : ''} // Tooltip quando sidebar recolhida
+        title={!isSidebarOpen ? label : ''}
     >
         <div className={`
             flex items-center justify-center
@@ -243,7 +243,6 @@ const AccessibleSelect = ({ value, onChange, options, className = "", disabled =
         }
     };
 
-    // Estilos baseados na variante
     const variantClasses = {
         default: "bg-white border border-slate-200 text-slate-900",
         dark: "bg-slate-900 text-white border-none",
@@ -331,7 +330,6 @@ const PaymentConditionsModal = ({
         finalChargedAmount: totalValue
     });
 
-    // Atualizar o estado quando o modal abrir ou quando initialData/totalValue mudar
     useEffect(() => {
         if (isOpen) {
             setPaymentData({
@@ -343,7 +341,6 @@ const PaymentConditionsModal = ({
         }
     }, [isOpen, initialData, totalValue]);
 
-    // Calcular desconto quando discount5Days mudar
     useEffect(() => {
         if (paymentData.discount5Days) {
             const discount = totalValue * 0.05;
@@ -503,7 +500,7 @@ export default function MainApp() {
 
     const [selectedMonth, setSelectedMonth] = useState('');
     const [selectedYear, setSelectedYear] = useState('');
-    const [selectedDay, setSelectedDay] = useState(''); // NOVO: Estado para filtro por dia
+    const [selectedDay, setSelectedDay] = useState('');
 
     // Estados
     const [currentPage, setCurrentPage] = useState('os');
@@ -552,7 +549,7 @@ export default function MainApp() {
         billingType: 'Avulso', maintenanceVisit: '',
         item: '', manufacturer: '', model: '', serial: '',
         equipmentObservation: '',
-        quantity: '1', // NOVO CAMPO ADICIONADO
+        quantity: '1',
         defect: '',
         defectsList: [],
         solutionType: 'Preenchimento manual',
@@ -572,7 +569,8 @@ export default function MainApp() {
         deliveryDeadline: '',
         discount5Days: false,
         discountAmount: 0,
-        finalChargedAmount: 0
+        finalChargedAmount: 0,
+        photos: [] // NOVO: Campo para fotos
     });
 
     // --- ESTADO DO FORMULÁRIO DE CONTRATO ---
@@ -621,7 +619,13 @@ export default function MainApp() {
         finalChargedAmount: 0
     });
 
-    // DEFINIÇÃO ORDENADA DAS ETAPAS DA TIMELINE
+    // === ESTADOS PARA FILTROS NO PAINEL DE STATUS ===
+    const [statusFilter, setStatusFilter] = useState(null);
+    const [billingFilter, setBillingFilter] = useState(null);
+
+    // === ESTADO PARA UPLOAD DE FOTOS ===
+    const [uploadingPhotos, setUploadingPhotos] = useState(false);
+
     const TIMELINE_STEPS = [
         { value: "Recebido", label: "Recebido" },
         { value: "Em inspeção", label: "Inspeção" },
@@ -636,7 +640,6 @@ export default function MainApp() {
     const billingOptions = ["Avulso", "Cortesia (visita sem custo)", "Contrato de manutenção"];
     const currentMonthName = MESES[new Date().getMonth()];
 
-    // === NOVAS OPÇÕES DE SOLUÇÃO ===
     const solutionOptions = [
         "Preenchimento manual",
         "Manual com custos detalhados",
@@ -644,7 +647,6 @@ export default function MainApp() {
         "Não passível de conserto, substituir por novo equipamento / material"
     ];
 
-    // === OPÇÕES DE PARCELAMENTO ===
     const installmentOptions = {
         'Boleto': [
             "30 / 60 dias",
@@ -660,7 +662,6 @@ export default function MainApp() {
 
     // === FUNÇÕES UTILITÁRIAS ===
 
-    // Função para mostrar notificação
     const showNotification = (message, type = 'error') => {
         setNotification({
             show: true,
@@ -673,7 +674,6 @@ export default function MainApp() {
         }, 5000);
     };
 
-    // Helper para formatar moeda com máscara
     const formatMoney = (val) => {
         if (!showValues) return "R$ •••••";
         return val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -696,12 +696,10 @@ export default function MainApp() {
 
     const { totalCost, profit, suggestedValue, solutionsTotal, finalCharged } = calculateFinancials();
 
-    // Função de validação de campos
     const validateForm = () => {
         const errors = [];
         const newFieldErrors = { ...fieldErrors };
 
-        // Reset dos erros visuais
         Object.keys(newFieldErrors).forEach(key => newFieldErrors[key] = false);
 
         if (!formData.client.trim()) {
@@ -753,7 +751,6 @@ export default function MainApp() {
         return false;
     };
 
-    // Função para handleBlur (validação em tempo real)
     const handleBlur = (field) => {
         let hasError = false;
 
@@ -788,33 +785,39 @@ export default function MainApp() {
         setFieldErrors(prev => ({ ...prev, [field]: hasError }));
     };
 
-    // --- AUTOCOMPLETE: DADOS ÚNICOS ---
+    // --- AUTOCOMPLETE: DADOS ÚNICOS (COM PADRONIZAÇÃO) ---
     const uniqueClients = useMemo(() => {
         const map = new Map();
         contracts.forEach(c => {
-            if (c.clientName) map.set(c.clientName.trim(), {
-                client: c.clientName,
-                cnpj: c.cnpj,
-                contactPerson: c.contactPerson,
-                email: c.email,
-                address: c.address
-            });
+            if (c.clientName) {
+                const key = c.clientName.trim().toLowerCase();
+                map.set(key, {
+                    client: c.clientName,
+                    cnpj: c.cnpj,
+                    contactPerson: c.contactPerson,
+                    email: c.email,
+                    address: c.address
+                });
+            }
         });
         [...orders].reverse().forEach(o => {
-            if (o.client && !map.has(o.client.trim())) {
-                map.set(o.client.trim(), {
-                    client: o.client,
-                    cnpj: o.cnpj || '',
-                    contactPerson: o.contactPerson || '',
-                    email: o.email || '',
-                    address: o.address || ''
-                });
-            } else if (o.client && map.has(o.client.trim())) {
-                const existing = map.get(o.client.trim());
-                if (!existing.cnpj && o.cnpj) existing.cnpj = o.cnpj;
-                if (!existing.address && o.address) existing.address = o.address;
-                if (!existing.contactPerson && o.contactPerson) existing.contactPerson = o.contactPerson;
-                if (!existing.email && o.email) existing.email = o.email;
+            if (o.client) {
+                const key = o.client.trim().toLowerCase();
+                if (!map.has(key)) {
+                    map.set(key, {
+                        client: o.client,
+                        cnpj: o.cnpj || '',
+                        contactPerson: o.contactPerson || '',
+                        email: o.email || '',
+                        address: o.address || ''
+                    });
+                } else if (o.client && map.has(key)) {
+                    const existing = map.get(key);
+                    if (!existing.cnpj && o.cnpj) existing.cnpj = o.cnpj;
+                    if (!existing.address && o.address) existing.address = o.address;
+                    if (!existing.contactPerson && o.contactPerson) existing.contactPerson = o.contactPerson;
+                    if (!existing.email && o.email) existing.email = o.email;
+                }
             }
         });
         return Array.from(map.values()).sort((a, b) => a.client.localeCompare(b.client));
@@ -850,17 +853,44 @@ export default function MainApp() {
         return [...allSolutions].sort();
     }, [orders]);
 
-    // Autocomplete de Equipamentos
+    // Autocomplete de Equipamentos (com padronização case-insensitive)
     const uniqueItems = useMemo(() => {
-        return [...new Set(orders.map(o => o.item).filter(i => i && i.length > 1))].sort();
+        const map = new Map();
+        orders.forEach(o => {
+            if (o.item && o.item.length > 1) {
+                const normalized = o.item.trim().toLowerCase();
+                if (!map.has(normalized)) {
+                    map.set(normalized, o.item);
+                }
+            }
+        });
+        return Array.from(map.values()).sort();
     }, [orders]);
 
     const uniqueManufacturers = useMemo(() => {
-        return [...new Set(orders.map(o => o.manufacturer).filter(i => i && i.length > 1))].sort();
+        const map = new Map();
+        orders.forEach(o => {
+            if (o.manufacturer && o.manufacturer.length > 1) {
+                const normalized = o.manufacturer.trim().toLowerCase();
+                if (!map.has(normalized)) {
+                    map.set(normalized, o.manufacturer);
+                }
+            }
+        });
+        return Array.from(map.values()).sort();
     }, [orders]);
 
     const uniqueModels = useMemo(() => {
-        return [...new Set(orders.map(o => o.model).filter(i => i && i.length > 1))].sort();
+        const map = new Map();
+        orders.forEach(o => {
+            if (o.model && o.model.length > 1) {
+                const normalized = o.model.trim().toLowerCase();
+                if (!map.has(normalized)) {
+                    map.set(normalized, o.model);
+                }
+            }
+        });
+        return Array.from(map.values()).sort();
     }, [orders]);
 
     const uniqueSerials = useMemo(() => {
@@ -871,7 +901,6 @@ export default function MainApp() {
     const ordersForUser = useMemo(() => {
         let filteredOrders = orders;
 
-        // Se usuário for cliente, filtrar apenas OSs do seu nome
         if (userData?.role === 'client' && userData.displayName) {
             filteredOrders = filteredOrders.filter(order =>
                 order.client === userData.displayName
@@ -1041,10 +1070,8 @@ export default function MainApp() {
 
     // Efeito para preservar prazo de entrega
     useEffect(() => {
-        // Preservar o prazo de entrega quando o status for alterado para orçamento
         if ((formData.status === "Em orçamento" || formData.status === "Aguardando aprovação do orçamento") &&
             !formData.deliveryDeadline) {
-            // Verificar se há um prazo salvo anteriormente
             const savedOrder = orders.find(o => o.firestoreId === editingOrder?.firestoreId);
             if (savedOrder?.deliveryDeadline) {
                 const match = savedOrder.deliveryDeadline.match(/^(\d+)/);
@@ -1092,11 +1119,25 @@ export default function MainApp() {
     }, [isModalOpen, isContractModalOpen, isDeleteModalOpen, isMoveModalOpen]);
 
     const dashboardData = useMemo(() => {
-        const dataSource = selectedOrders.length > 0 ? ordersForUser.filter(o => selectedOrders.includes(o.firestoreId)) : ordersForUser;
+        // Aplicar filtros de status e billing
+        let dataSource = ordersForUser;
+
+        if (statusFilter) {
+            dataSource = dataSource.filter(o => o.status === statusFilter);
+        }
+
+        if (billingFilter) {
+            dataSource = dataSource.filter(o => o.billingType === billingFilter);
+        }
+
+        // Aplicar seleção manual se houver
+        if (selectedOrders.length > 0) {
+            dataSource = dataSource.filter(o => selectedOrders.includes(o.firestoreId));
+        }
+
         const statusCount = {};
         dataSource.forEach(o => {
             statusCount[o.status] = (statusCount[o.status] || 0) + 1;
-            // ADICIONAR DATA DO STATUS PARA PAINEL DE OS
             if (!statusCount[`${o.status}_date`]) {
                 statusCount[`${o.status}_date`] = o.statusDate || new Date().toISOString().split('T')[0];
             }
@@ -1123,9 +1164,9 @@ export default function MainApp() {
             billingChartData,
             totalInternalCosts,
             totalClientFreight,
-            isFiltered: selectedOrders.length > 0
+            isFiltered: selectedOrders.length > 0 || statusFilter || billingFilter
         };
-    }, [ordersForUser, selectedOrders]);
+    }, [ordersForUser, selectedOrders, statusFilter, billingFilter]);
 
     // === FUNÇÕES PRINCIPAIS ===
     const generateNextOsNumber = (currentOrders) => {
@@ -1157,6 +1198,62 @@ export default function MainApp() {
         return `${String(nextNumber).padStart(4, '0')}/${currentYear}`;
     };
 
+    // Função para fazer upload de fotos
+    const handlePhotoUpload = async (e) => {
+        const files = Array.from(e.target.files);
+        if (files.length === 0) return;
+
+        setUploadingPhotos(true);
+        try {
+            const uploadPromises = files.map(async (file) => {
+                const timestamp = Date.now();
+                const fileName = `${timestamp}_${file.name}`;
+                const storageRef = ref(storage, `os_photos/${formData.osNumber || 'temp'}/${fileName}`);
+
+                await uploadBytes(storageRef, file);
+                const downloadURL = await getDownloadURL(storageRef);
+                return downloadURL;
+            });
+
+            const uploadedURLs = await Promise.all(uploadPromises);
+            setFormData(prev => ({
+                ...prev,
+                photos: [...prev.photos, ...uploadedURLs]
+            }));
+
+            showNotification(`${files.length} foto(s) enviada(s) com sucesso!`, 'success');
+        } catch (error) {
+            console.error('Erro ao enviar fotos:', error);
+            showNotification('Erro ao enviar fotos. Tente novamente.', 'error');
+        } finally {
+            setUploadingPhotos(false);
+        }
+    };
+
+    // Função para remover foto
+    const removePhoto = async (index) => {
+        const photoUrl = formData.photos[index];
+        try {
+            // Extrair o caminho da foto da URL
+            const photoPath = photoUrl.split('/o/')[1]?.split('?')[0];
+            if (photoPath) {
+                const decodedPath = decodeURIComponent(photoPath);
+                const storageRef = ref(storage, decodedPath);
+                await deleteObject(storageRef);
+            }
+
+            setFormData(prev => ({
+                ...prev,
+                photos: prev.photos.filter((_, i) => i !== index)
+            }));
+
+            showNotification('Foto removida com sucesso!', 'success');
+        } catch (error) {
+            console.error('Erro ao remover foto:', error);
+            showNotification('Erro ao remover foto. Tente novamente.', 'error');
+        }
+    };
+
     const openModal = (order = null) => {
         setTempSolution('');
         setTempCost('');
@@ -1165,7 +1262,6 @@ export default function MainApp() {
         setTempBenchRepair('');
         setIsFinancialOpen(false);
 
-        // Resetar todos os autocompletes
         setShowClientSuggestions(false);
         setShowDefectSuggestions(false);
         setShowSolutionSuggestions(false);
@@ -1174,7 +1270,6 @@ export default function MainApp() {
         setShowModelSuggestions(false);
         setShowSerialSuggestions(false);
 
-        // Reset erros ao abrir modal
         setFieldErrors({
             client: false,
             item: false,
@@ -1188,10 +1283,8 @@ export default function MainApp() {
         if (order) {
             setEditingOrder(order);
 
-            // EXTRAIR APENAS O NÚMERO DO PRAZO DE ENTREGA (remover "dias úteis")
             let deliveryDeadlineValue = '';
             if (order.deliveryDeadline) {
-                // Extrai apenas os números do início da string
                 const match = order.deliveryDeadline.match(/^(\d+)/);
                 if (match) {
                     deliveryDeadlineValue = match[1];
@@ -1201,17 +1294,18 @@ export default function MainApp() {
             setFormData({
                 ...order,
                 equipmentObservation: order.equipmentObservation || '',
-                quantity: order.quantity || '1', // NOVO: Carregar quantidade existente
+                quantity: order.quantity || '1',
                 solutionsList: order.solutionsList || [],
                 defectsList: order.defectsList || (order.defect ? [order.defect] : []),
                 manualSolutionsList: order.manualSolutionsList || [],
                 benchRepairList: order.benchRepairList || [],
                 statusDate: order.statusDate || new Date().toISOString().split('T')[0],
                 statusHistory: order.statusHistory || [],
-                deliveryDeadline: deliveryDeadlineValue, // ← USAR O VALOR EXTRAÍDO
+                deliveryDeadline: deliveryDeadlineValue,
                 discount5Days: order.discount5Days || false,
                 discountAmount: order.discountAmount || 0,
-                finalChargedAmount: order.finalChargedAmount || parseCurrency(order.chargedAmount)
+                finalChargedAmount: order.finalChargedAmount || parseCurrency(order.chargedAmount),
+                photos: order.photos || [] // Carregar fotos existentes
             });
         } else {
             setEditingOrder(null);
@@ -1219,7 +1313,7 @@ export default function MainApp() {
                 client: '', cnpj: '', contactPerson: '', address: '', email: '',
                 billingType: 'Avulso', maintenanceVisit: '', item: '', manufacturer: '', model: '', serial: '',
                 equipmentObservation: '',
-                quantity: '1', // NOVO: Valor padrão
+                quantity: '1',
                 defect: '', defectsList: [],
                 solutionType: 'Preenchimento manual',
                 solution: '', manualSolutionsList: [],
@@ -1237,13 +1331,13 @@ export default function MainApp() {
                 deliveryDeadline: '',
                 discount5Days: false,
                 discountAmount: 0,
-                finalChargedAmount: 0
+                finalChargedAmount: 0,
+                photos: [] // Inicializar array de fotos vazio
             });
         }
         setIsModalOpen(true);
     };
 
-    // Função para selecionar cliente do autocomplete
     const handleClientSelect = (clientData) => {
         setFormData(prev => ({
             ...prev,
@@ -1256,7 +1350,6 @@ export default function MainApp() {
         setShowClientSuggestions(false);
     };
 
-    // --- FUNÇÕES DE LISTAS (NOVAS) ---
     const addDefectItem = () => {
         if (!tempDefect.trim()) {
             showNotification("Descrição do defeito é obrigatória", 'error');
@@ -1341,11 +1434,9 @@ export default function MainApp() {
         }));
     };
 
-    // --- PREPARAR DADOS PARA SALVAR ---
     const prepareDataForSave = () => {
         const { firestoreId, ...cleanData } = formData;
 
-        // Garantir que a quantidade seja um número válido
         if (!cleanData.quantity || isNaN(parseInt(cleanData.quantity))) {
             cleanData.quantity = '1';
         }
@@ -1358,30 +1449,26 @@ export default function MainApp() {
             cleanData.discountAmount = 0;
             cleanData.finalChargedAmount = parseCurrency(cleanData.chargedAmount);
         }
-        // Converter lista de defeitos para string única
+
         if (cleanData.defectsList && cleanData.defectsList.length > 0) {
             cleanData.defect = cleanData.defectsList.join('\n');
         } else {
             cleanData.defect = cleanData.defect || '';
         }
 
-        // Converter lista de soluções manuais para string única
         if (cleanData.solutionType === "Preenchimento manual") {
             if (cleanData.manualSolutionsList && cleanData.manualSolutionsList.length > 0) {
                 cleanData.solution = cleanData.manualSolutionsList.join('\n');
             }
         }
 
-        // Converter lista de conserto em bancada para string única
         if (cleanData.solutionType === "Conserto em bancada") {
             if (cleanData.benchRepairList && cleanData.benchRepairList.length > 0) {
                 cleanData.solution = cleanData.benchRepairList.join('\n');
             }
         }
 
-        // Formatar prazo de entrega - APENAS ADICIONAR "dias úteis" SE HOUVER UM NÚMERO
         if (cleanData.deliveryDeadline && cleanData.deliveryDeadline.trim() !== '') {
-            // Remover "dias úteis" se já existir e adicionar novamente
             const cleanNumber = cleanData.deliveryDeadline.replace('dias úteis', '').trim();
             if (cleanNumber && !isNaN(cleanNumber)) {
                 cleanData.deliveryDeadline = `${cleanNumber} dias úteis`;
@@ -1390,7 +1477,6 @@ export default function MainApp() {
             cleanData.deliveryDeadline = '';
         }
 
-        // Lógica de histórico de status
         let history = cleanData.statusHistory ? [...cleanData.statusHistory] : [];
         const currentStatusDate = cleanData.statusDate || new Date().toISOString().split('T')[0];
 
@@ -1415,7 +1501,6 @@ export default function MainApp() {
     const handleSubmit = async (e) => {
         if (e) e.preventDefault();
 
-        // Validação
         const hasErrors = validateForm();
         if (hasErrors) {
             return;
@@ -1463,7 +1548,7 @@ export default function MainApp() {
                 model: '',
                 serial: '',
                 equipmentObservation: '',
-                quantity: '1', // NOVO: Resetar quantidade para 1
+                quantity: '1',
                 defect: '',
                 defectsList: [],
                 solutionType: 'Preenchimento manual',
@@ -1490,7 +1575,8 @@ export default function MainApp() {
                 deliveryDeadline: '',
                 discount5Days: false,
                 discountAmount: 0,
-                finalChargedAmount: 0
+                finalChargedAmount: 0,
+                photos: [] // Resetar fotos também
             });
             setEditingOrder(null);
         } catch (err) {
@@ -1501,7 +1587,6 @@ export default function MainApp() {
         }
     };
 
-    // --- FUNÇÕES DE TIMELINE ---
     const getStatusTimelineDate = (statusStep) => {
         if (formData.status === statusStep) {
             if (formData.statusDate) {
@@ -1521,11 +1606,9 @@ export default function MainApp() {
         return null;
     };
 
-    // Helper para índice da timeline
     const currentStatusIndex = TIMELINE_STEPS.findIndex(s => s.value === formData.status);
     const activeWidthPercent = currentStatusIndex === -1 ? 0 : (currentStatusIndex / (TIMELINE_STEPS.length - 1)) * 100;
 
-    // --- FUNÇÃO PARA MOVIMENTAR MÚLTIPLAS OS ---
     const handleMoveOrders = async () => {
         if (selectedOrders.length === 0) {
             showNotification('Selecione pelo menos uma OS para movimentar', 'error');
@@ -1540,7 +1623,6 @@ export default function MainApp() {
 
                 let history = order.statusHistory ? [...order.statusHistory] : [];
 
-                // Adicionar novo status ao histórico
                 history.push({
                     status: moveStatus,
                     date: moveDate,
@@ -1566,7 +1648,6 @@ export default function MainApp() {
         }
     };
 
-    // --- FUNÇÃO PARA ABRIR MODAL DE PAGAMENTO ---
     const handleOpenPaymentModal = (printType) => {
         const selectedData = ordersForUser.filter(o => selectedOrders.includes(o.firestoreId));
 
@@ -1575,25 +1656,20 @@ export default function MainApp() {
             return;
         }
 
-        // VERIFICAR SE USUÁRIO É CLIENTE
         if (userData?.role === 'client') {
-            // Clientes pulam direto para a impressão SEM modal de pagamento
             handlePrint(printType);
             return;
         }
 
-        // Verificar se pelo menos uma OS está em estágio de orçamento
         const hasBudgetStage = selectedData.some(os =>
             os.status === 'Em orçamento' || os.status === 'Aguardando aprovação do orçamento'
         );
 
         if (!hasBudgetStage && printType === 'client') {
-            // Se não estiver em orçamento, imprimir diretamente
             handlePrint(printType);
             return;
         }
 
-        // Calcular valor total
         const totalValue = selectedData.reduce((acc, os) => {
             const valor = os.finalChargedAmount ?
                 parseCurrency(os.finalChargedAmount) :
@@ -1601,7 +1677,6 @@ export default function MainApp() {
             return acc + valor;
         }, 0);
 
-        // Obter condições de pagamento da primeira OS (se existir)
         const firstOS = selectedData[0];
 
         setPaymentModalData({
@@ -1615,11 +1690,9 @@ export default function MainApp() {
         setIsPaymentModalOpen(true);
     };
 
-    // --- FUNÇÃO PARA CONFIRMAR IMPRESSÃO COM CONDIÇÕES DE PAGAMENTO ---
     const handleConfirmPrintWithPayment = (paymentData) => {
         const selectedData = ordersForUser.filter(o => selectedOrders.includes(o.firestoreId));
 
-        // Atualizar as OSs selecionadas com as novas condições de pagamento
         const updatePromises = selectedData.map(async (os) => {
             try {
                 await updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', os.firestoreId), {
@@ -1633,22 +1706,978 @@ export default function MainApp() {
             }
         });
 
-        // Executar todas as atualizações
         Promise.all(updatePromises).then(() => {
-            // Fechar modal e imprimir
             setIsPaymentModalOpen(false);
             handlePrint('client', paymentData);
         });
     };
 
-    // === FUNÇÃO PARA EXPORTAR PARA WORD ===
+    // === FUNÇÃO PARA IMPRIMIR (COM NOVAS MELHORIAS) ===
+    const handlePrint = (printType, customPaymentConditions = null) => {
+        const selectedData = ordersForUser.filter(o => selectedOrders.includes(o.firestoreId));
+        if (selectedData.length === 0) {
+            showNotification('Selecione pelo menos uma OS para imprimir', 'error');
+            return;
+        }
+
+        const groups = {};
+        selectedData.forEach(os => {
+            const key = `${os.client}-${os.cnpj || 'no-cnpj'}-${os.billingType}-${os.maintenanceVisit || 'no-visit'}`;
+            if (!groups[key]) {
+                groups[key] = {
+                    header: {
+                        client: os.client,
+                        cnpj: os.cnpj,
+                        contactPerson: os.contactPerson,
+                        email: os.email,
+                        address: os.address,
+                        billingType: os.billingType,
+                        maintenanceVisit: os.maintenanceVisit
+                    },
+                    items: []
+                };
+            }
+            groups[key].items.push(os);
+        });
+
+        const hasBudgetStage = selectedData.some(os =>
+            os.status === 'Em orçamento' || os.status === 'Aguardando aprovação do orçamento'
+        );
+
+        const title = printType === 'internal' ?
+            'Relatório INTERNO' :
+            (hasBudgetStage ? 'Proposta de orçamento' : 'Relatório de atendimento');
+
+        let htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>${title}</title>
+        <style>
+            @media print {
+                @page { 
+                    margin: 1.5cm 1cm;
+                    size: A4;
+                }
+                @page :first {
+                    margin-top: 2cm;
+                }
+                body {
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    color: #333;
+                    line-height: 1.4;
+                    padding: 0;
+                    margin: 0;
+                    font-size: 12px;
+                }
+                .report-page {
+                    padding: 20px;
+                    position: relative;
+                    min-height: 25.7cm;
+                    page-break-after: always;
+                }
+                .report-page:last-child {
+                    page-break-after: avoid;
+                }
+                .header {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: flex-start;
+                    border-bottom: 2px solid #1a56db;
+                    padding-bottom: 15px;
+                    margin-bottom: 25px;
+                    flex-wrap: wrap;
+                }
+                .logo-container {
+                    flex: 0 0 auto;
+                }
+                .logo-container img {
+                    height: 70px;
+                    max-width: 200px;
+                    object-fit: contain;
+                }
+                .report-info {
+                    text-align: right;
+                    flex: 1;
+                    min-width: 250px;
+                }
+                .report-title {
+                    font-size: 18px;
+                    font-weight: 900;
+                    color: #1a56db;
+                    text-transform: uppercase;
+                    margin-bottom: 5px;
+                }
+                .internal-badge {
+                    background: #b91c1c;
+                    color: white;
+                    padding: 2px 8px;
+                    font-size: 10px;
+                    border-radius: 4px;
+                    font-weight: bold;
+                    margin-bottom: 4px;
+                    display: inline-block;
+                }
+                .section {
+                    margin-bottom: 25px;
+                }
+                .section-title {
+                    background: #f8fafc;
+                    padding: 8px 12px;
+                    font-size: 12px;
+                    font-weight: 900;
+                    text-transform: uppercase;
+                    border-left: 5px solid #1a56db;
+                    margin-bottom: 15px;
+                    color: #1e40af;
+                }
+                .client-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                    gap: 15px;
+                    font-size: 12px;
+                    margin-bottom: 25px;
+                }
+                .items-table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin-top: 15px;
+                    table-layout: fixed;
+                }
+                .items-table th {
+                    background: #f8fafc;
+                    text-align: left;
+                    padding: 12px 8px;
+                    font-size: 11px;
+                    text-transform: uppercase;
+                    color: #64748b;
+                    border-bottom: 2px solid #e2e8f0;
+                    word-wrap: break-word;
+                }
+                .items-table td {
+                    padding: 15px 8px;
+                    font-size: 12px;
+                    border-bottom: 1px solid #f1f5f9;
+                    vertical-align: top;
+                    word-wrap: break-word;
+                }
+                .os-tag {
+                    font-weight: 900;
+                    color: #1a56db;
+                    display: block;
+                    margin-bottom: 4px;
+                    font-size: 13px;
+                }
+                .signature-area {
+                    display: flex;
+                    justify-content: space-around;
+                    margin-top: 100px;
+                    margin-bottom: 60px;
+                    page-break-inside: avoid;
+                    position: relative;
+                }
+                .signature-box {
+                    border-top: 1px solid #333;
+                    width: 250px;
+                    text-align: center;
+                    padding-top: 10px;
+                    font-size: 12px;
+                    font-weight: 600;
+                    min-height: 70px;
+                }
+                .footer-notes {
+                    margin-top: 30px;
+                    font-size: 10px;
+                    color: #666;
+                    padding-top: 15px;
+                    line-height: 1.5;
+                    page-break-inside: avoid;
+                    border-top: 1px solid #eee;
+                }
+                .footer-notes p {
+                    margin: 8px 0;
+                }
+                .footer-title {
+                    font-weight: bold;
+                    color: #1a56db;
+                    margin-bottom: 5px;
+                    font-size: 11px;
+                }
+                .company-footer {
+                    position: absolute;
+                    bottom: 20px;
+                    left: 20px;
+                    right: 20px;
+                    font-size: 9px;
+                    color: #666;
+                    text-align: center;
+                    border-top: 1px solid #eee;
+                    padding-top: 10px;
+                    line-height: 1.4;
+                }
+                .company-footer strong {
+                    color: #1a56db;
+                }
+                .page-counter {
+                    position: absolute;
+                    bottom: 15px;
+                    right: 20px;
+                    font-size: 10px;
+                    color: #999;
+                }
+                .valor-section {
+                    margin-top: 20px;
+                    padding: 20px;
+                    background: #f0fdf4;
+                    border-left: 4px solid #10b981;
+                    border-radius: 8px;
+                    font-size: 12px;
+                    line-height: 1.5;
+                }
+                .valor-destaque {
+                    font-size: 20px;
+                    font-weight: 900;
+                    color: #166534;
+                    text-align: center;
+                    margin: 15px 0;
+                }
+                .defects-list, .solutions-list {
+                    margin: 8px 0;
+                    padding-left: 15px;
+                }
+                .defects-list li, .solutions-list li {
+                    margin-bottom: 4px;
+                    padding-left: 5px;
+                }
+                .observation-column {
+                    border-left: 2px solid #e2e8f0;
+                    padding-left: 15px;
+                    margin-left: 10px;
+                }
+                .photo-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+                    gap: 10px;
+                    margin-top: 15px;
+                }
+                .photo-item {
+                    border: 1px solid #e2e8f0;
+                    border-radius: 4px;
+                    overflow: hidden;
+                }
+                .photo-item img {
+                    width: 100%;
+                    height: 120px;
+                    object-fit: cover;
+                }
+                /* Ajustes para evitar quebra de página em assinaturas */
+                .page-break-avoid {
+                    page-break-inside: avoid;
+                }
+                /* Garantir que o footer não sobreponha assinaturas */
+                .content-wrapper {
+                    min-height: calc(100vh - 200px);
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="content-wrapper">`;
+
+        Object.values(groups).forEach((group, groupIndex) => {
+            const budgetItems = group.items.filter(item =>
+                item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento'
+            );
+            const hasBudgetInGroup = budgetItems.length > 0;
+
+            let valorTotalGrupo = 0;
+            if (hasBudgetInGroup) {
+                budgetItems.forEach(item => {
+                    const valor = customPaymentConditions ?
+                        customPaymentConditions.finalChargedAmount / selectedData.length :
+                        (item.finalChargedAmount ?
+                            parseCurrency(item.finalChargedAmount) :
+                            parseCurrency(item.chargedAmount));
+                    valorTotalGrupo += valor;
+                });
+            }
+
+            htmlContent += `
+        <div class="report-page">
+            <div class="header">
+                <div class="logo-container">
+                    <img src="${logo}" alt="Alfa Tecnologia Hospitalar" onerror="this.style.display='none';">
+                </div>
+                <div class="report-info">
+                    ${printType === 'internal' ? '<div class="internal-badge">USO INTERNO - CONFIDENCIAL</div>' : ''}
+                    <div class="report-title">${title}</div>
+                    <div style="font-size:11px;color:#666;">Data: ${new Date().toLocaleDateString('pt-BR')}</div>
+                </div>
+            </div>
+            
+            <div class="section">
+                <div class="section-title">Dados do Cliente</div>
+                <div class="client-grid">
+                    <div><strong>Cliente:</strong><br>${group.header.client || '---'}</div>
+                    <div><strong>CNPJ:</strong><br>${group.header.cnpj || '---'}</div>
+                    <div><strong>Atendimento:</strong><br>${group.header.billingType} ${group.header.maintenanceVisit ? '- ' + group.header.maintenanceVisit : ''}</div>
+                    <div><strong>Contato:</strong><br>${group.header.contactPerson || '---'}</div>
+                    <div><strong>E-mail:</strong><br>${group.header.email || '---'}</div>
+                    <div><strong>Endereço:</strong><br>${group.header.address || '---'}</div>
+                </div>
+            </div>
+            
+            ${hasBudgetInGroup && printType === 'client' ? `
+            <div class="valor-section">
+                <div class="footer-title">VALOR TOTAL DA PROPOSTA</div>
+                <div class="valor-destaque">
+                    R$ ${valorTotalGrupo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </div>
+                <p><strong>Quantidade de itens em orçamento:</strong> ${budgetItems.length}</p>
+                ${customPaymentConditions ?
+                        `<p><strong>Condições de pagamento:</strong> ${customPaymentConditions.paymentCondition}${customPaymentConditions.installments ? ` ${customPaymentConditions.installments}` : ''}</p>` :
+                        (budgetItems[0] && budgetItems[0].paymentCondition ?
+                            `<p><strong>Condições de pagamento:</strong> ${budgetItems[0].paymentCondition}${budgetItems[0].installments ? ` ${budgetItems[0].installments}` : ''}</p>` :
+                            '')
+                    }
+            </div>
+            ` : ''}
+            
+            <div class="section">
+                <div class="section-title">Lista de Equipamentos</div>
+                <table class="items-table">
+                    <thead>
+                        <tr>
+                            <th width="15%">OS</th>
+                            <th width="25%">Equipamento</th>
+                            <th width="30%">Defeito / Solução</th>
+                            <th width="30%">Observações</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+
+            group.items.forEach(item => {
+                const defects = item.defect ? item.defect.split('\n').filter(d => d.trim()) : [];
+                const solutions = item.solution ? item.solution.split('\n').filter(s => s.trim()) : [];
+                const observation = item.equipmentObservation || '';
+                const photos = item.photos || [];
+
+                const list = item.solutionsList || [];
+                const total = list.reduce((acc, curr) => acc + parseFloat(curr.cost.replace('.', '').replace(',', '.') || 0), 0);
+
+                const isItemBudget = item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento';
+                const valorItem = customPaymentConditions ?
+                    customPaymentConditions.finalChargedAmount / selectedData.length :
+                    (item.finalChargedAmount ?
+                        parseCurrency(item.finalChargedAmount) :
+                        parseCurrency(item.chargedAmount));
+
+                htmlContent += `
+                        <tr>
+                            <td>
+                                <span class="os-tag">${item.osNumber || '---'}</span>
+                                <small>${item.status || '---'}</small>
+                                ${isItemBudget && printType === 'client' ? `
+                                <div style="margin-top: 5px; padding: 3px; background: #f0fdf4; border-radius: 4px; text-align: center;">
+                                    <div style="font-size: 9px; font-weight: bold; color: #166534;">VALOR</div>
+                                    <div style="font-size: 11px; font-weight: 900; color: #166534;">
+                                        R$ ${valorItem.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    </div>
+                                </div>
+                                ` : ''}
+                            </td>
+                            <td>
+                                <strong>${item.item || '---'}</strong><br>
+                                <div style="font-size:10px;color:#666;margin-bottom:2px;">
+                                    ${item.manufacturer || ''} ${item.model || ''}
+                                </div>
+                                <small>NS: ${item.serial || 'N/D'}</small>
+                                ${item.quantity && parseInt(item.quantity) > 1 ?
+                        `<div style="font-size:10px;color:#666;margin-top:2px;"><strong>Quantidade:</strong> ${item.quantity}</div>` :
+                        ''}
+                            </td>
+                            <td>
+                                <div style="margin-bottom: 15px;">
+                                    <div style="font-weight: bold; font-size: 11px; color: #1e40af; margin-bottom: 5px;">DEFEITO:</div>
+                                    ${defects.length > 0 ?
+                        `<ul class="defects-list">${defects.map(d => `<li>${d}</li>`).join('')}</ul>` :
+                        '<div style="color: #999; font-style: italic;">Sem defeitos registrados</div>'}
+                                </div>
+                                <div>
+                                    <div style="font-weight: bold; font-size: 11px; color: #059669; margin-bottom: 5px;">SOLUÇÃO:</div>
+                                    ${solutions.length > 0 ?
+                        `<ul class="solutions-list">${solutions.map(s => `<li>${s}</li>`).join('')}</ul>` :
+                        '<div style="color: #999; font-style: italic;">Solução em análise</div>'}
+                                </div>
+                            </td>
+                            <td class="observation-column">
+                                ${observation ? `
+                                <div style="margin-bottom: 15px;">
+                                    <div style="font-weight: bold; font-size: 11px; color: #7c3aed; margin-bottom: 5px;">OBSERVAÇÃO:</div>
+                                    <div style="font-size: 11px; line-height: 1.4;">${observation}</div>
+                                </div>
+                                ` : ''}
+                                
+                                ${photos.length > 0 ? `
+                                <div>
+                                    <div style="font-weight: bold; font-size: 11px; color: #7c3aed; margin-bottom: 5px;">FOTOS:</div>
+                                    <div class="photo-grid">
+                                        ${photos.slice(0, 3).map((photo, idx) =>
+                            `<div class="photo-item">
+                                                <img src="${photo}" alt="Foto ${idx + 1}" onerror="this.style.display='none';">
+                                            </div>`
+                        ).join('')}
+                                    </div>
+                                    ${photos.length > 3 ?
+                            `<div style="font-size: 10px; color: #666; margin-top: 5px;">+ ${photos.length - 3} foto(s) adicional(is)</div>` :
+                            ''}
+                                </div>
+                                ` : ''}
+                            </td>
+                        </tr>`;
+            });
+
+            htmlContent += `
+                    </tbody>
+                </table>
+            </div>`;
+
+            if (printType === 'client' && hasBudgetInGroup) {
+                const budgetItem = budgetItems[0];
+                const deliveryDeadline = budgetItem.deliveryDeadline || 'A ser definido após aprovação do orçamento';
+                const paymentConditions = customPaymentConditions ?
+                    `${customPaymentConditions.paymentCondition}${customPaymentConditions.installments ? ` ${customPaymentConditions.installments}` : ''}` :
+                    `${budgetItem.paymentCondition || 'À vista'}${budgetItem.installments ? ` ${budgetItem.installments}` : ''}`;
+
+                htmlContent += `
+            <div class="footer-notes page-break-avoid">
+                <div class="footer-title">INFORMAÇÕES IMPORTANTES:</div>
+                <p><strong>• Garantia:</strong> 3 meses. Não está coberto por garantia os danos causados por uso inadequado, queda ou choque mecânico, acondicionamento inadequado e/ou acondicionamento fora dos padrões recomendados pelo fabricante.</p>
+                <p><strong>• Prazo de entrega:</strong> ${deliveryDeadline}</p>
+                <p><strong>• Valor Total da Proposta:</strong> R$ ${valorTotalGrupo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                <p><strong>• Condições de pagamento:</strong> ${paymentConditions}</p>
+            </div>`;
+            }
+
+            htmlContent += `
+            <div class="signature-area page-break-avoid">
+                <div class="signature-box">Técnico Responsável</div>
+                <div class="signature-box">Cliente / Recebedor</div>
+            </div>
+            
+            <div class="company-footer">
+                <strong>Alfa Tecnologia Hospitalar</strong> - CNPJ: 50.993.453/0001-34<br/>
+                (55) 9 9137-9413 - alfa.manutencaosm@gmail.com<br/>
+                Endereço: Travessa Moreira, 125 - CEP: 97070-540 - Bairro: Duque de Caxias, Santa Maria/ RS
+            </div>
+            
+            <div class="page-counter">Página ${groupIndex + 1} de ${Object.values(groups).length}</div>
+        </div>`;
+        });
+
+        htmlContent += `
+        </div>
+    </body>
+    </html>`;
+
+        const printWindow = window.open('', 'printWindow', 'width=800,height=600,scrollbars=yes');
+        if (!printWindow) {
+            showNotification('Permita pop-ups para imprimir o documento', 'error');
+            return;
+        }
+
+        printWindow.document.write(htmlContent);
+        printWindow.document.close();
+
+        setTimeout(() => {
+            printWindow.focus();
+            printWindow.print();
+        }, 500);
+    };
+
+    // Funções para lidar com filtros no painel de status
+    const handleFilterByStatus = (status) => {
+        setStatusFilter(prev => prev === status ? null : status);
+        setBillingFilter(null);
+    };
+
+    const handleFilterByBilling = (type) => {
+        setBillingFilter(prev => prev === type ? null : type);
+        setStatusFilter(null);
+    };
+
+    const clearAllFilters = () => {
+        setStatusFilter(null);
+        setBillingFilter(null);
+        setSelectedOrders([]);
+        setSelectedDay('');
+        setSelectedMonth('');
+        setSelectedYear('');
+        setSearchTerm('');
+    };
+
+    // Função para verificar se há filtros ativos
+    const hasActiveFilters = () => {
+        return statusFilter || billingFilter || selectedOrders.length > 0 ||
+            selectedDay || selectedMonth || selectedYear || searchTerm;
+    };
+
+    const handleNewContract = () => {
+        setContractForm({
+            clientName: '', cnpj: '', address: '', contactPerson: '', email: '',
+            startDate: '', endDate: '', monthlyValue: '', annualValue: '',
+            coveredItems: { videoSurgeryInstruments: false, openInstruments: false, videoSurgeryEquipment: false, endoscopes: false },
+            observations: ''
+        });
+        setIsNewContractMode(true);
+        setIsContractModalOpen(true);
+    };
+
+    const openContractModal = (contract) => {
+        setContractForm(contract);
+        setIsNewContractMode(false);
+        setIsContractModalOpen(true);
+    };
+
+    const handleSaveContract = async (e) => {
+        e.preventDefault();
+        if (!contractForm.clientName.trim()) {
+            showNotification("Nome do cliente é obrigatório", 'error');
+            return;
+        }
+        setIsSaving(true);
+        try {
+            const docId = contractForm.clientName.replace(/\s+/g, '_').toLowerCase();
+            await setDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'contracts', docId), contractForm);
+            showNotification("Contrato salvo com sucesso!", 'success');
+            setIsContractModalOpen(false);
+        } catch (err) {
+            console.error("Erro ao salvar contrato", err);
+            showNotification("Erro ao salvar contrato: " + err.message, 'error');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const confirmDelete = (order) => {
+        setOrderToDelete(order);
+        setIsDeleteModalOpen(true);
+    };
+
+    const handleDelete = async () => {
+        if (!orderToDelete) return;
+        try {
+            // Remover fotos associadas à OS
+            if (orderToDelete.photos && orderToDelete.photos.length > 0) {
+                const deletePromises = orderToDelete.photos.map(async (photoUrl) => {
+                    try {
+                        const photoPath = photoUrl.split('/o/')[1]?.split('?')[0];
+                        if (photoPath) {
+                            const decodedPath = decodeURIComponent(photoPath);
+                            const storageRef = ref(storage, decodedPath);
+                            await deleteObject(storageRef);
+                        }
+                    } catch (error) {
+                        console.error('Erro ao remover foto:', error);
+                    }
+                });
+                await Promise.all(deletePromises);
+            }
+
+            await deleteDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', orderToDelete.firestoreId));
+            showNotification("OS excluída com sucesso!", 'success');
+            setIsDeleteModalOpen(false);
+            setOrderToDelete(null);
+        } catch (err) {
+            showNotification("Erro ao excluir: " + err.message, 'error');
+        }
+    };
+
+    const handleLogout = async () => {
+        try {
+            localStorage.removeItem('adminRestoreToken');
+            localStorage.removeItem('adminEmail');
+            await logout();
+            window.location.href = '/';
+            setTimeout(() => {
+                window.location.reload();
+            }, 100);
+        } catch (error) {
+            console.error("Erro ao fazer logout:", error);
+            window.location.reload();
+        }
+    };
+
+    const handleModalPrint = (printType) => {
+        const printData = prepareDataForSave();
+        const isBudgetStage = printData.status === 'Em orçamento' ||
+            printData.status === 'Aguardando aprovação do orçamento';
+
+        const title = printType === 'internal' ?
+            'Relatório INTERNO' :
+            (isBudgetStage ? 'Proposta de orçamento' : 'Relatório de atendimento');
+
+        const paymentConditions = `${printData.paymentCondition}${printData.installments ? ` ${printData.installments}` : ''}`;
+        const valorCobrado = printData.finalChargedAmount > 0 ?
+            parseCurrency(printData.finalChargedAmount) :
+            parseCurrency(printData.chargedAmount);
+
+        let discountSection = '';
+        if (printData.discount5Days && printData.chargedAmount) {
+            const valorOriginal = parseCurrency(printData.chargedAmount);
+            const desconto = valorOriginal * 0.05;
+            const valorFinal = valorOriginal - desconto;
+
+            discountSection = `
+        <div style="margin-top: 10px; padding: 8px; background: #f0fdf4; border-radius: 6px; border: 1px solid #bbf7d0;">
+            <div style="font-size: 9px; font-weight: bold; color: #166534; margin-bottom: 3px;">DESCONTO APLICADO</div>
+            <div style="display: flex; justify-content: space-between; font-size: 10px;">
+                <span>Valor Original:</span>
+                <span>R$ ${valorOriginal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 10px;">
+                <span>Desconto (5%):</span>
+                <span style="color: #dc2626;">- R$ ${desconto.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 11px; font-weight: bold; margin-top: 3px; border-top: 1px dashed #86efac; padding-top: 3px;">
+                <span>VALOR FINAL:</span>
+                <span style="color: #166534;">R$ ${valorFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+            </div>
+        </div>
+    `;
+        }
+
+        const defects = printData.defect ? printData.defect.split('\n').filter(d => d.trim()) : [];
+        const solutions = printData.solution ? printData.solution.split('\n').filter(s => s.trim()) : [];
+        const observation = printData.equipmentObservation || '';
+        const photos = printData.photos || [];
+
+        let htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>${title}</title>
+    <style>
+        @media print {
+            @page { 
+                margin: 1.5cm 1cm;
+                size: A4;
+            }
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                color: #333;
+                line-height: 1.4;
+                padding: 0;
+                margin: 0;
+                font-size: 12px;
+            }
+            .report-page {
+                padding: 20px;
+                position: relative;
+                min-height: 25.7cm;
+            }
+            .header {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-start;
+                border-bottom: 2px solid #1a56db;
+                padding-bottom: 15px;
+                margin-bottom: 25px;
+                flex-wrap: wrap;
+            }
+            .logo-container img {
+                height: 70px;
+                max-width: 200px;
+                object-fit: contain;
+            }
+            .report-info {
+                text-align: right;
+                flex: 1;
+                min-width: 250px;
+            }
+            .report-title {
+                font-size: 18px;
+                font-weight: 900;
+                color: #1a56db;
+                text-transform: uppercase;
+                margin-bottom: 5px;
+            }
+            .internal-badge {
+                background: #b91c1c;
+                color: white;
+                padding: 2px 8px;
+                font-size: 10px;
+                border-radius: 4px;
+                font-weight: bold;
+                margin-bottom: 4px;
+                display: inline-block;
+            }
+            .section {
+                margin-bottom: 25px;
+            }
+            .section-title {
+                background: #f8fafc;
+                padding: 8px 12px;
+                font-size: 12px;
+                font-weight: 900;
+                text-transform: uppercase;
+                border-left: 5px solid #1a56db;
+                margin-bottom: 15px;
+                color: #1e40af;
+            }
+            .client-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                gap: 15px;
+                font-size: 12px;
+                margin-bottom: 25px;
+            }
+            .equipment-details {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 30px;
+                margin-top: 20px;
+            }
+            .defects-section, .solutions-section {
+                flex: 1;
+            }
+            .observation-section {
+                margin-top: 20px;
+                padding: 15px;
+                background: #f8fafc;
+                border-left: 4px solid #94a3b8;
+                border-radius: 6px;
+                font-size: 11px;
+                line-height: 1.4;
+            }
+            .valor-section {
+                margin-top: 20px;
+                padding: 20px;
+                background: #f0fdf4;
+                border-left: 4px solid #10b981;
+                border-radius: 8px;
+                font-size: 12px;
+                line-height: 1.5;
+            }
+            .valor-destaque {
+                font-size: 20px;
+                font-weight: 900;
+                color: #166534;
+                text-align: center;
+                margin: 15px 0;
+            }
+            .defects-list, .solutions-list {
+                margin: 8px 0;
+                padding-left: 15px;
+            }
+            .defects-list li, .solutions-list li {
+                margin-bottom: 4px;
+                padding-left: 5px;
+            }
+            .signature-area {
+                display: flex;
+                justify-content: space-around;
+                margin-top: 100px;
+                margin-bottom: 60px;
+                page-break-inside: avoid;
+                position: relative;
+            }
+            .signature-box {
+                border-top: 1px solid #333;
+                width: 250px;
+                text-align: center;
+                padding-top: 10px;
+                font-size: 12px;
+                font-weight: 600;
+                min-height: 70px;
+            }
+            .company-footer {
+                position: absolute;
+                bottom: 20px;
+                left: 20px;
+                right: 20px;
+                font-size: 9px;
+                color: #666;
+                text-align: center;
+                border-top: 1px solid #eee;
+                padding-top: 10px;
+                line-height: 1.4;
+            }
+            .company-footer strong {
+                color: #1a56db;
+            }
+            .page-counter {
+                position: absolute;
+                bottom: 15px;
+                right: 20px;
+                font-size: 10px;
+                color: #999;
+            }
+            .photo-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+                gap: 10px;
+                margin-top: 15px;
+            }
+            .photo-item {
+                border: 1px solid #e2e8f0;
+                border-radius: 4px;
+                overflow: hidden;
+            }
+            .photo-item img {
+                width: 100%;
+                height: 120px;
+                object-fit: cover;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="report-page">
+        <div class="header">
+            <div class="logo-container">
+                <img src="${logo}" alt="Alfa Tecnologia Hospitalar" onerror="this.style.display='none';">
+            </div>
+            <div class="report-info">
+                ${printType === 'internal' ? '<div class="internal-badge">USO INTERNO - CONFIDENCIAL</div>' : ''}
+                <div class="report-title">${title}</div>
+                <div style="font-size:11px;color:#666;">Data: ${new Date().toLocaleDateString('pt-BR')}</div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <div class="section-title">Dados do Cliente</div>
+            <div class="client-grid">
+                <div><strong>Cliente:</strong><br>${printData.client || '---'}</div>
+                <div><strong>CNPJ:</strong><br>${printData.cnpj || '---'}</div>
+                <div><strong>Atendimento:</strong><br>${printData.billingType} ${printData.maintenanceVisit ? '- ' + printData.maintenanceVisit : ''}</div>
+                <div><strong>Contato:</strong><br>${printData.contactPerson || '---'}</div>
+                <div><strong>E-mail:</strong><br>${printData.email || '---'}</div>
+                <div><strong>Endereço:</strong><br>${printData.address || '---'}</div>
+            </div>
+        </div>
+        
+        ${isBudgetStage && printType === 'client' ? `
+        <div class="valor-section">
+            <div class="footer-title">VALOR DA PROPOSTA</div>
+            <div class="valor-destaque">
+                R$ ${valorCobrado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            </div>
+            <p><strong>Condições de pagamento:</strong> ${paymentConditions}</p>
+            ${discountSection}
+        </div>
+        ` : ''}
+        
+        <div class="section">
+            <div class="section-title">Equipamento</div>
+            <div style="margin-bottom: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: start;">
+                    <div style="flex: 1;">
+                        <div style="font-weight: bold; font-size: 14px; color: #1e40af; margin-bottom: 5px;">${printData.item || '---'}</div>
+                        <div style="font-size: 11px; color: #666; margin-bottom: 5px;">
+                            ${printData.manufacturer || ''} ${printData.model || ''}
+                        </div>
+                        <div style="font-size: 10px; color: #999;">NS: ${printData.serial || 'N/D'}</div>
+                        ${printData.quantity && parseInt(printData.quantity) > 1 ?
+                `<div style="font-size:10px;color:#666;margin-top:5px;"><strong>Quantidade:</strong> ${printData.quantity}</div>` :
+                ''}
+                        <div style="margin-top: 10px; font-size: 11px;">
+                            <strong>OS:</strong> ${printData.osNumber || '---'} | 
+                            <strong>Status:</strong> ${printData.status || '---'}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="equipment-details">
+                <div class="defects-section">
+                    <div style="font-weight: bold; font-size: 12px; color: #1e40af; margin-bottom: 10px;">DEFEITOS ENCONTRADOS</div>
+                    ${defects.length > 0 ?
+                `<ul class="defects-list">${defects.map(d => `<li>${d}</li>`).join('')}</ul>` :
+                '<div style="color: #999; font-style: italic;">Sem defeitos registrados</div>'}
+                </div>
+                
+                <div class="solutions-section">
+                    <div style="font-weight: bold; font-size: 12px; color: #059669; margin-bottom: 10px;">SOLUÇÃO APLICADA</div>
+                    ${solutions.length > 0 ?
+                `<ul class="solutions-list">${solutions.map(s => `<li>${s}</li>`).join('')}</ul>` :
+                '<div style="color: #999; font-style: italic;">Solução em análise</div>'}
+                </div>
+            </div>
+            
+            ${observation || photos.length > 0 ? `
+            <div class="observation-section">
+                ${observation ? `
+                <div style="margin-bottom: ${photos.length > 0 ? '15px' : '0'};">
+                    <div style="font-weight: bold; font-size: 11px; color: #7c3aed; margin-bottom: 5px;">OBSERVAÇÕES:</div>
+                    <div style="font-size: 11px; line-height: 1.4;">${observation}</div>
+                </div>
+                ` : ''}
+                
+                ${photos.length > 0 ? `
+                <div>
+                    <div style="font-weight: bold; font-size: 11px; color: #7c3aed; margin-bottom: 5px;">FOTOS:</div>
+                    <div class="photo-grid">
+                        ${photos.slice(0, 3).map((photo, idx) =>
+                    `<div class="photo-item">
+                                <img src="${photo}" alt="Foto ${idx + 1}" onerror="this.style.display='none';">
+                            </div>`
+                ).join('')}
+                    </div>
+                    ${photos.length > 3 ?
+                        `<div style="font-size: 10px; color: #666; margin-top: 5px;">+ ${photos.length - 3} foto(s) adicional(is)</div>` :
+                        ''}
+                </div>
+                ` : ''}
+            </div>
+            ` : ''}
+        </div>
+        
+        ${printType === 'client' && isBudgetStage ? `
+        <div class="footer-notes">
+            <div class="footer-title">INFORMAÇÕES IMPORTANTES:</div>
+            <p><strong>• Garantia:</strong> 3 meses. Não está coberto por garantia os danos causados por uso inadequado, queda ou choque mecânico, acondicionamento inadequado e/ou acondicionamento fora dos padrões recomendados pelo fabricante.</p>
+            <p><strong>• Prazo de entrega:</strong> ${printData.deliveryDeadline || 'A ser definido após aprovação do orçamento'}</p>
+        </div>
+        ` : ''}
+        
+        <div class="signature-area">
+            <div class="signature-box">Técnico Responsável</div>
+            <div class="signature-box">Cliente / Recebedor</div>
+        </div>
+        
+        <div class="company-footer">
+            <strong>Alfa Tecnologia Hospitalar</strong> - CNPJ: 50.993.453/0001-34<br/>
+            (55) 9 9137-9413 - alfa.manutencaosm@gmail.com<br/>
+            Endereço: Travessa Moreira, 125 - CEP: 97070-540 - Bairro: Duque de Caxias, Santa Maria/ RS
+        </div>
+        
+        <div class="page-counter">Página 1 de 1</div>
+    </div>
+</body>
+</html>`;
+
+        const printWindow = window.open('', 'printWindow', 'width=800,height=600,scrollbars=yes');
+        if (!printWindow) {
+            showNotification('Permita pop-ups para imprimir o documento', 'error');
+            return;
+        }
+
+        printWindow.document.write(htmlContent);
+        printWindow.document.close();
+
+        setTimeout(() => {
+            printWindow.focus();
+            printWindow.print();
+        }, 500);
+    };
+
     const exportToWord = () => {
         if (selectedOrders.length === 0) {
             showNotification('Selecione pelo menos uma OS para exportar', 'error');
             return;
         }
 
-        // Verificar se é cliente (não permitir exportar para Word)
         if (userData?.role === 'client') {
             showNotification('Clientes não têm permissão para exportar documentos Word', 'error');
             return;
@@ -1659,7 +2688,6 @@ export default function MainApp() {
         try {
             setIsSaving(true);
 
-            // Agrupar por cliente
             const groups = {};
             selectedData.forEach(os => {
                 const key = `${os.client}-${os.cnpj || 'no-cnpj'}-${os.billingType}-${os.maintenanceVisit || 'no-visit'}`;
@@ -1680,7 +2708,6 @@ export default function MainApp() {
                 groups[key].items.push(os);
             });
 
-            // Criar conteúdo HTML que pode ser salvo como .doc
             let htmlContent = `
 <!DOCTYPE html>
 <html>
@@ -1696,17 +2723,17 @@ export default function MainApp() {
             padding: 20px;
         }
         h1 {
-            color: #1a56db;
             text-align: center;
             font-size: 28px;
             margin-bottom: 10px;
+            color: #1a56db;
         }
         h2 {
-            color: #1a56db;
             text-align: center;
             font-size: 20px;
             margin-top: 0;
             margin-bottom: 30px;
+            color: #1a56db;
         }
         h3 {
             color: #1a56db;
@@ -1788,15 +2815,32 @@ export default function MainApp() {
         .page-break {
             page-break-after: always;
         }
+        .photo-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 5px;
+            margin-top: 10px;
+        }
+        .photo-item {
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        .photo-item img {
+            width: 100%;
+            height: 80px;
+            object-fit: cover;
+        }
     </style>
 </head>
-<body>
-`;
+<body>`;
 
             Object.values(groups).forEach((group, groupIndex) => {
                 htmlContent += `
-    <h1>ALFA TECNOLOGIA HOSPITALAR</h1>
-    <h2>Relatório de Atendimento Técnico</h2>
+    <div style="text-align: center; margin-bottom: 30px;">
+        <img src="${logo}" alt="Logo" style="height: 60px; margin-bottom: 10px;">
+        <h1>Relatório de Atendimento Técnico</h1>
+    </div>
     
     <h3>DADOS DO CLIENTE</h3>
     <div class="client-info">
@@ -1831,13 +2875,18 @@ export default function MainApp() {
         <thead>
             <tr>
                 <th width="15%">OS</th>
-                <th width="30%">Equipamento</th>
-                <th width="55%">Laudo Técnico</th>
+                <th width="25%">Equipamento</th>
+                <th width="30%">Defeito / Solução</th>
+                <th width="30%">Observações</th>
             </tr>
         </thead>
         <tbody>`;
 
                 group.items.forEach(item => {
+                    const defects = item.defect ? item.defect.split('\n').filter(d => d.trim()) : [];
+                    const solutions = item.solution ? item.solution.split('\n').filter(s => s.trim()) : [];
+                    const photos = item.photos || [];
+
                     htmlContent += `
             <tr>
                 <td>
@@ -1848,13 +2897,38 @@ export default function MainApp() {
                     <div class="equipment-name">${item.item || '---'}</div>
                     <div class="equipment-details">${item.manufacturer || ''} ${item.model || ''}</div>
                     <div class="serial">NS: ${item.serial || 'N/D'}</div>
-                    ${item.quantity && parseInt(item.quantity) > 1 ? 
-                        `<div class="quantity" style="font-size:9px;color:#666;margin-top:2px;"><strong>Quantidade:</strong> ${item.quantity}</div>` : 
-                        ''}
+                    ${item.quantity && parseInt(item.quantity) > 1 ?
+                            `<div class="quantity" style="font-size:9px;color:#666;margin-top:2px;"><strong>Quantidade:</strong> ${item.quantity}</div>` :
+                            ''}
                 </td>
                 <td>
-                    <div><strong>Defeito:</strong> ${(item.defect || 'N/A').replace(/\n/g, '<br>')}</div>
-                    <div><strong>Solução:</strong> ${(item.solution || 'Em análise...').replace(/\n/g, '<br>')}</div>
+                    <div><strong>Defeito:</strong></div>
+                    ${defects.length > 0 ?
+                            `<ul style="margin: 5px 0; padding-left: 20px;">${defects.map(d => `<li>${d}</li>`).join('')}</ul>` :
+                            '<div style="color: #999; font-style: italic;">Sem defeitos registrados</div>'}
+                    <div style="margin-top: 10px;"><strong>Solução:</strong></div>
+                    ${solutions.length > 0 ?
+                            `<ul style="margin: 5px 0; padding-left: 20px;">${solutions.map(s => `<li>${s}</li>`).join('')}</ul>` :
+                            '<div style="color: #999; font-style: italic;">Solução em análise</div>'}
+                </td>
+                <td>
+                    ${item.equipmentObservation ? `
+                    <div><strong>Observações:</strong> ${item.equipmentObservation}</div>
+                    ` : ''}
+                    
+                    ${photos.length > 0 ? `
+                    <div style="margin-top: 10px;"><strong>Fotos:</strong></div>
+                    <div class="photo-grid">
+                        ${photos.slice(0, 3).map(photo =>
+                                `<div class="photo-item">
+                                <img src="${photo}" alt="Foto" onerror="this.style.display='none';">
+                            </div>`
+                            ).join('')}
+                    </div>
+                    ${photos.length > 3 ?
+                                `<div style="font-size: 9px; color: #666; margin-top: 5px;">+ ${photos.length - 3} foto(s) adicional(is)</div>` :
+                                ''}
+                    ` : ''}
                 </td>
             </tr>`;
                 });
@@ -1869,7 +2943,6 @@ export default function MainApp() {
         <p>Endereço: Travessa Moreira, 125 - CEP: 97070-540 - Bairro: Duque de Caxias, Santa Maria/ RS</p>
     </div>`;
 
-                // Adicionar quebra de página se não for o último grupo
                 if (groupIndex < Object.values(groups).length - 1) {
                     htmlContent += `<div class="page-break"></div>`;
                 }
@@ -1879,14 +2952,11 @@ export default function MainApp() {
 </body>
 </html>`;
 
-            // Criar blob do HTML
             const blob = new Blob([htmlContent], {
                 type: 'application/msword;charset=utf-8'
             });
 
-            // Usar file-saver para baixar
             saveAs(blob, `relatorio_os_${new Date().toISOString().split('T')[0]}.doc`);
-
             showNotification('Documento Word gerado com sucesso!', 'success');
 
         } catch (error) {
@@ -1895,934 +2965,6 @@ export default function MainApp() {
         } finally {
             setIsSaving(false);
         }
-    };
-
-    // --- FUNÇÃO PARA IMPRIMIR DO MODAL ---
-    const handleModalPrint = (printType) => {
-        const printData = prepareDataForSave();
-
-        // VERIFICAR STATUS PARA DEFINIR TÍTULO
-        const isBudgetStage = printData.status === 'Em orçamento' ||
-            printData.status === 'Aguardando aprovação do orçamento';
-
-        const title = printType === 'internal' ?
-            'Relatório INTERNO - Alfa Tecnologia' :
-            (isBudgetStage ? 'Proposta de orçamento - Alfa Tecnologia' : 'Relatório de atendimento - Alfa Tecnologia');
-
-        // Preparar condições de pagamento
-        const paymentConditions = `${printData.paymentCondition}${printData.installments ? ` ${printData.installments}` : ''}`;
-
-        // Calcular valor cobrado (com desconto se aplicável)
-        const valorCobrado = printData.finalChargedAmount > 0 ?
-            parseCurrency(printData.finalChargedAmount) :
-            parseCurrency(printData.chargedAmount);
-
-        // Calcular desconto de 5% se aplicável
-        let discountSection = '';
-        if (printData.discount5Days && printData.chargedAmount) {
-            const valorOriginal = parseCurrency(printData.chargedAmount);
-            const desconto = valorOriginal * 0.05;
-            const valorFinal = valorOriginal - desconto;
-
-            discountSection = `
-        <div style="margin-top: 10px; padding: 8px; background: #f0fdf4; border-radius: 6px; border: 1px solid #bbf7d0;">
-            <div style="font-size: 9px; font-weight: bold; color: #166534; margin-bottom: 3px;">DESCONTO APLICADO</div>
-            <div style="display: flex; justify-content: space-between; font-size: 10px;">
-                <span>Valor Original:</span>
-                <span>R$ ${valorOriginal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; font-size: 10px;">
-                <span>Desconto (5%):</span>
-                <span style="color: #dc2626;">- R$ ${desconto.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; font-size: 11px; font-weight: bold; margin-top: 3px; border-top: 1px dashed #86efac; padding-top: 3px;">
-                <span>VALOR FINAL:</span>
-                <span style="color: #166534;">R$ ${valorFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-            </div>
-        </div>
-    `;
-        }
-
-        // Construir o HTML de forma limpa
-        let htmlContent = `
-<!DOCTYPE html>
-<html>
-<head>
-    <title>${title}</title>
-    <style>
-        @media print {
-            @page { margin: 1cm; }
-        }
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            color: #333;
-            line-height: 1.4;
-            padding: 0;
-            margin: 0;
-            font-size: 12px;
-        }
-        .report-page {
-            padding: 20px;
-            position: relative;
-            min-height: 27cm;
-        }
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 2px solid #1a56db;
-            padding-bottom: 15px;
-            margin-bottom: 20px;
-        }
-        .logo-area {
-            color: #1a56db;
-        }
-        .logo-text {
-            font-size: 28px;
-            font-weight: 900;
-            margin: 0;
-        }
-        .logo-sub {
-            font-size: 10px;
-            letter-spacing: 2px;
-            text-transform: uppercase;
-            margin: 0;
-        }
-        .report-info {
-            text-align: right;
-        }
-        .report-title {
-            font-size: 16px;
-            font-weight: 900;
-            color: #1a56db;
-            text-transform: uppercase;
-        }
-        .internal-badge {
-            background: #b91c1c;
-            color: white;
-            padding: 2px 6px;
-            font-size: 10px;
-            border-radius: 4px;
-            font-weight: bold;
-            margin-bottom: 4px;
-            display: inline-block;
-        }
-        .section {
-            margin-bottom: 25px;
-        }
-        .section-title {
-            background: #f8fafc;
-            padding: 6px 12px;
-            font-size: 11px;
-            font-weight: 900;
-            text-transform: uppercase;
-            border-left: 5px solid #1a56db;
-            margin-bottom: 12px;
-            color: #1e40af;
-        }
-        .client-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
-            gap: 15px;
-            font-size: 12px;
-            margin-bottom: 20px;
-        }
-        .items-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 10px;
-        }
-        .items-table th {
-            background: #f8fafc;
-            text-align: left;
-            padding: 10px;
-            font-size: 10px;
-            text-transform: uppercase;
-            color: #64748b;
-            border-bottom: 2px solid #e2e8f0;
-        }
-        .items-table td {
-            padding: 12px 10px;
-            font-size: 11px;
-            border-bottom: 1px solid #f1f5f9;
-            vertical-align: top;
-        }
-        .os-tag {
-            font-weight: 900;
-            color: #1a56db;
-            display: block;
-            margin-bottom: 4px;
-        }
-        .signature-area {
-            display: flex;
-            justify-content: space-around;
-            margin-top: 80px;
-            page-break-inside: avoid;
-        }
-        .signature-box {
-            border-top: 1px solid #333;
-            width: 250px;
-            text-align: center;
-            padding-top: 8px;
-            font-size: 11px;
-            font-weight: 600;
-        }
-        .footer-notes {
-            margin-top: 40px;
-            font-size: 10px;
-            color: #666;
-            border-top: 1px solid #ccc;
-            padding-top: 15px;
-            line-height: 1.4;
-            page-break-inside: avoid;
-        }
-        .footer-notes p {
-            margin: 5px 0;
-        }
-        .footer-title {
-            font-weight: bold;
-            color: #1a56db;
-            margin-bottom: 3px;
-        }
-        .company-footer {
-            position: absolute;
-            bottom: 20px;
-            left: 20px;
-            right: 20px;
-            font-size: 9px;
-            color: #666;
-            text-align: center;
-            border-top: 1px solid #eee;
-            padding-top: 10px;
-            line-height: 1.3;
-        }
-        .company-footer strong {
-            color: #1a56db;
-        }
-        .observations-section {
-            margin-top: 15px;
-            padding: 10px;
-            background: #f8fafc;
-            border-left: 4px solid #94a3b8;
-            border-radius: 4px;
-            font-size: 11px;
-            line-height: 1.4;
-        }
-        .valor-section {
-            margin-top: 15px;
-            padding: 15px;
-            background: #f0fdf4;
-            border-left: 4px solid #10b981;
-            border-radius: 6px;
-            font-size: 11px;
-            line-height: 1.4;
-        }
-        .valor-destaque {
-            font-size: 18px;
-            font-weight: 900;
-            color: #166534;
-            text-align: center;
-            margin: 10px 0;
-        }
-        @media print {
-            .report-page {
-                page-break-after: always;
-            }
-            .report-page:last-child {
-                page-break-after: avoid;
-            }
-        }
-    </style>
-</head>
-<body>
-    <div class="report-page">
-        <div class="header">
-            <div class="logo-area">
-                <h1 class="logo-text">ALFA</h1>
-                <p class="logo-sub">TECNOLOGIA HOSPITALAR</p>
-            </div>
-            <div class="report-info">
-                ${printType === 'internal' ? '<div class="internal-badge">USO INTERNO - CONFIDENCIAL</div>' : ''}
-                <div class="report-title">${title}</div>
-                <div style="font-size:10px;">Data: ${new Date().toLocaleDateString('pt-BR')}</div>
-            </div>
-        </div>
-        
-        <div class="section">
-            <div class="section-title">Dados do Cliente</div>
-            <div class="client-grid">
-                <div><strong>Cliente:</strong><br>${printData.client || '---'}</div>
-                <div><strong>CNPJ:</strong><br>${printData.cnpj || '---'}</div>
-                <div><strong>Atendimento:</strong><br>${printData.billingType} ${printData.maintenanceVisit ? '- ' + printData.maintenanceVisit : ''}</div>
-                <div><strong>Contato:</strong><br>${printData.contactPerson || '---'}</div>
-                <div><strong>E-mail:</strong><br>${printData.email || '---'}</div>
-                <div><strong>Endereço:</strong><br>${printData.address || '---'}</div>
-            </div>
-        </div>
-        
-        <!-- SEÇÃO DE VALOR COBRADO PARA ORÇAMENTOS -->
-        ${isBudgetStage && printType === 'client' ? `
-        <div class="valor-section">
-            <div class="footer-title">VALOR DA PROPOSTA</div>
-            <div class="valor-destaque">
-                R$ ${valorCobrado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-            </div>
-            <p><strong>Condições de pagamento:</strong> ${paymentConditions}</p>
-            ${discountSection}
-        </div>
-        ` : ''}
-        
-        <div class="section">
-            <div class="section-title">Equipamento</div>
-            <table class="items-table">
-                <thead>
-                    <tr>
-                        <th width="15%">OS</th>
-                        <th width="30%">Equipamento</th>
-                        <th width="55%">Laudo Técnico</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td>
-                            <span class="os-tag">${printData.osNumber || '---'}</span>
-                            <small>${printData.status || '---'}</small>
-                        </td>
-                        <td>
-                            <strong>${printData.item || '---'}</strong><br>
-                            <div style="font-size:9px;color:#666;margin-bottom:2px;">
-                                ${printData.manufacturer || ''} ${printData.model || ''}
-                            </div>
-                            <small>NS: ${printData.serial || 'N/D'}</small>
-                            ${printData.quantity && parseInt(printData.quantity) > 1 ? 
-                                `<div style="font-size:9px;color:#666;margin-top:2px;"><strong>Quantidade:</strong> ${printData.quantity}</div>` : 
-                                ''}
-                        </td>
-                        <td>
-                            <div><strong>Defeito:</strong> ${printData.defect || 'N/A'}</div>
-                            <div><strong>Solução:</strong> ${printData.solutionType === "Não passível de conserto, substituir por novo equipamento / material" ?
-                `NÃO PASSÍVEL (${printData.notRepairableDetail})` :
-                (printData.solutionType === "Manual com custos detalhados" ?
-                    'Detalhamento na lista abaixo:' :
-                    (printData.solutionType === "Conserto em bancada" ?
-                        'CONSERTO EM BANCADA: ' + (printData.solution || 'Detalhes do conserto') :
-                        (printData.solutionType === "Preenchimento manual" ?
-                            (printData.solution || 'Em análise...') :
-                            (printData.solution || 'Em análise...'))))}
-                            </div>`;
-
-        // Adicionar observações do equipamento
-        if (printData.equipmentObservation) {
-            htmlContent += `
-                            <div class="observations-section">
-                                <strong>Observações:</strong> ${printData.equipmentObservation}
-                            </div>`;
-        }
-
-        // Adicionar lista de soluções se houver
-        if (printData.solutionType === "Manual com custos detalhados" && printData.solutionsList && printData.solutionsList.length > 0) {
-            const total = printData.solutionsList.reduce((acc, curr) => acc + parseFloat(curr.cost.replace('.', '').replace(',', '.') || 0), 0);
-            htmlContent += `
-                            <table style="width:100%; margin-top:8px; border:1px solid #f1f5f9; font-size:10px; border-radius:4px;">
-                                <thead>
-                                    <tr>
-                                        <th style="text-align:left; background:#f8fafc; padding:4px 8px; font-size:9px;">Item / Serviço</th>
-                                        <th style="text-align:right; background:#f8fafc; padding:4px 8px; font-size:9px;">Valor</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${printData.solutionsList.map(s => `
-                                        <tr>
-                                            <td style="padding:4px 8px; border-bottom:1px solid #f8fafc;">${s.text}</td>
-                                            <td style="text-align:right; padding:4px 8px; border-bottom:1px solid #f8fafc;">R$ ${s.cost}</td>
-                                        </tr>
-                                    `).join('')}
-                                    <tr style="background:#f1f5f9; font-weight:bold;">
-                                        <td style="padding:4px 8px;">TOTAL</td>
-                                        <td style="text-align:right; padding:4px 8px;">R$ ${total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                                    </tr>
-                                </tbody>
-                            </table>`;
-        }
-
-        htmlContent += `
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>`;
-
-        // Adicionar rodapé se for cliente e estiver em estágio de orçamento
-        if (printType === 'client' && isBudgetStage) {
-            htmlContent += `
-        <div class="footer-notes">
-            <div class="footer-title">INFORMAÇÕES IMPORTANTES:</div>
-            <p><strong>• Garantia:</strong> 3 meses. Não está coberto por garantia os danos causados por uso inadequado, queda ou choque mecânico, acondicionamento inadequado e/ou acondicionamento fora dos padrões recomendados pelo fabricante.</p>
-            <p><strong>• Prazo de entrega:</strong> ${printData.deliveryDeadline || 'A ser definido após aprovação do orçamento'}</p>
-        </div>`;
-        }
-
-        htmlContent += `
-        <div class="signature-area">
-            <div class="signature-box">Técnico Responsável</div>
-            <div class="signature-box">Cliente / Recebedor</div>
-        </div>
-        
-        <div class="company-footer">
-            <strong>Alfa Tecnologia Hospitalar</strong> - CNPJ: 50.993.453/0001-34<br/>
-            (55) 9 9137-9413 - alfa.manutencaosm@gmail.com<br/>
-            Endereço: Travessa Moreira, 125 - CEP: 97070-540 - Bairro: Duque de Caxias, Santa Maria/ RS
-        </div>
-    </div>
-</body>
-</html>`;
-
-        const printWindow = window.open('', 'printWindow', 'width=800,height=600,scrollbars=yes');
-        if (!printWindow) {
-            showNotification('Permita pop-ups para imprimir o documento', 'error');
-            return;
-        }
-
-        printWindow.document.write(htmlContent);
-        printWindow.document.close();
-
-        // Focar e imprimir após carregar
-        setTimeout(() => {
-            printWindow.focus();
-            printWindow.print();
-        }, 500);
-    };
-
-    const handleNewContract = () => {
-        setContractForm({
-            clientName: '', cnpj: '', address: '', contactPerson: '', email: '',
-            startDate: '', endDate: '', monthlyValue: '', annualValue: '',
-            coveredItems: { videoSurgeryInstruments: false, openInstruments: false, videoSurgeryEquipment: false, endoscopes: false },
-            observations: ''
-        });
-        setIsNewContractMode(true);
-        setIsContractModalOpen(true);
-    };
-
-    const openContractModal = (contract) => {
-        setContractForm(contract);
-        setIsNewContractMode(false);
-        setIsContractModalOpen(true);
-    };
-
-    const handleSaveContract = async (e) => {
-        e.preventDefault();
-        if (!contractForm.clientName.trim()) {
-            showNotification("Nome do cliente é obrigatório", 'error');
-            return;
-        }
-        setIsSaving(true);
-        try {
-            const docId = contractForm.clientName.replace(/\s+/g, '_').toLowerCase();
-            await setDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'contracts', docId), contractForm);
-            showNotification("Contrato salvo com sucesso!", 'success');
-            setIsContractModalOpen(false);
-        } catch (err) {
-            console.error("Erro ao salvar contrato", err);
-            showNotification("Erro ao salvar contrato: " + err.message, 'error');
-        } finally {
-            setIsSaving(false);
-        }
-    };
-
-    const confirmDelete = (order) => {
-        setOrderToDelete(order);
-        setIsDeleteModalOpen(true);
-    };
-
-    const handleDelete = async () => {
-        if (!orderToDelete) return;
-        try {
-            await deleteDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', orderToDelete.firestoreId));
-            showNotification("OS excluída com sucesso!", 'success');
-            setIsDeleteModalOpen(false);
-            setOrderToDelete(null);
-        } catch (err) {
-            showNotification("Erro ao excluir: " + err.message, 'error');
-        }
-    };
-
-    const handleFilterByStatus = (status) => {
-        setSelectedOrders(ordersForUser.filter(o => o.status === status).map(o => o.firestoreId));
-    };
-
-    const handleFilterByBilling = (type) => {
-        setSelectedOrders(ordersForUser.filter(o => o.billingType === type).map(o => o.firestoreId));
-    };
-
-    const handleLogout = async () => {
-        try {
-            localStorage.removeItem('adminRestoreToken');
-            localStorage.removeItem('adminEmail');
-            await logout();
-            window.location.href = '/';
-            setTimeout(() => {
-                window.location.reload();
-            }, 100);
-        } catch (error) {
-            console.error("Erro ao fazer logout:", error);
-            window.location.reload();
-        }
-    };
-
-    const handlePrint = (printType, customPaymentConditions = null) => {
-        const selectedData = ordersForUser.filter(o => selectedOrders.includes(o.firestoreId));
-        if (selectedData.length === 0) {
-            showNotification('Selecione pelo menos uma OS para imprimir', 'error');
-            return;
-        }
-
-        const groups = {};
-        selectedData.forEach(os => {
-            const key = `${os.client}-${os.cnpj || 'no-cnpj'}-${os.billingType}-${os.maintenanceVisit || 'no-visit'}`;
-            if (!groups[key]) {
-                groups[key] = {
-                    header: {
-                        client: os.client,
-                        cnpj: os.cnpj,
-                        contactPerson: os.contactPerson,
-                        email: os.email,
-                        address: os.address,
-                        billingType: os.billingType,
-                        maintenanceVisit: os.maintenanceVisit
-                    },
-                    items: []
-                };
-            }
-            groups[key].items.push(os);
-        });
-
-        const hasBudgetStage = selectedData.some(os =>
-            os.status === 'Em orçamento' || os.status === 'Aguardando aprovação do orçamento'
-        );
-
-        const title = printType === 'internal' ?
-            'Relatório INTERNO - Alfa Tecnologia' :
-            (hasBudgetStage ? 'Proposta de orçamento - Alfa Tecnologia' : 'Relatório de atendimento - Alfa Tecnologia');
-
-        let htmlContent = `
-    <!DOCTYPE html>
-<html>
-    <head>
-        <title>${title}</title>
-        <style>
-            @media print {
-                @page { margin: 1cm; }
-            }
-            body {
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                color: #333;
-                line-height: 1.4;
-                padding: 0;
-                margin: 0;
-                font-size: 12px;
-            }
-            .report-page {
-                padding: 20px;
-                position: relative;
-                min-height: 27cm;
-                page-break-after: always;
-            }
-            .header {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                border-bottom: 2px solid #1a56db;
-                padding-bottom: 15px;
-                margin-bottom: 20px;
-            }
-            .logo-area {
-                color: #1a56db;
-            }
-            .logo-text {
-                font-size: 28px;
-                font-weight: 900;
-                margin: 0;
-            }
-            .logo-sub {
-                font-size: 10px;
-                letter-spacing: 2px;
-                text-transform: uppercase;
-                margin: 0;
-            }
-            .report-info {
-                text-align: right;
-            }
-            .report-title {
-                font-size: 16px;
-                font-weight: 900;
-                color: #1a56db;
-                text-transform: uppercase;
-            }
-            .internal-badge {
-                background: #b91c1c;
-                color: white;
-                padding: 2px 6px;
-                font-size: 10px;
-                border-radius: 4px;
-                font-weight: bold;
-                margin-bottom: 4px;
-                display: inline-block;
-            }
-            .section {
-                margin-bottom: 25px;
-            }
-            .section-title {
-                background: #f8fafc;
-                padding: 6px 12px;
-                font-size: 11px;
-                font-weight: 900;
-                text-transform: uppercase;
-                border-left: 5px solid #1a56db;
-                margin-bottom: 12px;
-                color: #1e40af;
-            }
-            .client-grid {
-                display: grid;
-                grid-template-columns: 1fr 1fr 1fr;
-                gap: 15px;
-                font-size: 12px;
-                margin-bottom: 20px;
-            }
-            .items-table {
-                width: 100%;
-                border-collapse: collapse;
-                margin-top: 10px;
-            }
-            .items-table th {
-                background: #f8fafc;
-                text-align: left;
-                padding: 10px;
-                font-size: 10px;
-                text-transform: uppercase;
-                color: #64748b;
-                border-bottom: 2px solid #e2e8f0;
-            }
-            .items-table td {
-                padding: 12px 10px;
-                font-size: 11px;
-                border-bottom: 1px solid #f1f5f9;
-                vertical-align: top;
-            }
-            .os-tag {
-                font-weight: 900;
-                color: #1a56db;
-                display: block;
-                margin-bottom: 4px;
-            }
-            .signature-area {
-                display: flex;
-                justify-content: space-around;
-                margin-top: 80px;
-                page-break-inside: avoid;
-            }
-            .signature-box {
-                border-top: 1px solid #333;
-                width: 250px;
-                text-align: center;
-                padding-top: 8px;
-                font-size: 11px;
-                font-weight: 600;
-            }
-            .footer-notes {
-                margin-top: 40px;
-                font-size: 10px;
-                color: #666;
-                border-top: 1px solid #ccc;
-                padding-top: 15px;
-                line-height: 1.4;
-                page-break-inside: avoid;
-            }
-            .footer-notes p {
-                margin: 5px 0;
-            }
-            .footer-title {
-                font-weight: bold;
-                color: #1a56db;
-                margin-bottom: 3px;
-            }
-            .company-footer {
-                position: absolute;
-                bottom: 20px;
-                left: 20px;
-                right: 20px;
-                font-size: 9px;
-                color: #666;
-                text-align: center;
-                border-top: 1px solid #eee;
-                padding-top: 10px;
-                line-height: 1.3;
-            }
-            .company-footer strong {
-                color: #1a56db;
-            }
-            .observations-section {
-                margin-top: 8px;
-                padding: 6px 10px;
-                background: #f8fafc;
-                border-left: 3px solid #94a3b8;
-                border-radius: 4px;
-                font-size: 10px;
-                line-height: 1.3;
-            }
-            .valor-section {
-                margin-top: 15px;
-                padding: 15px;
-                background: #f0fdf4;
-                border-left: 4px solid #10b981;
-                border-radius: 6px;
-                font-size: 11px;
-                line-height: 1.4;
-            }
-            .valor-destaque {
-                font-size: 18px;
-                font-weight: 900;
-                color: #166534;
-                text-align: center;
-                margin: 10px 0;
-            }
-            .valor-total-grupo {
-                margin-top: 20px;
-                padding: 15px;
-                background: #f0f9ff;
-                border-left: 4px solid #0ea5e9;
-                border-radius: 6px;
-                font-size: 12px;
-                line-height: 1.4;
-            }
-            @media print {
-                .report-page {
-                    page-break-after: always;
-                }
-                .report-page:last-child {
-                    page-break-after: avoid;
-                }
-            }
-        </style>
-    </head>
-    <body>`;
-
-        Object.values(groups).forEach((group, groupIndex) => {
-            const budgetItems = group.items.filter(item =>
-                item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento'
-            );
-            const hasBudgetInGroup = budgetItems.length > 0;
-
-            // Calcular valor total do grupo para orçamentos
-            let valorTotalGrupo = 0;
-            if (hasBudgetInGroup) {
-                budgetItems.forEach(item => {
-                    const valor = customPaymentConditions ?
-                        customPaymentConditions.finalChargedAmount / selectedData.length : // Distribui o valor igualmente
-                        (item.finalChargedAmount ?
-                            parseCurrency(item.finalChargedAmount) :
-                            parseCurrency(item.chargedAmount));
-                    valorTotalGrupo += valor;
-                });
-            }
-
-            htmlContent += `
-        <div class="report-page">
-            <div class="header">
-                <div class="logo-area">
-                    <h1 class="logo-text">ALFA</h1>
-                    <p class="logo-sub">TECNOLOGIA HOSPITALAR</p>
-                </div>
-                <div class="report-info">
-                    ${printType === 'internal' ? '<div class="internal-badge">USO INTERNO - CONFIDENCIAL</div>' : ''}
-                    <div class="report-title">${title}</div>
-                    <div style="font-size:10px;">Data: ${new Date().toLocaleDateString('pt-BR')}</div>
-                </div>
-            </div>
-            
-            <div class="section">
-                <div class="section-title">Dados do Cliente</div>
-                <div class="client-grid">
-                    <div><strong>Cliente:</strong><br>${group.header.client || '---'}</div>
-                    <div><strong>CNPJ:</strong><br>${group.header.cnpj || '---'}</div>
-                    <div><strong>Atendimento:</strong><br>${group.header.billingType} ${group.header.maintenanceVisit ? '- ' + group.header.maintenanceVisit : ''}</div>
-                    <div><strong>Contato:</strong><br>${group.header.contactPerson || '---'}</div>
-                    <div><strong>E-mail:</strong><br>${group.header.email || '---'}</div>
-                    <div><strong>Endereço:</strong><br>${group.header.address || '---'}</div>
-                </div>
-            </div>
-            
-            ${hasBudgetInGroup && printType === 'client' ? `
-            <div class="valor-total-grupo">
-                <div class="footer-title">VALOR TOTAL DA PROPOSTA</div>
-                <div class="valor-destaque">
-                    R$ ${valorTotalGrupo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                </div>
-                <p><strong>Quantidade de itens em orçamento:</strong> ${budgetItems.length}</p>
-                ${customPaymentConditions ?
-                        `<p><strong>Condições de pagamento:</strong> ${customPaymentConditions.paymentCondition}${customPaymentConditions.installments ? ` ${customPaymentConditions.installments}` : ''}</p>` :
-                        (budgetItems[0] && budgetItems[0].paymentCondition ?
-                            `<p><strong>Condições de pagamento:</strong> ${budgetItems[0].paymentCondition}${budgetItems[0].installments ? ` ${budgetItems[0].installments}` : ''}</p>` :
-                            '')
-                    }
-            </div>
-            ` : ''}
-            
-            <div class="section">
-                <div class="section-title">Lista de Equipamentos</div>
-                <table class="items-table">
-                    <thead>
-                        <tr>
-                            <th width="15%">OS</th>
-                            <th width="30%">Equipamento</th>
-                            <th width="55%">Laudo Técnico</th>
-                        </tr>
-                    </thead>
-                    <tbody>`;
-
-            group.items.forEach(item => {
-                const list = item.solutionsList || [];
-                const total = list.reduce((acc, curr) => acc + parseFloat(curr.cost.replace('.', '').replace(',', '.') || 0), 0);
-
-                // Verificar se é orçamento
-                const isItemBudget = item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento';
-                const valorItem = customPaymentConditions ?
-                    customPaymentConditions.finalChargedAmount / selectedData.length : // Distribui o valor igualmente
-                    (item.finalChargedAmount ?
-                        parseCurrency(item.finalChargedAmount) :
-                        parseCurrency(item.chargedAmount));
-
-                htmlContent += `
-                        <tr>
-                            <td>
-                                <span class="os-tag">${item.osNumber || '---'}</span>
-                                <small>${item.status || '---'}</small>
-                                ${isItemBudget && printType === 'client' ? `
-                                <div style="margin-top: 5px; padding: 3px; background: #f0fdf4; border-radius: 4px; text-align: center;">
-                                    <div style="font-size: 9px; font-weight: bold; color: #166534;">VALOR</div>
-                                    <div style="font-size: 11px; font-weight: 900; color: #166534;">
-                                        R$ ${valorItem.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                    </div>
-                                </div>
-                                ` : ''}
-                            </td>
-                            <td>
-                                <strong>${item.item || '---'}</strong><br>
-                                <div style="font-size:9px;color:#666;margin-bottom:2px;">
-                                    ${item.manufacturer || ''} ${item.model || ''}
-                                </div>
-                                <small>NS: ${item.serial || 'N/D'}</small>
-                                ${item.quantity && parseInt(item.quantity) > 1 ? 
-                                    `<div style="font-size:9px;color:#666;margin-top:2px;"><strong>Quantidade:</strong> ${item.quantity}</div>` : 
-                                    ''}
-                            </td>
-                            <td>
-                                <div><strong>Defeito:</strong> ${item.defect || 'N/A'}</div>
-                                <div><strong>Solução:</strong> `;
-
-                // Renderizar solução baseada no tipo
-                if (item.solutionType === "Não passível de conserto, substituir por novo equipamento / material") {
-                    htmlContent += `NÃO PASSÍVEL (${item.notRepairableDetail || 'Substituir por novo equipamento/material'})`;
-                } else if (item.solutionType === "Manual com custos detalhados") {
-                    htmlContent += 'Detalhamento na lista abaixo:';
-                } else if (item.solutionType === "Conserto em bancada") {
-                    htmlContent += 'CONSERTO EM BANCADA: ' + (item.solution || 'Detalhes do conserto');
-                } else if (item.solutionType === "Preenchimento manual") {
-                    htmlContent += item.solution || 'Em análise...';
-                } else {
-                    htmlContent += item.solution || 'Em análise...';
-                }
-
-                htmlContent += `</div>`;
-
-                // Adicionar observações do equipamento
-                if (item.equipmentObservation) {
-                    htmlContent += `
-                                <div class="observations-section">
-                                    <strong>Observações:</strong> ${item.equipmentObservation}
-                                </div>`;
-                }
-
-                if (item.solutionType === "Manual com custos detalhados" && list.length > 0) {
-                    htmlContent += `
-                                <table style="width:100%; margin-top:8px; border:1px solid #f1f5f9; font-size:10px; border-radius:4px;">
-                                    <thead>
-                                        <tr>
-                                            <th style="text-align:left; background:#f8fafc; padding:4px 8px; font-size:9px;">Item / Serviço</th>
-                                            <th style="text-align:right; background:#f8fafc; padding:4px 8px; font-size:9px;">Valor</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        ${list.map(s => `
-                                            <tr>
-                                                <td style="padding:4px 8px; border-bottom:1px solid #f8fafc;">${s.text}</td>
-                                                <td style="text-align:right; padding:4px 8px; border-bottom:1px solid #f8fafc;">R$ ${s.cost}</td>
-                                            </tr>
-                                        `).join('')}
-                                        <tr style="background:#f1f5f9; font-weight:bold;">
-                                            <td style="padding:4px 8px;">TOTAL</td>
-                                            <td style="text-align:right; padding:4px 8px;">R$ ${total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                                        </tr>
-                                    </tbody>
-                                </table>`;
-                }
-
-                htmlContent += `
-                            </td>
-                        </tr>`;
-            });
-
-            htmlContent += `
-                    </tbody>
-                </table>
-            </div>`;
-
-            if (printType === 'client' && hasBudgetInGroup) {
-                const budgetItem = budgetItems[0];
-                const deliveryDeadline = budgetItem.deliveryDeadline || 'A ser definido após aprovação do orçamento';
-                const paymentConditions = customPaymentConditions ?
-                    `${customPaymentConditions.paymentCondition}${customPaymentConditions.installments ? ` ${customPaymentConditions.installments}` : ''}` :
-                    `${budgetItem.paymentCondition || 'À vista'}${budgetItem.installments ? ` ${budgetItem.installments}` : ''}`;
-
-                htmlContent += `
-            <div class="footer-notes">
-                <div class="footer-title">INFORMAÇÕES IMPORTANTES:</div>
-                <p><strong>• Garantia:</strong> 3 meses. Não está coberto por garantia os danos causados por uso inadequado, queda ou choque mecânico, acondicionamento inadequado e/ou acondicionamento fora dos padrões recomendados pelo fabricante.</p>
-                <p><strong>• Prazo de entrega:</strong> ${deliveryDeadline}</p>
-                <p><strong>• Valor Total da Proposta:</strong> R$ ${valorTotalGrupo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                <p><strong>• Condições de pagamento:</strong> ${paymentConditions}</p>
-            </div>`;
-            }
-
-            htmlContent += `
-            <div class="signature-area">
-                <div class="signature-box">Técnico Responsável</div>
-                <div class="signature-box">Cliente / Recebedor</div>
-            </div>
-            
-            <div class="company-footer">
-                <strong>Alfa Tecnologia Hospitalar</strong> - CNPJ: 50.993.453/0001-34<br/>
-                (55) 9 9137-9413 - alfa.manutencaosm@gmail.com<br/>
-                Endereço: Travessa Moreira, 125 - CEP: 97070-540 - Bairro: Duque de Caxias, Santa Maria/ RS
-            </div>
-        </div>`;
-        });
-
-        htmlContent += `</body></html>`;
-
-        const printWindow = window.open('', 'printWindow', 'width=800,height=600,scrollbars=yes');
-        if (!printWindow) {
-            showNotification('Permita pop-ups para imprimir o documento', 'error');
-            return;
-        }
-
-        printWindow.document.write(htmlContent);
-        printWindow.document.close();
-
-        setTimeout(() => {
-            printWindow.focus();
-            printWindow.print();
-        }, 500);
     };
 
     // === RENDERIZAÇÃO ===
@@ -2858,12 +3000,23 @@ export default function MainApp() {
 
     return (
         <div className="flex min-h-screen bg-slate-50 font-sans overflow-hidden">
-            {/* Sidebar com Logo */}
-            <aside className={`${isSidebarOpen ? 'w-64' : 'w-20'} bg-slate-900 text-white transition-all duration-300 flex flex-col fixed h-full z-30 shadow-2xl`}>
-                {/* Header com Logo */}
+            {/* Botão de menu para mobile */}
+            <button
+                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                className="lg:hidden fixed top-4 left-4 z-50 bg-blue-600 text-white p-2 rounded-xl shadow-lg"
+            >
+                <Menu size={24} />
+            </button>
+
+            {/* Sidebar */}
+            <aside className={`
+        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'} 
+        fixed lg:relative z-40 lg:z-auto
+        ${isSidebarOpen ? 'w-64' : 'lg:w-20 w-64'} 
+        bg-slate-900 text-white transition-all duration-300 flex flex-col h-screen shadow-2xl lg:shadow-none
+    `}>
                 <div className={`flex items-center border-b border-slate-800 ${isSidebarOpen ? 'h-32 p-4' : 'h-20 justify-center p-4'}`}>
-                    {/* Logo recolhida - Circular */}
-                    {!isSidebarOpen && (
+                    {!isSidebarOpen ? (
                         <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-full shadow-lg flex items-center justify-center w-12 h-12">
                             <img
                                 src={logo}
@@ -2871,10 +3024,7 @@ export default function MainApp() {
                                 className="w-10 h-10 object-contain"
                             />
                         </div>
-                    )}
-
-                    {/* Logo estendida - Retangular */}
-                    {isSidebarOpen && (
+                    ) : (
                         <div className="w-full h-full flex items-center justify-center">
                             <div className="w-full h-full bg-gradient-to-br from-blue-600 to-indigo-700 rounded-xl flex items-center justify-center">
                                 <img
@@ -2888,7 +3038,6 @@ export default function MainApp() {
                 </div>
 
                 <nav className="flex-1 p-3 space-y-1">
-                    {/* Apenas "PAINEL DE OS" e "PAINEL DE STATUS" para usuários clientes */}
                     {userData?.role === 'client' ? (
                         <>
                             <NavItem icon={<LayoutDashboard size={isSidebarOpen ? 20 : 22} />} label="Painel de OS" active={currentPage === 'os'} onClick={() => setCurrentPage('os')} isSidebarOpen={isSidebarOpen} />
@@ -2912,12 +3061,11 @@ export default function MainApp() {
                     )}
                 </nav>
 
-                {/* Área inferior da sidebar */}
                 <div className="flex flex-col border-t border-slate-800">
                     <div className="flex items-center justify-between p-4">
                         <button
                             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                            className="text-slate-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-slate-800"
+                            className="text-slate-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-slate-800 lg:flex hidden"
                             title={isSidebarOpen ? "Recolher Sidebar" : "Expandir Sidebar"}
                         >
                             <ChevronRight className={`transition-transform duration-300 ${isSidebarOpen ? 'rotate-180' : ''}`} size={20} />
@@ -2934,16 +3082,22 @@ export default function MainApp() {
                 </div>
             </aside>
 
-            <main className={`flex-1 transition-all duration-300 ${isSidebarOpen ? 'ml-64' : 'ml-20'} p-4 md:p-8 overflow-y-auto h-screen`}>
+            {/* Overlay para mobile quando sidebar aberta */}
+            {isSidebarOpen && (
+                <div
+                    className="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-30"
+                    onClick={() => setIsSidebarOpen(false)}
+                />
+            )}
+
+            <main className="flex-1 p-4 md:p-8 overflow-y-auto h-screen">
                 {currentPage === 'os' && canAccessPage() && (
                     <div className="space-y-8 animate-in fade-in duration-500 max-w-7xl mx-auto">
-                        {/* Título - REDUZIDO */}
                         <div className="flex flex-col">
                             <h2 className="text-3xl font-black text-slate-900 tracking-tighter">Gestão de OS</h2>
                             <p className="text-slate-500 text-sm font-medium">Fluxo operacional hospitalar</p>
                         </div>
 
-                        {/* Container de botões - SÓ APARECE QUANDO HÁ OSs SELECIONADAS */}
                         {selectedOrders.length > 0 && (
                             <div className="bg-white rounded-2xl shadow-xl border border-slate-100 p-6">
                                 <div className="flex justify-between items-center mb-4">
@@ -2959,7 +3113,6 @@ export default function MainApp() {
                                 </div>
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                    {/* Botão 1 - Movimentar OS (somente admin) */}
                                     {userData?.role !== 'client' && (
                                         <button
                                             onClick={() => setIsMoveModalOpen(true)}
@@ -2970,7 +3123,6 @@ export default function MainApp() {
                                         </button>
                                     )}
 
-                                    {/* Botão 2 - Imprimir Cliente */}
                                     <button
                                         onClick={() => handleOpenPaymentModal('client')}
                                         className="bg-indigo-600 text-white p-4 rounded-xl font-bold flex flex-col items-center justify-center gap-2 shadow hover:bg-indigo-700 transition-colors h-24"
@@ -2979,32 +3131,28 @@ export default function MainApp() {
                                         <span className="text-sm">Imprimir Cliente</span>
                                     </button>
 
-                                    {/* Botão 3 - Imprimir Interno (somente admin) */}
                                     {userData?.role !== 'client' && (
-                                        <button
-                                            onClick={() => handlePrint('internal')}
-                                            className="bg-slate-800 text-white p-4 rounded-xl font-bold flex flex-col items-center justify-center gap-2 shadow hover:bg-slate-900 transition-colors h-24"
-                                        >
-                                            <ShieldAlert size={20} />
-                                            <span className="text-sm">Imprimir Interno</span>
-                                        </button>
-                                    )}
-
-                                    {/* Botão 4 - Exportar para Word (somente admin) */}
-                                    {userData?.role !== 'client' && (
-                                        <button
-                                            onClick={exportToWord}
-                                            className="bg-emerald-600 text-white p-4 rounded-xl font-bold flex flex-col items-center justify-center gap-2 shadow hover:bg-emerald-700 transition-colors h-24"
-                                        >
-                                            <FileText size={20} />
-                                            <span className="text-sm">Exportar para Word</span>
-                                        </button>
+                                        <>
+                                            <button
+                                                onClick={() => handlePrint('internal')}
+                                                className="bg-slate-800 text-white p-4 rounded-xl font-bold flex flex-col items-center justify-center gap-2 shadow hover:bg-slate-900 transition-colors h-24"
+                                            >
+                                                <ShieldAlert size={20} />
+                                                <span className="text-sm">Imprimir Interno</span>
+                                            </button>
+                                            <button
+                                                onClick={exportToWord}
+                                                className="bg-emerald-600 text-white p-4 rounded-xl font-bold flex flex-col items-center justify-center gap-2 shadow hover:bg-emerald-700 transition-colors h-24"
+                                            >
+                                                <FileText size={20} />
+                                                <span className="text-sm">Exportar para Word</span>
+                                            </button>
+                                        </>
                                     )}
                                 </div>
                             </div>
                         )}
 
-                        {/* Barra de busca e botão Nova OS */}
                         <div className="flex flex-col sm:flex-row gap-4">
                             <div className="relative group z-20 flex-1">
                                 <Search className="absolute left-5 top-5 text-slate-400 group-focus-within:text-blue-600 transition-colors" size={24} />
@@ -3034,7 +3182,6 @@ export default function MainApp() {
                                     {sortOrder === 'desc' ? <ArrowDownWideNarrow size={24} /> : <ArrowUpNarrowWide size={24} />}
                                 </button>
 
-                                {/* Botão Nova OS (só aparece quando NÃO há OSs selecionadas) */}
                                 {selectedOrders.length === 0 && hasPermission('canEditOS') && (
                                     <button
                                         onClick={() => openModal()}
@@ -3046,142 +3193,152 @@ export default function MainApp() {
                             </div>
                         </div>
 
-                        {/* Tabela de OS */}
                         <div className="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden overflow-x-auto relative z-0">
-                            <table className="w-full text-left min-w-[800px]">
-                                <thead className="bg-slate-50/50 border-b text-[10px] font-black uppercase text-slate-400 tracking-widest">
-                                    <tr>
-                                        <th className="px-6 py-6 text-center w-12">
-                                            <input
-                                                type="checkbox"
-                                                className="w-4 h-4 rounded border-slate-300 text-blue-600"
-                                                onChange={(e) => {
-                                                    const visibleOrders = sortedOrders.filter(o =>
-                                                        o.client?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                                        o.osNumber?.includes(searchTerm)
-                                                    );
-
-                                                    if (e.target.checked) {
-                                                        // Selecionar todas as OSs visíveis
-                                                        setSelectedOrders(visibleOrders.map(o => o.firestoreId));
-                                                    } else {
-                                                        // CORREÇÃO: Desmarcar TODAS as OSs selecionadas
-                                                        // Primeiro, pega os IDs das OSs visíveis
-                                                        const visibleOrderIds = visibleOrders.map(o => o.firestoreId);
-                                                        // Remove apenas as OSs visíveis da seleção
-                                                        setSelectedOrders(prev =>
-                                                            prev.filter(id => !visibleOrderIds.includes(id))
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left min-w-[800px]">
+                                    <thead className="bg-slate-50/50 border-b text-[10px] font-black uppercase text-slate-400 tracking-widest">
+                                        <tr>
+                                            <th className="px-6 py-6 text-center w-12">
+                                                <input
+                                                    type="checkbox"
+                                                    className="w-4 h-4 rounded border-slate-300 text-blue-600"
+                                                    onChange={(e) => {
+                                                        const visibleOrders = sortedOrders.filter(o =>
+                                                            o.client?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                                            o.osNumber?.includes(searchTerm)
                                                         );
+
+                                                        if (e.target.checked) {
+                                                            setSelectedOrders(visibleOrders.map(o => o.firestoreId));
+                                                        } else {
+                                                            const visibleOrderIds = visibleOrders.map(o => o.firestoreId);
+                                                            setSelectedOrders(prev =>
+                                                                prev.filter(id => !visibleOrderIds.includes(id))
+                                                            );
+                                                        }
+                                                    }}
+                                                    checked={
+                                                        sortedOrders
+                                                            .filter(o =>
+                                                                o.client?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                                                o.osNumber?.includes(searchTerm)
+                                                            )
+                                                            .every(o => selectedOrders.includes(o.firestoreId)) &&
+                                                        sortedOrders
+                                                            .filter(o =>
+                                                                o.client?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                                                o.osNumber?.includes(searchTerm)
+                                                            ).length > 0
                                                     }
-                                                }}
-                                                checked={
-                                                    // Verifica se todas as OSs visíveis estão selecionadas
-                                                    sortedOrders
-                                                        .filter(o =>
-                                                            o.client?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                                            o.osNumber?.includes(searchTerm)
-                                                        )
-                                                        .every(o => selectedOrders.includes(o.firestoreId)) &&
-                                                    sortedOrders
-                                                        .filter(o =>
-                                                            o.client?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                                            o.osNumber?.includes(searchTerm)
-                                                        ).length > 0
-                                                }
-                                            />
-                                        </th>
-                                        <th className="px-8 py-6">Identificação</th>
-                                        <th className="px-8 py-6">Equipamento</th>
-                                        <th className="px-8 py-6">Tipo</th>
-                                        <th className="px-8 py-6">Status</th>
-                                        <th className="px-8 py-6 text-right">Ações</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-50">
-                                    {isLoading ? <tr><td colSpan="6" className="p-20 text-center"><Loader2 className="animate-spin mx-auto text-blue-600" size={32} /></td></tr> :
-                                        sortedOrders.filter(o => o.client?.toLowerCase().includes(searchTerm.toLowerCase()) || o.osNumber?.includes(searchTerm)).map(o => (
-                                            <tr key={o.firestoreId} className={`hover:bg-blue-50/30 transition-colors group ${selectedOrders.includes(o.firestoreId) ? 'bg-blue-50/50' : ''}`}>
-                                                <td className="px-6 py-4 text-center">
-                                                    <input
-                                                        type="checkbox"
-                                                        className="w-4 h-4 rounded border-slate-300 text-blue-600"
-                                                        checked={selectedOrders.includes(o.firestoreId)}
-                                                        onChange={() => {
-                                                            setSelectedOrders(prev => {
-                                                                if (prev.includes(o.firestoreId)) {
-                                                                    // Remover a OS da seleção
-                                                                    const newSelection = prev.filter(id => id !== o.firestoreId);
-                                                                    return newSelection;
-                                                                } else {
-                                                                    // Adicionar a OS à seleção
-                                                                    return [...prev, o.firestoreId];
-                                                                }
-                                                            });
-                                                        }}
-                                                    />
-                                                </td>
-                                                <td className="px-8 py-6">
-                                                    <div className="font-black text-blue-700 text-lg">{o.osNumber}</div>
-                                                    <div className="font-bold text-slate-900 text-sm">{o.client}</div>
-                                                </td>
-                                                <td className="px-8 py-6">
-                                                    <div className="font-bold text-slate-900 text-sm">{o.item}</div>
-                                                    {(o.manufacturer || o.model) && (
-                                                        <div className="text-xs text-slate-500 font-medium mb-0.5">
-                                                            {o.manufacturer || ''} {o.model || ''}
-                                                        </div>
-                                                    )}
-                                                    <div className="text-[10px] text-slate-400 font-mono">NS: {o.serial || 'N/D'}</div>
-                                                    {o.quantity && parseInt(o.quantity) > 1 && (
-                                                        <div className="text-[10px] text-blue-600 font-bold mt-0.5">
-                                                            Quantidade: {o.quantity}
-                                                        </div>
-                                                    )}
-                                                </td>
-                                                <td className="px-8 py-6">
-                                                    <div className="text-xs font-bold text-slate-500 uppercase tracking-tighter">{o.billingType}</div>
-                                                </td>
-                                                <td className="px-8 py-6">
-                                                    <div className="px-4 py-2 rounded-xl text-[10px] font-black uppercase inline-block border bg-slate-100 text-slate-600">
-                                                        {o.status}
-                                                    </div>
-                                                    <div className="text-[9px] text-slate-400 mt-1 font-medium">
-                                                        {o.statusDate ? new Date(o.statusDate).toLocaleDateString('pt-BR') : 'Sem data'}
-                                                    </div>
-                                                </td>
-                                                <td className="px-8 py-6 text-right">
-                                                    <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        {/* OCULTAR botão de edição para clientes */}
-                                                        {userData?.role !== 'client' && (
-                                                            <button onClick={() => openModal(o)} className="p-3 bg-white border shadow-sm hover:bg-blue-600 hover:text-white rounded-xl transition-all">
-                                                                <Edit2 size={18} />
-                                                            </button>
+                                                />
+                                            </th>
+                                            <th className="px-8 py-6">Identificação</th>
+                                            <th className="px-8 py-6">Equipamento</th>
+                                            <th className="px-8 py-6">Tipo</th>
+                                            <th className="px-8 py-6">Status</th>
+                                            <th className="px-8 py-6 text-right">Ações</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-50">
+                                        {isLoading ? <tr><td colSpan="6" className="p-20 text-center"><Loader2 className="animate-spin mx-auto text-blue-600" size={32} /></td></tr> :
+                                            sortedOrders.filter(o => o.client?.toLowerCase().includes(searchTerm.toLowerCase()) || o.osNumber?.includes(searchTerm)).map(o => (
+                                                <tr key={o.firestoreId} className={`hover:bg-blue-50/30 transition-colors group ${selectedOrders.includes(o.firestoreId) ? 'bg-blue-50/50' : ''}`}>
+                                                    <td className="px-6 py-4 text-center">
+                                                        <input
+                                                            type="checkbox"
+                                                            className="w-4 h-4 rounded border-slate-300 text-blue-600"
+                                                            checked={selectedOrders.includes(o.firestoreId)}
+                                                            onChange={() => {
+                                                                setSelectedOrders(prev => {
+                                                                    if (prev.includes(o.firestoreId)) {
+                                                                        return prev.filter(id => id !== o.firestoreId);
+                                                                    } else {
+                                                                        return [...prev, o.firestoreId];
+                                                                    }
+                                                                });
+                                                            }}
+                                                        />
+                                                    </td>
+                                                    <td className="px-8 py-6">
+                                                        <div className="font-black text-blue-700 text-lg">{o.osNumber}</div>
+                                                        <div className="font-bold text-slate-900 text-sm">{o.client}</div>
+                                                    </td>
+                                                    <td className="px-8 py-6">
+                                                        <div className="font-bold text-slate-900 text-sm">{o.item}</div>
+                                                        {(o.manufacturer || o.model) && (
+                                                            <div className="text-xs text-slate-500 font-medium mb-0.5">
+                                                                {o.manufacturer || ''} {o.model || ''}
+                                                            </div>
                                                         )}
-                                                        {/* OCULTAR botão de exclusão para clientes */}
-                                                        {userData?.role !== 'client' && hasPermission('canDeleteOS') && (
-                                                            <button onClick={() => confirmDelete(o)} className="p-3 bg-white border shadow-sm hover:bg-red-600 hover:text-white rounded-xl transition-all">
-                                                                <Trash2 size={18} />
-                                                            </button>
+                                                        <div className="text-[10px] text-slate-400 font-mono">NS: {o.serial || 'N/D'}</div>
+                                                        {o.quantity && parseInt(o.quantity) > 1 && (
+                                                            <div className="text-[10px] text-blue-600 font-bold mt-0.5">
+                                                                Quantidade: {o.quantity}
+                                                            </div>
                                                         )}
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))
-                                    }
-                                </tbody>
-                            </table>
+                                                    </td>
+                                                    <td className="px-8 py-6">
+                                                        <div className="text-xs font-bold text-slate-500 uppercase tracking-tighter">{o.billingType}</div>
+                                                    </td>
+                                                    <td className="px-8 py-6">
+                                                        <div className="px-4 py-2 rounded-xl text-[10px] font-black uppercase inline-block border bg-slate-100 text-slate-600">
+                                                            {o.status}
+                                                        </div>
+                                                        <div className="text-[9px] text-slate-400 mt-1 font-medium">
+                                                            {o.statusDate ? new Date(o.statusDate).toLocaleDateString('pt-BR') : 'Sem data'}
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-8 py-6 text-right">
+                                                        <div className="flex justify-end gap-2">
+                                                            {userData?.role !== 'client' && (
+                                                                <button
+                                                                    onClick={() => openModal(o)}
+                                                                    className="p-3 bg-white border shadow-sm hover:bg-blue-600 hover:text-white rounded-xl transition-all"
+                                                                    title="Editar OS"
+                                                                >
+                                                                    <Edit2 size={18} />
+                                                                </button>
+                                                            )}
+                                                            {userData?.role !== 'client' && hasPermission('canDeleteOS') && (
+                                                                <button
+                                                                    onClick={() => confirmDelete(o)}
+                                                                    className="p-3 bg-white border shadow-sm hover:bg-red-600 hover:text-white rounded-xl transition-all"
+                                                                    title="Excluir OS"
+                                                                >
+                                                                    <Trash2 size={18} />
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
                 )}
 
                 {currentPage === 'status' && canAccessPage() && (
                     <div className="space-y-6 animate-in fade-in duration-500 max-w-7xl mx-auto h-full flex flex-col">
-                        <div className="flex justify-between items-end shrink-0">
-                            <div><h2 className="text-4xl font-black text-slate-900 tracking-tighter">Indicadores</h2><p className="text-slate-500 font-medium">{dashboardData.isFiltered ? `Visualizando métricas de ${dashboardData.count} ordens selecionadas` : `Visualizando métricas gerais de todas as ordens (${dashboardData.count})`}</p></div>
-                            {dashboardData.isFiltered && (<button onClick={() => setSelectedOrders([])} className="text-sm font-bold text-blue-600 hover:underline">Limpar filtro e ver geral</button>)}
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 shrink-0">
+                            <div>
+                                <h2 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tighter">Indicadores</h2>
+                                <p className="text-slate-500 font-medium">
+                                    {hasActiveFilters() ? `Visualizando métricas filtradas (${dashboardData.count} ordens)` : `Visualizando métricas gerais de todas as ordens (${dashboardData.count})`}
+                                </p>
+                            </div>
+                            {hasActiveFilters() && (
+                                <button
+                                    onClick={clearAllFilters}
+                                    className="text-sm font-bold text-blue-600 hover:text-blue-700 hover:underline flex items-center gap-2"
+                                >
+                                    <X size={16} /> Limpar todos os filtros
+                                </button>
+                            )}
                         </div>
 
-                        {/* NOVO FILTRO POR DIA, MÊS E ANO */}
                         <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
                             <div className="text-sm font-bold text-slate-700 flex items-center gap-2">
                                 <Filter size={16} /> Filtrar por Data:
@@ -3234,7 +3391,7 @@ export default function MainApp() {
                                         onClick={() => { setSelectedDay(''); setSelectedMonth(''); setSelectedYear(''); }}
                                         className="text-xs font-bold text-red-600 hover:text-red-700 flex items-center gap-1"
                                     >
-                                        <X size={12} /> Limpar filtro
+                                        <X size={12} /> Limpar data
                                     </button>
                                 )}
                             </div>
@@ -3287,17 +3444,70 @@ export default function MainApp() {
                                             type="checkbox"
                                             className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-0 cursor-pointer"
                                             onChange={(e) => {
-                                                const filtered = ordersForUser.filter(o =>
+                                                let filtered = ordersForUser;
+
+                                                // Aplicar filtros de data
+                                                if (selectedDay || selectedMonth || selectedYear) {
+                                                    filtered = filtered.filter(o => {
+                                                        const statusDate = o.statusDate ? new Date(o.statusDate) : new Date();
+                                                        const day = statusDate.getDate();
+                                                        const month = statusDate.getMonth() + 1;
+                                                        const year = statusDate.getFullYear();
+
+                                                        if (selectedDay && day !== parseInt(selectedDay)) return false;
+                                                        if (selectedMonth && month !== parseInt(selectedMonth)) return false;
+                                                        if (selectedYear && year !== parseInt(selectedYear)) return false;
+                                                        return true;
+                                                    });
+                                                }
+
+                                                // Aplicar filtros de status e billing
+                                                if (statusFilter) {
+                                                    filtered = filtered.filter(o => o.status === statusFilter);
+                                                }
+                                                if (billingFilter) {
+                                                    filtered = filtered.filter(o => o.billingType === billingFilter);
+                                                }
+
+                                                // Aplicar busca
+                                                filtered = filtered.filter(o =>
                                                     o.client?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                                                     o.osNumber?.includes(searchTerm)
                                                 );
+
                                                 setSelectedOrders(e.target.checked ? filtered.map(o => o.firestoreId) : []);
                                             }}
                                             checked={selectedOrders.length > 0 &&
-                                                ordersForUser.filter(o =>
-                                                    o.client?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                                    o.osNumber?.includes(searchTerm)
-                                                ).every(o => selectedOrders.includes(o.firestoreId))
+                                                ordersForUser
+                                                    .filter(o => {
+                                                        let filtered = true;
+
+                                                        // Aplicar filtros de data
+                                                        if (selectedDay || selectedMonth || selectedYear) {
+                                                            const statusDate = o.statusDate ? new Date(o.statusDate) : new Date();
+                                                            const day = statusDate.getDate();
+                                                            const month = statusDate.getMonth() + 1;
+                                                            const year = statusDate.getFullYear();
+
+                                                            if (selectedDay && day !== parseInt(selectedDay)) filtered = false;
+                                                            if (selectedMonth && month !== parseInt(selectedMonth)) filtered = false;
+                                                            if (selectedYear && year !== parseInt(selectedYear)) filtered = false;
+                                                        }
+
+                                                        // Aplicar filtros de status e billing
+                                                        if (statusFilter && o.status !== statusFilter) filtered = false;
+                                                        if (billingFilter && o.billingType !== billingFilter) filtered = false;
+
+                                                        // Aplicar busca
+                                                        if (searchTerm && !o.client?.toLowerCase().includes(searchTerm.toLowerCase()) &&
+                                                            !o.osNumber?.includes(searchTerm) &&
+                                                            !o.item?.toLowerCase().includes(searchTerm.toLowerCase())) {
+                                                            filtered = false;
+                                                        }
+
+                                                        return filtered;
+                                                    })
+                                                    .every(o => selectedOrders.includes(o.firestoreId))
                                             }
                                         />
                                         <span>Selecionar Todos da Busca</span>
@@ -3306,42 +3516,30 @@ export default function MainApp() {
                                 <div className="flex-1 overflow-y-auto p-3 space-y-2 relative z-0">
                                     {ordersForUser
                                         .filter(o => {
-                                            // Filtro por busca
-                                            const searchMatch = o.client?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                                o.osNumber?.includes(searchTerm);
-
-                                            // Filtro por dia, mês e ano
-                                            let dateMatch = true;
+                                            // Aplicar filtros de data
                                             if (selectedDay || selectedMonth || selectedYear) {
                                                 const statusDate = o.statusDate ? new Date(o.statusDate) : new Date();
                                                 const day = statusDate.getDate();
                                                 const month = statusDate.getMonth() + 1;
                                                 const year = statusDate.getFullYear();
 
-                                                // Lógica de filtragem combinada
-                                                if (selectedDay && selectedMonth && selectedYear) {
-                                                    dateMatch = day === parseInt(selectedDay) &&
-                                                        month === parseInt(selectedMonth) &&
-                                                        year === parseInt(selectedYear);
-                                                } else if (selectedDay && selectedMonth) {
-                                                    dateMatch = day === parseInt(selectedDay) &&
-                                                        month === parseInt(selectedMonth);
-                                                } else if (selectedDay && selectedYear) {
-                                                    dateMatch = day === parseInt(selectedDay) &&
-                                                        year === parseInt(selectedYear);
-                                                } else if (selectedDay) {
-                                                    dateMatch = day === parseInt(selectedDay);
-                                                } else if (selectedMonth && selectedYear) {
-                                                    dateMatch = month === parseInt(selectedMonth) &&
-                                                        year === parseInt(selectedYear);
-                                                } else if (selectedMonth) {
-                                                    dateMatch = month === parseInt(selectedMonth);
-                                                } else if (selectedYear) {
-                                                    dateMatch = year === parseInt(selectedYear);
-                                                }
+                                                if (selectedDay && day !== parseInt(selectedDay)) return false;
+                                                if (selectedMonth && month !== parseInt(selectedMonth)) return false;
+                                                if (selectedYear && year !== parseInt(selectedYear)) return false;
                                             }
 
-                                            return searchMatch && dateMatch;
+                                            // Aplicar filtros de status e billing
+                                            if (statusFilter && o.status !== statusFilter) return false;
+                                            if (billingFilter && o.billingType !== billingFilter) return false;
+
+                                            // Aplicar busca
+                                            if (searchTerm && !o.client?.toLowerCase().includes(searchTerm.toLowerCase()) &&
+                                                !o.osNumber?.includes(searchTerm) &&
+                                                !o.item?.toLowerCase().includes(searchTerm.toLowerCase())) {
+                                                return false;
+                                            }
+
+                                            return true;
                                         })
                                         .map(o => {
                                             const statusDate = o.statusDate ? new Date(o.statusDate) : new Date();
@@ -3379,7 +3577,6 @@ export default function MainApp() {
                                                             </div>
                                                             <div className="font-bold text-slate-800 text-sm leading-tight truncate">{o.client}</div>
                                                             <div className="text-[10px] text-slate-400 mt-0.5 truncate">{o.item}</div>
-                                                            {/* NOVA: Data do status abaixo do item */}
                                                             <div className="text-[9px] text-slate-500 mt-1 font-medium flex items-center gap-1">
                                                                 <CalendarDays size={10} />
                                                                 {formattedDate}
@@ -3403,22 +3600,46 @@ export default function MainApp() {
                             <div className="lg:col-span-8 space-y-6 overflow-y-auto pr-1 pb-10">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     <div className="bg-white p-6 rounded-[2rem] shadow-xl border border-slate-100 space-y-4 relative overflow-hidden">
-                                        <div className="flex items-center gap-2 text-indigo-600 font-bold uppercase text-xs tracking-widest"><PieChart size={16} /> Status Geral</div>
-                                        <SimpleDonutChart data={dashboardData.statusChartData} colors={["#3b82f6", "#6366f1", "#8b5cf6", "#ec4899", "#f43f5e", "#10b981", "#f59e0b"]} onClick={handleFilterByStatus} />
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2 text-indigo-600 font-bold uppercase text-xs tracking-widest">
+                                                <PieChart size={16} /> Status Geral
+                                            </div>
+                                            {statusFilter && (
+                                                <button
+                                                    onClick={() => setStatusFilter(null)}
+                                                    className="text-xs font-bold text-red-600 hover:text-red-700 flex items-center gap-1"
+                                                >
+                                                    <X size={12} /> Remover filtro
+                                                </button>
+                                            )}
+                                        </div>
+                                        <SimpleDonutChart
+                                            data={dashboardData.statusChartData}
+                                            colors={["#3b82f6", "#6366f1", "#8b5cf6", "#ec4899", "#f43f5e", "#10b981", "#f59e0b"]}
+                                            onClick={handleFilterByStatus}
+                                        />
                                         <div className="space-y-2 mt-4">
                                             {dashboardData.statusChartData.slice(0, 4).map((d, i) => {
-                                                // Adicionar data do status no painel de status
                                                 const statusDate = d.date ? new Date(d.date).toLocaleDateString('pt-BR') : '';
+                                                const isActive = statusFilter === d.label;
 
                                                 return (
-                                                    <div key={i} className="flex justify-between text-xs text-slate-600 font-medium cursor-pointer hover:bg-slate-50 p-1 rounded transition-colors" onClick={() => handleFilterByStatus(d.label)}>
+                                                    <div
+                                                        key={i}
+                                                        className={`flex justify-between text-xs text-slate-600 font-medium cursor-pointer p-2 rounded transition-colors ${isActive ? 'bg-blue-50 border border-blue-200' : 'hover:bg-slate-50'}`}
+                                                        onClick={() => handleFilterByStatus(d.label)}
+                                                    >
                                                         <span className="flex items-center gap-2">
-                                                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: ["#3b82f6", "#6366f1", "#8b5cf6", "#ec4899", "#f43f5e", "#10b981", "#f59e0b"][i] }} />
+                                                            <div className={`w-2 h-2 rounded-full ${isActive ? 'ring-2 ring-blue-300' : ''}`} style={{ backgroundColor: ["#3b82f6", "#6366f1", "#8b5cf6", "#ec4899", "#f43f5e", "#10b981", "#f59e0b"][i] }} />
                                                             {d.label}
-                                                            {/* NOVA: Data do status no painel */}
                                                             {statusDate && (
                                                                 <span className="text-[9px] text-slate-400 font-normal">
                                                                     {statusDate}
+                                                                </span>
+                                                            )}
+                                                            {isActive && (
+                                                                <span className="text-[9px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">
+                                                                    Ativo
                                                                 </span>
                                                             )}
                                                         </span>
@@ -3430,11 +3651,83 @@ export default function MainApp() {
                                         <div className="absolute top-4 right-4 text-slate-300"><MousePointerClick size={16} /></div>
                                     </div>
                                     <div className="bg-white p-6 rounded-[2rem] shadow-xl border border-slate-100 space-y-4 relative overflow-hidden">
-                                        <div className="flex items-center gap-2 text-emerald-600 font-bold uppercase text-xs tracking-widest"><BarChart3 size={16} /> Tipo de Faturamento</div>
-                                        <SimpleBarChart data={dashboardData.billingChartData} maxVal={Math.max(...dashboardData.billingChartData.map(d => d.value), 1)} colorClass="bg-emerald-500" onClick={handleFilterByBilling} showValues={showValues} />
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2 text-emerald-600 font-bold uppercase text-xs tracking-widest">
+                                                <BarChart3 size={16} /> Tipo de Faturamento
+                                            </div>
+                                            {billingFilter && (
+                                                <button
+                                                    onClick={() => setBillingFilter(null)}
+                                                    className="text-xs font-bold text-red-600 hover:text-red-700 flex items-center gap-1"
+                                                >
+                                                    <X size={12} /> Remover filtro
+                                                </button>
+                                            )}
+                                        </div>
+                                        <SimpleBarChart
+                                            data={dashboardData.billingChartData}
+                                            maxVal={Math.max(...dashboardData.billingChartData.map(d => d.value), 1)}
+                                            colorClass="bg-emerald-500"
+                                            onClick={handleFilterByBilling}
+                                            showValues={showValues}
+                                        />
                                         <div className="absolute top-4 right-4 text-slate-300"><MousePointerClick size={16} /></div>
                                     </div>
                                 </div>
+
+                                {hasActiveFilters() && (
+                                    <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100">
+                                        <div className="flex items-center gap-2 text-blue-600 mb-2">
+                                            <Info size={16} />
+                                            <span className="text-xs font-bold uppercase">Filtros Ativos</span>
+                                        </div>
+                                        <div className="flex flex-wrap gap-2">
+                                            {statusFilter && (
+                                                <span className="text-xs bg-blue-100 text-blue-700 px-3 py-1 rounded-full font-bold flex items-center gap-1">
+                                                    Status: {statusFilter}
+                                                    <button onClick={() => setStatusFilter(null)} className="ml-1 hover:text-blue-900">
+                                                        <X size={12} />
+                                                    </button>
+                                                </span>
+                                            )}
+                                            {billingFilter && (
+                                                <span className="text-xs bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full font-bold flex items-center gap-1">
+                                                    Faturamento: {billingFilter}
+                                                    <button onClick={() => setBillingFilter(null)} className="ml-1 hover:text-emerald-900">
+                                                        <X size={12} />
+                                                    </button>
+                                                </span>
+                                            )}
+                                            {selectedOrders.length > 0 && (
+                                                <span className="text-xs bg-purple-100 text-purple-700 px-3 py-1 rounded-full font-bold flex items-center gap-1">
+                                                    {selectedOrders.length} OS(s) selecionada(s)
+                                                    <button onClick={() => setSelectedOrders([])} className="ml-1 hover:text-purple-900">
+                                                        <X size={12} />
+                                                    </button>
+                                                </span>
+                                            )}
+                                            {(selectedDay || selectedMonth || selectedYear) && (
+                                                <span className="text-xs bg-amber-100 text-amber-700 px-3 py-1 rounded-full font-bold flex items-center gap-1">
+                                                    Data: {selectedDay && `Dia ${selectedDay}`} {selectedMonth && `Mês ${selectedMonth}`} {selectedYear && `Ano ${selectedYear}`}
+                                                    <button onClick={() => { setSelectedDay(''); setSelectedMonth(''); setSelectedYear(''); }} className="ml-1 hover:text-amber-900">
+                                                        <X size={12} />
+                                                    </button>
+                                                </span>
+                                            )}
+                                            {searchTerm && (
+                                                <span className="text-xs bg-slate-100 text-slate-700 px-3 py-1 rounded-full font-bold flex items-center gap-1">
+                                                    Busca: "{searchTerm}"
+                                                    <button onClick={() => setSearchTerm('')} className="ml-1 hover:text-slate-900">
+                                                        <X size={12} />
+                                                    </button>
+                                                </span>
+                                            )}
+                                        </div>
+                                        <p className="text-xs text-blue-700 mt-2">
+                                            Mostrando {dashboardData.count} de {ordersForUser.length} ordens de serviço
+                                        </p>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -3592,7 +3885,7 @@ export default function MainApp() {
                 </div>
             )}
 
-            {/* MODAL PRINCIPAL OS (ATUALIZADO COM TODAS AS NOVAS FUNCIONALIDADES) */}
+            {/* MODAL PRINCIPAL OS (COM NOVO CAMPO DE FOTOS) */}
             {isModalOpen && (
                 <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
                     <div className="bg-white rounded-[2.5rem] w-full max-w-5xl my-auto shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-200">
@@ -3799,6 +4092,68 @@ export default function MainApp() {
                                                 />
                                             </div>
                                             <p className="text-[10px] text-slate-400 mt-1 ml-2">Quantidade do item/equipamento</p>
+                                        </div>
+                                    </div>
+
+                                    {/* NOVO: Campo para upload de fotos */}
+                                    <div className="space-y-4">
+                                        <div className="flex items-center gap-2 text-purple-600 font-bold uppercase text-xs tracking-widest">
+                                            <Camera size={16} /> Fotos do Equipamento
+                                        </div>
+                                        <div className="bg-purple-50 p-6 rounded-2xl border border-purple-100 space-y-4">
+                                            <div className="space-y-2">
+                                                <label className="text-xs font-bold text-purple-600 uppercase">Enviar Fotos</label>
+                                                <div className="relative">
+                                                    <input
+                                                        type="file"
+                                                        multiple
+                                                        accept="image/*"
+                                                        onChange={handlePhotoUpload}
+                                                        className="w-full p-4 bg-white border border-purple-200 rounded-2xl outline-none font-bold cursor-pointer"
+                                                        disabled={uploadingPhotos}
+                                                    />
+                                                    <div className="absolute right-4 top-1/2 transform -translate-y-1/2">
+                                                        {uploadingPhotos ? (
+                                                            <Loader2 className="animate-spin text-purple-600" size={20} />
+                                                        ) : (
+                                                            <Upload className="text-purple-600" size={20} />
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <p className="text-[10px] text-purple-400 mt-1 ml-2">
+                                                    Envie fotos do equipamento para documentação. Formatos suportados: JPG, PNG, etc.
+                                                </p>
+                                            </div>
+
+                                            {formData.photos.length > 0 && (
+                                                <div className="space-y-2">
+                                                    <label className="text-xs font-bold text-purple-600 uppercase">Fotos Enviadas ({formData.photos.length})</label>
+                                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                                        {formData.photos.map((photo, index) => (
+                                                            <div key={index} className="relative group">
+                                                                <img
+                                                                    src={photo}
+                                                                    alt={`Foto ${index + 1}`}
+                                                                    className="w-full h-32 object-cover rounded-xl border border-purple-200"
+                                                                />
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => removePhoto(index)}
+                                                                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
+                                                                >
+                                                                    <X size={12} />
+                                                                </button>
+                                                                <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[10px] px-2 py-1 rounded-b-xl opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                    Foto {index + 1}
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                    <p className="text-[10px] text-purple-400 mt-1 ml-2">
+                                                        Clique no "X" para remover uma foto
+                                                    </p>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -4159,7 +4514,6 @@ export default function MainApp() {
                                             </div>
                                         </div>
 
-                                        {/* NOVO: Campo de Prazo de Entrega */}
                                         {(formData.status === "Em orçamento" || formData.status === "Aguardando aprovação do orçamento") && (
                                             <div className="space-y-1 animate-in fade-in">
                                                 <label className="text-[10px] font-black text-slate-400 uppercase">Prazo de Entrega</label>
@@ -4213,7 +4567,6 @@ export default function MainApp() {
                                     {editingOrder && (
                                         <>
                                             <button type="button" onClick={() => handleModalPrint('client')} className="p-5 bg-blue-50 text-blue-600 rounded-2xl hover:bg-blue-100 transition-colors border border-blue-100" title="Imprimir Relatório do Cliente"><Printer size={20} /></button>
-                                            {/* OCULTAR "Imprimir Interno" para clientes */}
                                             {userData?.role !== 'client' && (
                                                 <button type="button" onClick={() => handleModalPrint('internal')} className="p-5 bg-slate-50 text-slate-600 rounded-2xl hover:bg-slate-100 transition-colors border border-slate-200" title="Imprimir Relatório Interno"><ShieldAlert size={20} /></button>
                                             )}
@@ -4243,7 +4596,6 @@ export default function MainApp() {
                         }
                     }}
                 >
-                    {/* Overlay com rolagem ativada */}
                     <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md overflow-y-auto">
                         <div className="min-h-full flex items-start justify-center p-4 py-8">
                             <div
