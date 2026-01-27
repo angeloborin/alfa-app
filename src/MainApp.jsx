@@ -180,6 +180,35 @@ const parseCurrency = (value) => {
     return parseFloat(value.toString().replace(/\./g, '').replace(',', '.')) || 0;
 };
 
+// Função para limpar sugestões concatenadas
+const cleanConcatenatedSuggestions = (items) => {
+    if (!items || items.length === 0) return [];
+
+    const cleanedSet = new Set();
+
+    items.forEach(item => {
+        if (typeof item === 'string') {
+            let cleaned = item
+                .replace(/([a-zà-ú])([A-ZÀ-Ú])/g, '$1\n$2')
+                .replace(/([A-ZÀ-Ú][a-zà-ú]+)([A-ZÀ-Ú][a-zà-ú]+)/g, '$1\n$2')
+                .replace(/(\d)([A-ZÀ-Úa-zà-ú])/g, '$1\n$2')
+                .trim();
+
+            const separators = /[\n\r,.;!?]+/;
+            const parts = cleaned.split(separators);
+
+            parts.forEach(part => {
+                const trimmed = part.trim();
+                if (trimmed.length > 2) {
+                    cleanedSet.add(trimmed);
+                }
+            });
+        }
+    });
+
+    return Array.from(cleanedSet).sort();
+};
+
 const NavItem = ({ icon, label, active, onClick, isSidebarOpen }) => (
     <button
         onClick={onClick}
@@ -930,86 +959,94 @@ export default function MainApp() {
         return Array.from(map.values()).sort((a, b) => a.client.localeCompare(b.client));
     }, [orders, contracts]);
 
-    // Autocomplete de Defeitos - CORRIGIDO
+    // Autocomplete de Defeitos - ATUALIZADO
     const uniqueDefects = useMemo(() => {
         if (!orders || orders.length === 0) return [];
-        const defectsSet = new Set();
+
+        const allDefects = [];
+
         orders.forEach(o => {
+            // Coletar defeitos de defectsList
             if (o.defectsList && Array.isArray(o.defectsList)) {
                 o.defectsList.forEach(d => {
-                    if (d && d.trim().length > 2) {
-                        const defects = d.split('\n');
-                        defects.forEach(defect => {
-                            if (defect.trim().length > 2) {
-                                defectsSet.add(defect.trim());
-                            }
-                        });
+                    if (d && typeof d === 'string' && d.trim()) {
+                        allDefects.push(d.trim());
                     }
                 });
             }
-            if (o.defect && o.defect.trim().length > 2) {
-                const defects = o.defect.split('\n');
-                defects.forEach(defect => {
-                    if (defect.trim().length > 2) {
-                        defectsSet.add(defect.trim());
-                    }
-                });
+
+            // Coletar defeitos do campo antigo defect
+            if (o.defect && typeof o.defect === 'string' && o.defect.trim()) {
+                allDefects.push(o.defect.trim());
             }
         });
-        return [...defectsSet].sort();
+
+        // Aplicar limpeza de sugestões concatenadas
+        return cleanConcatenatedSuggestions(allDefects);
     }, [orders]);
 
-    // Autocomplete de Soluções - CORRIGIDO
+    // Autocomplete de Soluções - ATUALIZADO
     const uniqueSolutions = useMemo(() => {
         if (!orders || orders.length === 0) return [];
-        const solutionsSet = new Set();
+
+        const allSolutions = [];
+
         orders.forEach(o => {
+            // Coletar de manualSolutionsList
             if (o.manualSolutionsList && Array.isArray(o.manualSolutionsList)) {
                 o.manualSolutionsList.forEach(s => {
-                    if (s && s.trim().length > 2) {
-                        const solutions = s.split('\n');
-                        solutions.forEach(solution => {
-                            if (solution.trim().length > 2) {
-                                solutionsSet.add(solution.trim());
-                            }
-                        });
+                    if (s && typeof s === 'string' && s.trim()) {
+                        allSolutions.push(s.trim());
                     }
                 });
             }
+
+            // Coletar de benchRepairList
             if (o.benchRepairList && Array.isArray(o.benchRepairList)) {
                 o.benchRepairList.forEach(s => {
-                    if (s && s.trim().length > 2) {
-                        const solutions = s.split('\n');
-                        solutions.forEach(solution => {
-                            if (solution.trim().length > 2) {
-                                solutionsSet.add(solution.trim());
-                            }
-                        });
+                    if (s && typeof s === 'string' && s.trim()) {
+                        allSolutions.push(s.trim());
                     }
                 });
             }
+
+            // Coletar de solutionsList (objetos com campo text)
             if (o.solutionsList && Array.isArray(o.solutionsList)) {
                 o.solutionsList.forEach(s => {
-                    if (s.text && s.text.trim().length > 2) {
-                        const solutions = s.text.split('\n');
-                        solutions.forEach(solution => {
-                            if (solution.trim().length > 2) {
-                                solutionsSet.add(solution.trim());
-                            }
-                        });
+                    if (s && s.text && typeof s.text === 'string' && s.text.trim()) {
+                        allSolutions.push(s.text.trim());
                     }
                 });
             }
-            if (o.solution && o.solution.trim().length > 2) {
-                const solutions = o.solution.split('\n');
-                solutions.forEach(solution => {
-                    if (solution.trim().length > 2) {
-                        solutionsSet.add(solution.trim());
+
+            // Coletar do campo antigo solution
+            if (o.solution && typeof o.solution === 'string' && o.solution.trim()) {
+                allSolutions.push(o.solution.trim());
+            }
+        });
+
+        // Aplicar limpeza de sugestões concatenadas
+        return cleanConcatenatedSuggestions(allSolutions);
+    }, [orders]);
+
+    // Autocomplete de SolutionsList para modo com custos - ATUALIZADO
+    const uniqueSolutionsList = useMemo(() => {
+        if (!orders || orders.length === 0) return [];
+
+        const allItems = [];
+
+        orders.forEach(o => {
+            if (o.solutionsList && Array.isArray(o.solutionsList)) {
+                o.solutionsList.forEach(item => {
+                    if (item && item.text && typeof item.text === 'string' && item.text.trim()) {
+                        allItems.push(item.text.trim());
                     }
                 });
             }
         });
-        return [...solutionsSet].sort();
+
+        // Aplicar limpeza de sugestões concatenadas
+        return cleanConcatenatedSuggestions(allItems);
     }, [orders]);
 
     // Autocomplete de Equipamentos (com padronização case-insensitive)
@@ -1079,6 +1116,7 @@ export default function MainApp() {
             }
         });
     }, [ordersForUser, sortOrder]);
+
 
     // --- CÁLCULO FINANCEIRO GLOBAL ---
     const globalFinancials = useMemo(() => {
@@ -1524,22 +1562,33 @@ export default function MainApp() {
             return;
         }
 
-        // Processar múltiplas linhas se o usuário colar várias
-        const defects = tempDefect.split('\n')
-            .map(line => line.trim())
+        // FECHAR sugestões imediatamente
+        setShowDefectSuggestions(false);
+
+        // Processar e limpar o texto
+        const cleanedText = tempDefect
+            .split('\n')
+            .map(line => {
+                // Aplicar correções básicas para evitar concatenação
+                return line.trim()
+                    .replace(/([a-zà-ú])([A-ZÀ-Ú])/g, '$1 $2')  // Adiciona espaço entre minúscula e maiúscula
+                    .replace(/(\s)([A-ZÀ-Ú])/g, '$1$2')  // Mantém espaço existente
+                    .trim();
+            })
             .filter(line => line.length > 0);
 
-        if (defects.length === 0) {
+        if (cleanedText.length === 0) {
             showNotification("Descrição do defeito é obrigatória", 'error');
             return;
         }
 
+        // Adicionar cada linha como um item separado
         setFormData(prev => ({
             ...prev,
-            defectsList: [...prev.defectsList, ...defects]
+            defectsList: [...prev.defectsList, ...cleanedText]
         }));
+
         setTempDefect('');
-        setShowDefectSuggestions(false);
     };
 
     const removeDefectItem = (index) => {
@@ -1555,22 +1604,31 @@ export default function MainApp() {
             return;
         }
 
-        // Processar múltiplas linhas se o usuário colar várias
-        const solutions = tempManualSolution.split('\n')
-            .map(line => line.trim())
+        // FECHAR sugestões imediatamente
+        setShowSolutionSuggestions(false);
+
+        // Processar e limpar o texto
+        const cleanedText = tempManualSolution
+            .split('\n')
+            .map(line => {
+                return line.trim()
+                    .replace(/([a-zà-ú])([A-ZÀ-Ú])/g, '$1 $2')
+                    .replace(/(\s)([A-ZÀ-Ú])/g, '$1$2')
+                    .trim();
+            })
             .filter(line => line.length > 0);
 
-        if (solutions.length === 0) {
+        if (cleanedText.length === 0) {
             showNotification("Descrição da solução é obrigatória", 'error');
             return;
         }
 
         setFormData(prev => ({
             ...prev,
-            manualSolutionsList: [...prev.manualSolutionsList, ...solutions]
+            manualSolutionsList: [...prev.manualSolutionsList, ...cleanedText]
         }));
+
         setTempManualSolution('');
-        setShowSolutionSuggestions(false);
     };
 
     const removeManualSolutionItem = (index) => {
@@ -1616,19 +1674,21 @@ export default function MainApp() {
             return;
         }
 
-        // Processar múltiplas linhas se o usuário colar várias
-        const items = tempSolution.split('\n')
+        // Limpar sugestões antes de processar
+        setShowSolutionSuggestions(false);
+
+        const lines = tempSolution.split('\n')
             .map(line => line.trim())
             .filter(line => line.length > 0);
 
-        if (items.length === 0) {
+        if (lines.length === 0) {
             showNotification("Descrição do item/serviço é obrigatória", 'error');
             return;
         }
 
-        const newItems = items.map(item => ({
-            id: Date.now() + Math.random(), // ID único
-            text: item,
+        const newItems = lines.map(line => ({
+            id: Date.now() + Math.random(),
+            text: line,
             cost: tempCost || "0,00"
         }));
 
@@ -1638,7 +1698,6 @@ export default function MainApp() {
         }));
         setTempSolution('');
         setTempCost('');
-        setShowSolutionSuggestions(false);
     };
 
     const removeSolutionItem = (id) => {
@@ -1664,24 +1723,92 @@ export default function MainApp() {
             cleanData.finalChargedAmount = parseCurrency(cleanData.chargedAmount);
         }
 
-        if (cleanData.defectsList && cleanData.defectsList.length > 0) {
-            cleanData.defect = cleanData.defectsList.join('\n');
+        // Limpar e processar defectsList
+        if (cleanData.defectsList && Array.isArray(cleanData.defectsList)) {
+            const cleanedDefects = cleanConcatenatedSuggestions(cleanData.defectsList)
+                .filter(item => item && item.trim().length > 2);
+            cleanData.defectsList = cleanedDefects;
+            // Atualizar o campo defect (para compatibilidade) com os dados limpos
+            cleanData.defect = cleanedDefects.length > 0 ? cleanedDefects.join('\n') : '';
         } else {
             cleanData.defect = cleanData.defect || '';
+            // Se não houver defectsList, mas houver defect, criar o array
+            if (cleanData.defect) {
+                const cleanedDefects = cleanConcatenatedSuggestions([cleanData.defect])
+                    .filter(item => item && item.trim().length > 2);
+                cleanData.defectsList = cleanedDefects;
+            } else {
+                cleanData.defectsList = [];
+            }
         }
 
+        // Limpar e processar manualSolutionsList (para Preenchimento manual)
         if (cleanData.solutionType === "Preenchimento manual") {
-            if (cleanData.manualSolutionsList && cleanData.manualSolutionsList.length > 0) {
-                cleanData.solution = cleanData.manualSolutionsList.join('\n');
+            if (cleanData.manualSolutionsList && Array.isArray(cleanData.manualSolutionsList)) {
+                const cleanedManualSolutions = cleanConcatenatedSuggestions(cleanData.manualSolutionsList)
+                    .filter(item => item && item.trim().length > 2);
+                cleanData.manualSolutionsList = cleanedManualSolutions;
+                cleanData.solution = cleanedManualSolutions.length > 0 ? cleanedManualSolutions.join('\n') : '';
+            } else {
+                cleanData.manualSolutionsList = [];
+                cleanData.solution = cleanData.solution || '';
             }
         }
 
+        // Limpar e processar benchRepairList (para Conserto em bancada)
         if (cleanData.solutionType === "Conserto em bancada") {
-            if (cleanData.benchRepairList && cleanData.benchRepairList.length > 0) {
-                cleanData.solution = cleanData.benchRepairList.join('\n');
+            if (cleanData.benchRepairList && Array.isArray(cleanData.benchRepairList)) {
+                const cleanedBenchRepair = cleanConcatenatedSuggestions(cleanData.benchRepairList)
+                    .filter(item => item && item.trim().length > 2);
+                cleanData.benchRepairList = cleanedBenchRepair;
+                cleanData.solution = cleanedBenchRepair.length > 0 ? cleanedBenchRepair.join('\n') : '';
+            } else {
+                cleanData.benchRepairList = [];
+                cleanData.solution = cleanData.solution || '';
             }
         }
 
+        // Limpar e processar solutionsList (para Manual com custos detalhados)
+        if (cleanData.solutionType === "Manual com custos detalhados") {
+            if (cleanData.solutionsList && Array.isArray(cleanData.solutionsList)) {
+                const cleanedSolutionsList = cleanData.solutionsList
+                    .map(item => ({
+                        ...item,
+                        text: cleanConcatenatedSuggestions([item.text])[0] || item.text
+                    }))
+                    .filter(item => item.text && item.text.trim().length > 2);
+                cleanData.solutionsList = cleanedSolutionsList;
+                // Para este tipo, também preencher o campo solution com os textos
+                const solutionTexts = cleanedSolutionsList.map(item => item.text);
+                cleanData.solution = solutionTexts.length > 0 ? solutionTexts.join('\n') : '';
+            } else {
+                cleanData.solutionsList = [];
+                cleanData.solution = cleanData.solution || '';
+            }
+        }
+
+        // Para outros tipos de solução, garantir que as listas estejam vazias
+        if (cleanData.solutionType !== "Preenchimento manual") {
+            cleanData.manualSolutionsList = [];
+        }
+        if (cleanData.solutionType !== "Conserto em bancada") {
+            cleanData.benchRepairList = [];
+        }
+        if (cleanData.solutionType !== "Manual com custos detalhados") {
+            cleanData.solutionsList = [];
+        }
+
+        // Se houver solutionType de "Não passível de conserto...", não fazer nada com as listas
+        // Mas garantir que as outras listas estejam vazias
+        if (cleanData.solutionType === "Não passível de conserto, substituir por novo equipamento / material") {
+            cleanData.manualSolutionsList = [];
+            cleanData.benchRepairList = [];
+            cleanData.solutionsList = [];
+            // A solução será o texto em notRepairableDetail
+            cleanData.solution = cleanData.notRepairableDetail || '';
+        }
+
+        // Processar prazo de entrega
         if (cleanData.deliveryDeadline && cleanData.deliveryDeadline.trim() !== '') {
             const cleanNumber = cleanData.deliveryDeadline.replace('dias úteis', '').trim();
             if (cleanNumber && !isNaN(cleanNumber)) {
@@ -1691,6 +1818,7 @@ export default function MainApp() {
             cleanData.deliveryDeadline = '';
         }
 
+        // Processar histórico de status
         let history = cleanData.statusHistory ? [...cleanData.statusHistory] : [];
         const currentStatusDate = cleanData.statusDate || new Date().toISOString().split('T')[0];
 
@@ -1734,6 +1862,128 @@ export default function MainApp() {
         } catch (err) {
             console.error(err);
             showNotification(`Erro ao salvar: ${err.message}`, 'error');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const cleanupAllConcatenatedSuggestions = async () => {
+        if (!window.confirm('ATENÇÃO: Esta ação irá limpar TODAS as sugestões concatenadas do banco de dados. Pode demorar alguns minutos. Continuar?')) {
+            return;
+        }
+
+        setIsSaving(true);
+        try {
+            // Importar as funções do Firestore necessárias
+            const { getDocs, updateDoc } = await import('firebase/firestore');
+
+            // Buscar todas as OS
+            const ordersRef = collection(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders');
+            const ordersSnapshot = await getDocs(ordersRef);
+
+            let updatedCount = 0;
+            let errors = [];
+
+            // Processar cada OS
+            for (const doc of ordersSnapshot.docs) {
+                try {
+                    const data = doc.data();
+                    let needsUpdate = false;
+                    const updatedData = { ...data };
+
+                    // Função auxiliar para processar arrays
+                    const processArray = (array) => {
+                        if (!Array.isArray(array)) return array;
+
+                        const result = [];
+                        array.forEach(item => {
+                            if (typeof item === 'string') {
+                                // Dividir strings compostas
+                                const parts = item
+                                    .replace(/([a-zà-ú])([A-ZÀ-Ú])/g, '$1\n$2')
+                                    .split(/[\n\r,.;!?]+/)
+                                    .map(p => p.trim())
+                                    .filter(p => p.length > 2);
+
+                                result.push(...parts);
+                            } else {
+                                result.push(item);
+                            }
+                        });
+
+                        // Remover duplicatas
+                        return [...new Set(result)];
+                    };
+
+                    // Processar cada lista
+                    const lists = [
+                        'defectsList',
+                        'manualSolutionsList',
+                        'benchRepairList'
+                    ];
+
+                    lists.forEach(listName => {
+                        if (updatedData[listName] && Array.isArray(updatedData[listName])) {
+                            const cleaned = processArray(updatedData[listName]);
+                            if (JSON.stringify(cleaned) !== JSON.stringify(updatedData[listName])) {
+                                updatedData[listName] = cleaned;
+                                needsUpdate = true;
+                            }
+                        }
+                    });
+
+                    // Processar solutionsList (array de objetos)
+                    if (updatedData.solutionsList && Array.isArray(updatedData.solutionsList)) {
+                        const cleaned = updatedData.solutionsList.map(item => {
+                            if (item && item.text && typeof item.text === 'string') {
+                                const parts = item.text
+                                    .replace(/([a-zà-ú])([A-ZÀ-Ú])/g, '$1\n$2')
+                                    .split(/[\n\r,.;!?]+/)
+                                    .map(p => p.trim())
+                                    .filter(p => p.length > 2);
+
+                                // Se dividiu em múltiplas partes, criar múltiplos itens
+                                if (parts.length > 1) {
+                                    return parts.map((part, index) => ({
+                                        id: item.id ? `${item.id}_${index}` : Date.now() + index,
+                                        text: part,
+                                        cost: item.cost || "0,00"
+                                    }));
+                                } else if (parts.length === 1) {
+                                    return { ...item, text: parts[0] };
+                                }
+                            }
+                            return item;
+                        }).flat(); // Achatar array se houve divisão
+
+                        if (JSON.stringify(cleaned) !== JSON.stringify(updatedData.solutionsList)) {
+                            updatedData.solutionsList = cleaned;
+                            needsUpdate = true;
+                        }
+                    }
+
+                    if (needsUpdate) {
+                        await updateDoc(doc.ref, updatedData);
+                        updatedCount++;
+                        console.log(`OS ${doc.id} atualizada`);
+                    }
+
+                } catch (error) {
+                    console.error(`Erro ao processar OS ${doc.id}:`, error);
+                    errors.push({ id: doc.id, error: error.message });
+                }
+            }
+
+            if (errors.length > 0) {
+                showNotification(`Limpou ${updatedCount} OS(s). Erros em ${errors.length} OS(s). Verifique console.`, 'warning');
+                console.log('Erros detalhados:', errors);
+            } else {
+                showNotification(`Todas as ${updatedCount} OS(s) foram limpas com sucesso!`, 'success');
+            }
+
+        } catch (error) {
+            console.error('Erro geral na limpeza:', error);
+            showNotification('Erro na limpeza: ' + error.message, 'error');
         } finally {
             setIsSaving(false);
         }
@@ -1926,55 +2176,56 @@ export default function MainApp() {
         });
     };
 
+    // === FUNÇÃO PARA IMPRIMIR (COM NOVAS MELHORIAS) ===
     const handlePrint = (printType, customPaymentConditions = null) => {
-        const selectedData = ordersForUser.filter(o => selectedOrders.includes(o.firestoreId));
-        if (selectedData.length === 0) {
-            showNotification('Selecione pelo menos uma OS para imprimir', 'error');
-            return;
+    const selectedData = ordersForUser.filter(o => selectedOrders.includes(o.firestoreId));
+    if (selectedData.length === 0) {
+        showNotification('Selecione pelo menos uma OS para imprimir', 'error');
+        return;
+    }
+
+    const groups = {};
+    selectedData.forEach(os => {
+        const key = `${os.client}-${os.cnpj || 'no-cnpj'}-${os.billingType}-${os.maintenanceVisit || 'no-visit'}`;
+        if (!groups[key]) {
+            groups[key] = {
+                header: {
+                    client: os.client,
+                    cnpj: os.cnpj,
+                    contactPerson: os.contactPerson,
+                    email: os.email,
+                    address: os.address,
+                    billingType: os.billingType,
+                    maintenanceVisit: os.maintenanceVisit
+                },
+                items: []
+            };
         }
+        groups[key].items.push(os);
+    });
 
-        const groups = {};
-        selectedData.forEach(os => {
-            const key = `${os.client}-${os.cnpj || 'no-cnpj'}-${os.billingType}-${os.maintenanceVisit || 'no-visit'}`;
-            if (!groups[key]) {
-                groups[key] = {
-                    header: {
-                        client: os.client,
-                        cnpj: os.cnpj,
-                        contactPerson: os.contactPerson,
-                        email: os.email,
-                        address: os.address,
-                        billingType: os.billingType,
-                        maintenanceVisit: os.maintenanceVisit
-                    },
-                    items: []
-                };
-            }
-            groups[key].items.push(os);
-        });
+    const hasBudgetStage = selectedData.some(os =>
+        os.status === 'Em orçamento' || os.status === 'Aguardando aprovação do orçamento'
+    );
 
-        const hasBudgetStage = selectedData.some(os =>
-            os.status === 'Em orçamento' || os.status === 'Aguardando aprovação do orçamento'
-        );
+    const title = printType === 'internal' ?
+        'Relatório INTERNO' :
+        (hasBudgetStage ? 'Proposta de orçamento' : 'Relatório de atendimento');
 
-        const title = printType === 'internal' ?
-            'Relatório INTERNO' :
-            (hasBudgetStage ? 'Proposta de orçamento' : 'Relatório de atendimento');
-
-        let htmlContent = `
+    let htmlContent = `
 <!DOCTYPE html>
 <html>
 <head>
     <title>${title}</title>
+    <meta charset="UTF-8">
     <style>
         @media print {
-            @page { 
-                margin: 1.5cm 1cm;
+            /* REMOVER margens do navegador - DEIXE O NAVEgador controlar */
+            @page {
                 size: A4;
+                margin: 0;
             }
-            @page :first {
-                margin-top: 2cm;
-            }
+            
             body {
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
                 color: #333;
@@ -1982,18 +2233,26 @@ export default function MainApp() {
                 padding: 0;
                 margin: 0;
                 font-size: 12px;
+                width: 100%;
+                height: 100%;
             }
+            
             .report-page {
-                padding: 20px;
+                width: 210mm; /* Largura A4 */
+                min-height: 297mm; /* Altura A4 */
+                padding: 15mm 20mm;
                 position: relative;
-                min-height: 25.7cm;
+                box-sizing: border-box;
                 page-break-after: always;
+                background: white;
+            }
+            
+            .report-page:last-child {
+                page-break-after: avoid;
                 display: flex;
                 flex-direction: column;
             }
-            .report-page:last-child {
-                page-break-after: auto;
-            }
+            
             .header {
                 display: flex;
                 justify-content: space-between;
@@ -2003,19 +2262,23 @@ export default function MainApp() {
                 margin-bottom: 25px;
                 flex-wrap: wrap;
             }
+            
             .logo-container {
                 flex: 0 0 auto;
             }
+            
             .logo-container img {
-                height: 105px;
-                max-width: 300px;
+                height: 70px;
+                max-width: 200px;
                 object-fit: contain;
             }
+            
             .report-info {
                 text-align: right;
                 flex: 1;
                 min-width: 250px;
             }
+            
             .report-title {
                 font-size: 18px;
                 font-weight: 900;
@@ -2023,6 +2286,7 @@ export default function MainApp() {
                 text-transform: uppercase;
                 margin-bottom: 5px;
             }
+            
             .internal-badge {
                 background: #b91c1c;
                 color: white;
@@ -2033,9 +2297,11 @@ export default function MainApp() {
                 margin-bottom: 4px;
                 display: inline-block;
             }
+            
             .section {
                 margin-bottom: 25px;
             }
+            
             .section-title {
                 background: #f8fafc;
                 padding: 8px 12px;
@@ -2046,6 +2312,7 @@ export default function MainApp() {
                 margin-bottom: 15px;
                 color: #1e40af;
             }
+            
             .client-grid {
                 display: grid;
                 grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -2053,12 +2320,14 @@ export default function MainApp() {
                 font-size: 12px;
                 margin-bottom: 25px;
             }
+            
             .items-table {
                 width: 100%;
                 border-collapse: collapse;
                 margin-top: 15px;
                 table-layout: fixed;
             }
+            
             .items-table th {
                 background: #f8fafc;
                 text-align: left;
@@ -2069,6 +2338,7 @@ export default function MainApp() {
                 border-bottom: 2px solid #e2e8f0;
                 word-wrap: break-word;
             }
+            
             .items-table td {
                 padding: 15px 8px;
                 font-size: 12px;
@@ -2076,6 +2346,7 @@ export default function MainApp() {
                 vertical-align: top;
                 word-wrap: break-word;
             }
+            
             .os-tag {
                 font-weight: 900;
                 color: #1a56db;
@@ -2083,24 +2354,27 @@ export default function MainApp() {
                 margin-bottom: 4px;
                 font-size: 13px;
             }
+            
+            /* ÁREA DE ASSINATURA - MAIS DISTANTE DO CONTEÚDO */
             .signature-area {
-                margin-top: 100px;
-                margin-bottom: 100px;
-                page-break-inside: avoid;
                 display: flex;
                 justify-content: space-around;
+                margin-top: 150px; /* AUMENTADO de auto para 150px para mais distância */
+                margin-bottom: 50px; /* Aumentado para dar mais espaço */
                 page-break-inside: avoid;
                 position: relative;
             }
+            
             .signature-box {
                 border-top: 1px solid #333;
                 width: 250px;
                 text-align: center;
-                padding-top: 10px;
+                padding-top: 15px; /* Aumentado para mais espaço de assinatura */
                 font-size: 12px;
                 font-weight: 600;
-                min-height: 70px;
+                min-height: 120px; /* Altura aumentada para assinatura digital */
             }
+            
             .footer-notes {
                 margin-top: 30px;
                 font-size: 10px;
@@ -2110,52 +2384,38 @@ export default function MainApp() {
                 page-break-inside: avoid;
                 border-top: 1px solid #eee;
             }
+            
             .footer-notes p {
                 margin: 8px 0;
             }
+            
             .footer-title {
                 font-weight: bold;
                 color: #1a56db;
                 margin-bottom: 5px;
                 font-size: 11px;
             }
+            
+            /* RODAPÉ FIXO NO FINAL ABSOLUTO - CONTADOR REMOVIDO */
             .company-footer {
                 position: absolute;
-                bottom: 20px;
-                left: 20px;
-                right: 20px;
-                font-size: 9px;
+                bottom: 5mm; /* COLADO NO FINAL DA PÁGINA */
+                left: 20mm;
+                right: 20mm;
+                font-size: 8px;
                 color: #666;
                 text-align: center;
                 border-top: 1px solid #eee;
-                padding-top: 10px;
-                line-height: 1.4;
-                page-break-inside: avoid;
+                padding-top: 8px;
+                line-height: 1.2;
+                margin: 0;
+                background: white;
+                z-index: 10;
             }
-            .company-footer strong {
-                color: #1a56db;
-            }
-            .last-page-footer {
-                margin-top: 100px;
-                font-size: 9px;
-                color: #666;
-                text-align: center;
-                border-top: 1px solid #eee;
-                padding-top: 10px;
-                line-height: 1.4;
-                page-break-inside: avoid;
-            }
-            .last-page-footer strong {
-                color: #1a56db;
-            }
-            .page-counter {
-                position: absolute;
-                bottom: 15px;
-                right: 20px;
-                font-size: 10px;
-                color: #999;
-                page-break-inside: avoid;
-            }
+            
+            /* CONTADOR DE PÁGINAS REMOVIDO - LINHA ABAIXO COMENTADA/EXCLUÍDA */
+            /* .page-counter { position: absolute; bottom: 5mm; right: 20mm; ... } */
+            
             .valor-section {
                 margin-top: 20px;
                 padding: 20px;
@@ -2165,6 +2425,7 @@ export default function MainApp() {
                 font-size: 12px;
                 line-height: 1.5;
             }
+            
             .valor-destaque {
                 font-size: 20px;
                 font-weight: 900;
@@ -2172,49 +2433,80 @@ export default function MainApp() {
                 text-align: center;
                 margin: 15px 0;
             }
+            
             .defects-list, .solutions-list {
                 margin: 8px 0;
                 padding-left: 15px;
             }
+            
             .defects-list li, .solutions-list li {
                 margin-bottom: 4px;
                 padding-left: 5px;
             }
+            
             .observation-column {
                 border-left: 2px solid #e2e8f0;
                 padding-left: 15px;
                 margin-left: 10px;
             }
+            
             .photo-grid {
                 display: grid;
                 grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
                 gap: 10px;
                 margin-top: 15px;
             }
+            
             .photo-item {
                 border: 1px solid #e2e8f0;
                 border-radius: 4px;
                 overflow: hidden;
             }
+            
             .photo-item img {
                 width: 100%;
                 height: 120px;
                 object-fit: cover;
             }
-            /* Ajustes para evitar quebra de página em assinaturas */
+            
+            /* Garantir que o conteúdo não sobreponha o rodapé */
+            .page-content {
+                padding-bottom: 50px; /* Aumentado para mais espaço antes da assinatura */
+                box-sizing: border-box;
+            }
+            
+            /* Estilo para evitar quebra de página em assinaturas */
             .page-break-avoid {
                 page-break-inside: avoid;
+                page-break-before: avoid;
+                page-break-after: avoid;
             }
-            /* Garantir que o footer não sobreponha assinaturas */
-            .content-wrapper {
-                min-height: calc(100vh - 200px);
+            
+            /* Para a última página, garantir que assinatura e rodapé fiquem juntos */
+            .last-page-content {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
             }
-            /* Esconder cabeçalho e rodapé do navegador */
-            @page {
-                margin: 0;
+            
+            .last-page-content .signature-area {
+                margin-top: 150px; /* Mantido igual às outras páginas */
+                margin-bottom: 70px; /* Mais espaço para o rodapé na última página */
             }
-            body {
-                margin: 1.5cm 1cm 2cm 1cm;
+            
+            .last-page-content .company-footer {
+                bottom: 2mm; /* Ainda mais colado no final */
+            }
+        }
+        
+        /* Estilos para visualização em tela */
+        @media screen {
+            .report-page {
+                width: 210mm;
+                min-height: 297mm;
+                margin: 0 auto 20px;
+                box-shadow: 0 0 10px rgba(0,0,0,0.1);
+                background: white;
             }
         }
     </style>
@@ -2222,252 +2514,219 @@ export default function MainApp() {
 <body>
     <div class="content-wrapper">`;
 
-        Object.values(groups).forEach((group, groupIndex) => {
-            const budgetItems = group.items.filter(item =>
-                item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento'
-            );
-            const hasBudgetInGroup = budgetItems.length > 0;
+    Object.values(groups).forEach((group, groupIndex) => {
+        const isLastPage = groupIndex === Object.values(groups).length - 1;
+        const budgetItems = group.items.filter(item =>
+            item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento'
+        );
+        const hasBudgetInGroup = budgetItems.length > 0;
 
-            let valorTotalGrupo = 0;
-            if (hasBudgetInGroup) {
-                budgetItems.forEach(item => {
-                    const valor = customPaymentConditions ?
-                        customPaymentConditions.finalChargedAmount / selectedData.length :
-                        (item.finalChargedAmount ?
-                            parseCurrency(item.finalChargedAmount) :
-                            parseCurrency(item.chargedAmount));
-                    valorTotalGrupo += valor;
-                });
-            }
+        let valorTotalGrupo = 0;
+        if (hasBudgetInGroup) {
+            budgetItems.forEach(item => {
+                const valor = customPaymentConditions ?
+                    customPaymentConditions.finalChargedAmount / selectedData.length :
+                    (item.finalChargedAmount ?
+                        parseCurrency(item.finalChargedAmount) :
+                        parseCurrency(item.chargedAmount));
+                valorTotalGrupo += valor;
+            });
+        }
 
-            const totalGroups = Object.values(groups).length;
-            const isLastPage = groupIndex === totalGroups - 1;
-
-            htmlContent += `
-        <div class="report-page">
-            <div class="header">
-                <div class="logo-container">
-                    <img src="${logo}" alt="Alfa Tecnologia Hospitalar" onerror="this.style.display='none';">
+        htmlContent += `
+        <div class="report-page ${isLastPage ? 'last-page' : ''}">
+            <div class="${isLastPage ? 'last-page-content' : 'page-content'}">
+                <div class="header">
+                    <div class="logo-container">
+                        <img src="${logo}" alt="Alfa Tecnologia Hospitalar" onerror="this.style.display='none';">
+                    </div>
+                    <div class="report-info">
+                        ${printType === 'internal' ? '<div class="internal-badge">USO INTERNO - CONFIDENCIAL</div>' : ''}
+                        <div class="report-title">${title}</div>
+                        <div style="font-size:11px;color:#666;">Data: ${new Date().toLocaleDateString('pt-BR')}</div>
+                    </div>
                 </div>
-                <div class="report-info">
-                    ${printType === 'internal' ? '<div class="internal-badge">USO INTERNO - CONFIDENCIAL</div>' : ''}
-                    <div class="report-title">${title}</div>
-                    <div style="font-size:11px;color:#666;">Data: ${new Date().toLocaleDateString('pt-BR')}</div>
+                
+                <div class="section">
+                    <div class="section-title">Dados do Cliente</div>
+                    <div class="client-grid">
+                        <div><strong>Cliente:</strong><br>${group.header.client || '---'}</div>
+                        <div><strong>CNPJ:</strong><br>${group.header.cnpj || '---'}</div>
+                        <div><strong>Atendimento:</strong><br>${group.header.billingType} ${group.header.maintenanceVisit ? '- ' + group.header.maintenanceVisit : ''}</div>
+                        <div><strong>Contato:</strong><br>${group.header.contactPerson || '---'}</div>
+                        <div><strong>E-mail:</strong><br>${group.header.email || '---'}</div>
+                        <div><strong>Endereço:</strong><br>${group.header.address || '---'}</div>
+                    </div>
                 </div>
-            </div>
-            
-            <div class="section">
-                <div class="section-title">Dados do Cliente</div>
-                <div class="client-grid">
-                    <div><strong>Cliente:</strong><br>${group.header.client || '---'}</div>
-                    <div><strong>CNPJ:</strong><br>${group.header.cnpj || '---'}</div>
-                    <div><strong>Atendimento:</strong><br>${group.header.billingType} ${group.header.maintenanceVisit ? '- ' + group.header.maintenanceVisit : ''}</div>
-                    <div><strong>Contato:</strong><br>${group.header.contactPerson || '---'}</div>
-                    <div><strong>E-mail:</strong><br>${group.header.email || '---'}</div>
-                    <div><strong>Endereço:</strong><br>${group.header.address || '---'}</div>
-                </div>
-            </div>
-            
-            ${hasBudgetInGroup && printType === 'client' ? `
-            <div class="valor-section">
-                <div class="footer-title">VALOR TOTAL DA PROPOSTA</div>
-                <div class="valor-destaque">
-                    R$ ${valorTotalGrupo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                </div>
-                <p><strong>Quantidade de itens em orçamento:</strong> ${budgetItems.length}</p>
-                ${customPaymentConditions ?
+                
+                ${hasBudgetInGroup && printType === 'client' ? `
+                <div class="valor-section">
+                    <div class="footer-title">VALOR TOTAL DA PROPOSTA</div>
+                    <div class="valor-destaque">
+                        R$ ${valorTotalGrupo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </div>
+                    <p><strong>Quantidade de itens em orçamento:</strong> ${budgetItems.length}</p>
+                    ${customPaymentConditions ?
                         `<p><strong>Condições de pagamento:</strong> ${customPaymentConditions.paymentCondition}${customPaymentConditions.installments ? ` ${customPaymentConditions.installments}` : ''}</p>` :
                         (budgetItems[0] && budgetItems[0].paymentCondition ?
                             `<p><strong>Condições de pagamento:</strong> ${budgetItems[0].paymentCondition}${budgetItems[0].installments ? ` ${budgetItems[0].installments}` : ''}</p>` :
                             '')
                     }
-            </div>
-            ` : ''}
-            
-            <div class="section">
-                <div class="section-title">Lista de Equipamentos</div>
-                <table class="items-table">
-                    <thead>
-                        <tr>
-                            <th width="15%">OS</th>
-                            <th width="25%">Equipamento</th>
-                            <th width="30%">Defeito / Solução</th>
-                            <th width="30%">Observações</th>
-                        </tr>
-                    </thead>
-                    <tbody>`;
+                </div>
+                ` : ''}
+                
+                <div class="section">
+                    <div class="section-title">Lista de Equipamentos</div>
+                    <table class="items-table">
+                        <thead>
+                            <tr>
+                                <th width="15%">OS</th>
+                                <th width="25%">Equipamento</th>
+                                <th width="30%">Defeito / Solução</th>
+                                <th width="30%">Observações</th>
+                            </tr>
+                        </thead>
+                        <tbody>`;
 
-            group.items.forEach(item => {
-                const defects = item.defect ? item.defect.split('\n').filter(d => d.trim()) : [];
-                const solutions = item.solution ? item.solution.split('\n').filter(s => s.trim()) : [];
-                const observation = item.equipmentObservation || '';
-                const photos = item.photos || [];
+        group.items.forEach(item => {
+            const defects = item.defect ? item.defect.split('\n').filter(d => d.trim()) : [];
+            const solutions = item.solution ? item.solution.split('\n').filter(s => s.trim()) : [];
+            const observation = item.equipmentObservation || '';
+            const photos = item.photos || [];
 
-                const list = item.solutionsList || [];
-                const total = list.reduce((acc, curr) => acc + parseFloat(curr.cost.replace('.', '').replace(',', '.') || 0), 0);
+            const list = item.solutionsList || [];
+            const total = list.reduce((acc, curr) => acc + parseFloat(curr.cost.replace('.', '').replace(',', '.') || 0), 0);
 
-                const isItemBudget = item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento';
-                const valorItem = customPaymentConditions ?
-                    customPaymentConditions.finalChargedAmount / selectedData.length :
-                    (item.finalChargedAmount ?
-                        parseCurrency(item.finalChargedAmount) :
-                        parseCurrency(item.chargedAmount));
+            const isItemBudget = item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento';
+            const valorItem = customPaymentConditions ?
+                customPaymentConditions.finalChargedAmount / selectedData.length :
+                (item.finalChargedAmount ?
+                    parseCurrency(item.finalChargedAmount) :
+                    parseCurrency(item.chargedAmount));
 
-                htmlContent += `
-                        <tr>
-                            <td>
-                                <span class="os-tag">${item.osNumber || '---'}</span>
-                                <small>${item.status || '---'}</small>
-                                ${isItemBudget && printType === 'client' ? `
-                                <div style="margin-top: 5px; padding: 3px; background: #f0fdf4; border-radius: 4px; text-align: center;">
-                                    <div style="font-size: 9px; font-weight: bold; color: #166534;">VALOR</div>
-                                    <div style="font-size: 11px; font-weight: 900; color: #166534;">
-                                        R$ ${valorItem.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            htmlContent += `
+                            <tr>
+                                <td>
+                                    <span class="os-tag">${item.osNumber || '---'}</span>
+                                    <small>${item.status || '---'}</small>
+                                    ${isItemBudget && printType === 'client' ? `
+                                    <div style="margin-top: 5px; padding: 3px; background: #f0fdf4; border-radius: 4px; text-align: center;">
+                                        <div style="font-size: 9px; font-weight: bold; color: #166534;">VALOR</div>
+                                        <div style="font-size: 11px; font-weight: 900; color: #166534;">
+                                            R$ ${valorItem.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        </div>
                                     </div>
-                                </div>
-                                ` : ''}
-                            </td>
-                            <td>
-                                <strong>${item.item || '---'}</strong><br>
-                                <div style="font-size:10px;color:#666;margin-bottom:2px;">
-                                    ${item.manufacturer || ''} ${item.model || ''}
-                                </div>
-                                <small>NS: ${item.serial || 'N/D'}</small>
-                                ${item.quantity && parseInt(item.quantity) > 1 ?
-                        `<div style="font-size:10px;color:#666;margin-top:2px;"><strong>Quantidade:</strong> ${item.quantity}</div>` :
-                        ''}
-                            </td>
-                            <td>
-                                <div style="margin-bottom: 15px;">
-                                    <div style="font-weight: bold; font-size: 11px; color: #1e40af; margin-bottom: 5px;">DEFEITO:</div>
-                                    ${defects.length > 0 ?
-                        `<ul class="defects-list">${defects.map(d => `<li>${d}</li>`).join('')}</ul>` :
-                        '<div style="color: #999; font-style: italic;">Sem defeitos registrados</div>'}
-                                </div>
-                                <div>
-                                    <div style="font-weight: bold; font-size: 11px; color: #059669; margin-bottom: 5px;">SOLUÇÃO:</div>
-                                    ${solutions.length > 0 ?
-                        `<ul class="solutions-list">${solutions.map(s => `<li>${s}</li>`).join('')}</ul>` :
-                        '<div style="color: #999; font-style: italic;">Solução em análise</div>'}
-                                </div>
-                            </td>
-                            <td class="observation-column">
-                                ${observation ? `
-                                <div style="margin-bottom: 15px;">
-                                    <div style="font-weight: bold; font-size: 11px; color: #7c3aed; margin-bottom: 5px;">OBSERVAÇÃO:</div>
-                                    <div style="font-size: 11px; line-height: 1.4;">${observation}</div>
-                                </div>
-                                ` : ''}
-                                
-                                ${photos.length > 0 ? `
-                                <div>
-                                    <div style="font-weight: bold; font-size: 11px; color: #7c3aed; margin-bottom: 5px;">FOTOS:</div>
-                                    <div class="photo-grid">
-                                        ${photos.slice(0, 3).map((photo, idx) =>
-                            `<div class="photo-item">
-                                                <img src="${photo}" alt="Foto ${idx + 1}" onerror="this.style.display='none';">
-                                            </div>`
-                        ).join('')}
+                                    ` : ''}
+                                </td>
+                                <td>
+                                    <strong>${item.item || '---'}</strong><br>
+                                    <div style="font-size:10px;color:#666;margin-bottom:2px;">
+                                        ${item.manufacturer || ''} ${item.model || ''}
                                     </div>
-                                    ${photos.length > 3 ?
-                            `<div style="font-size: 10px; color: #666; margin-top: 5px;">+ ${photos.length - 3} foto(s) adicional(is)</div>` :
-                            ''}
-                                </div>
-                                ` : ''}
-                            </td>
-                        </tr>`;
-            });
-
-            htmlContent += `
-                    </tbody>
-                </table>
-            </div>`;
-
-            if (printType === 'client' && hasBudgetInGroup) {
-                const budgetItem = budgetItems[0];
-                const deliveryDeadline = budgetItem.deliveryDeadline || 'A ser definido após aprovação do orçamento';
-                const paymentConditions = customPaymentConditions ?
-                    `${customPaymentConditions.paymentCondition}${customPaymentConditions.installments ? ` ${customPaymentConditions.installments}` : ''}` :
-                    `${budgetItem.paymentCondition || 'À vista'}${budgetItem.installments ? ` ${budgetItem.installments}` : ''}`;
-
-                htmlContent += `
-            <div class="footer-notes page-break-avoid">
-                <div class="footer-title">INFORMAÇÕES IMPORTANTES:</div>
-                <p><strong>• Garantia:</strong> 3 meses. Não está coberto por garantia os danos causados por uso inadequado, queda ou choque mecânico, acondicionamento inadequado e/ou acondicionamento fora dos padrões recomendados pelo fabricante.</p>
-                <p><strong>• Prazo de entrega:</strong> ${deliveryDeadline}</p>
-                <p><strong>• Valor Total da Proposta:</strong> R$ ${valorTotalGrupo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                <p><strong>• Condições de pagamento:</strong> ${paymentConditions}</p>
-            </div>`;
-            }
-
-            htmlContent += `
-            <div class="signature-area page-break-avoid">
-                <div class="signature-box">Técnico Responsável</div>
-                <div class="signature-box">Cliente / Recebedor</div>
-            </div>`;
-
-            // Se for a última página, adicionamos o rodapé da empresa
-            if (isLastPage) {
-                htmlContent += `
-            <div class="last-page-footer">
-                <strong>Alfa Tecnologia Hospitalar</strong> - CNPJ: 50.993.453/0001-34<br/>
-                (55) 9 9137-9413 - alfa.manutencaosm@gmail.com<br/>
-                Endereço: Travessa Moreira, 125 - CEP: 97070-540 - Bairro: Duque de Caxias, Santa Maria/ RS
-            </div>`;
-            }
-
-            htmlContent += `
-            <div class="page-counter">Página ${groupIndex + 1} de ${totalGroups}</div>
-        </div>`;
+                                    <small>NS: ${item.serial || 'N/D'}</small>
+                                    ${item.quantity && parseInt(item.quantity) > 1 ?
+                    `<div style="font-size:10px;color:#666;margin-top:2px;"><strong>Quantidade:</strong> ${item.quantity}</div>` :
+                    ''}
+                                </td>
+                                <td>
+                                    <div style="margin-bottom: 15px;">
+                                        <div style="font-weight: bold; font-size: 11px; color: #1e40af; margin-bottom: 5px;">DEFEITO:</div>
+                                        ${defects.length > 0 ?
+                    `<ul class="defects-list">${defects.map(d => `<li>${d}</li>`).join('')}</ul>` :
+                    '<div style="color: #999; font-style: italic;">Sem defeitos registrados</div>'}
+                                    </div>
+                                    <div>
+                                        <div style="font-weight: bold; font-size: 11px; color: #059669; margin-bottom: 5px;">SOLUÇÃO:</div>
+                                        ${solutions.length > 0 ?
+                    `<ul class="solutions-list">${solutions.map(s => `<li>${s}</li>`).join('')}</ul>` :
+                    '<div style="color: #999; font-style: italic;">Solução em análise</div>'}
+                                    </div>
+                                </td>
+                                <td class="observation-column">
+                                    ${observation ? `
+                                    <div style="margin-bottom: 15px;">
+                                        <div style="font-weight: bold; font-size: 11px; color: #7c3aed; margin-bottom: 5px;">OBSERVAÇÃO:</div>
+                                        <div style="font-size: 11px; line-height: 1.4;">${observation}</div>
+                                    </div>
+                                    ` : ''}
+                                    
+                                    ${photos.length > 0 ? `
+                                    <div>
+                                        <div style="font-weight: bold; font-size: 11px; color: #7c3aed; margin-bottom: 5px;">FOTOS:</div>
+                                        <div class="photo-grid">
+                                            ${photos.slice(0, 3).map((photo, idx) =>
+                    `<div class="photo-item">
+                                                        <img src="${photo}" alt="Foto ${idx + 1}" onerror="this.style.display='none';">
+                                                    </div>`
+                ).join('')}
+                                        </div>
+                                        ${photos.length > 3 ?
+                    `<div style="font-size: 10px; color: #666; margin-top: 5px;">+ ${photos.length - 3} foto(s) adicional(is)</div>` :
+                    ''}
+                                    </div>
+                                    ` : ''}
+                                </td>
+                            </tr>`;
         });
 
         htmlContent += `
-        </div>
-    </body>
-    </html>`;
+                        </tbody>
+                    </table>
+                </div>`;
 
-        const printWindow = window.open('', 'printWindow', 'width=800,height=600,scrollbars=yes');
-        if (!printWindow) {
-            showNotification('Permita pop-ups para imprimir o documento', 'error');
-            return;
+        if (printType === 'client' && hasBudgetInGroup) {
+            const budgetItem = budgetItems[0];
+            const deliveryDeadline = budgetItem.deliveryDeadline || 'A ser definido após aprovação do orçamento';
+            const paymentConditions = customPaymentConditions ?
+                `${customPaymentConditions.paymentCondition}${customPaymentConditions.installments ? ` ${customPaymentConditions.installments}` : ''}` :
+                `${budgetItem.paymentCondition || 'À vista'}${budgetItem.installments ? ` ${budgetItem.installments}` : ''}`;
+
+            htmlContent += `
+                <div class="footer-notes page-break-avoid">
+                    <div class="footer-title">INFORMAÇÕES IMPORTANTES:</div>
+                    <p><strong>• Garantia:</strong> 3 meses. Não está coberto por garantia os danos causados por uso inadequado, queda ou choque mecânico, acondicionamento inadequado e/ou acondicionamento fora dos padrões recomendados pelo fabricante.</p>
+                    <p><strong>• Prazo de entrega:</strong> ${deliveryDeadline}</p>
+                    <p><strong>• Valor Total da Proposta:</strong> R$ ${valorTotalGrupo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                    <p><strong>• Condições de pagamento:</strong> ${paymentConditions}</p>
+                </div>`;
         }
 
-        printWindow.document.write(htmlContent);
-        printWindow.document.close();
+        htmlContent += `
+                <div class="signature-area page-break-avoid">
+                    <div class="signature-box">Técnico Responsável</div>
+                    <div class="signature-box">Cliente / Recebedor</div>
+                </div>
+            </div>
+            
+            <div class="company-footer">
+                <strong>Alfa Tecnologia Hospitalar</strong> - CNPJ: 50.993.453/0001-34<br/>
+                (55) 9 9137-9413 - alfa.manutencaosm@gmail.com<br/>
+                Endereço: Travessa Moreira, 125 - CEP: 97070-540 - Bairro: Duque de Caxias, Santa Maria/ RS
+            </div>
+            
+            <!-- CONTADOR DE PÁGINAS REMOVIDO -->
+        </div>`;
+    });
 
-        // Adicionar meta tag para evitar que o navegador adicione seus cabeçalhos
-        const meta = printWindow.document.createElement('meta');
-        meta.name = 'viewport';
-        meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
-        printWindow.document.head.appendChild(meta);
+    htmlContent += `
+    </div>
+</body>
+</html>`;
 
-        // Adicionar estilo inline para esconder cabeçalhos/rodapés do navegador
-        const style = printWindow.document.createElement('style');
-        style.textContent = `
-        @media print {
-            @page {
-                margin: 0;
-                size: A4;
-            }
-            body {
-                margin: 1.5cm 1cm 2cm 1cm;
-            }
-            /* Ocultar cabeçalhos e rodapés do navegador */
-            @page :first {
-                margin-top: 0;
-            }
-        }
-    `;
-        printWindow.document.head.appendChild(style);
+    const printWindow = window.open('', 'printWindow', 'width=800,height=600,scrollbars=yes');
+    if (!printWindow) {
+        showNotification('Permita pop-ups para imprimir o documento', 'error');
+        return;
+    }
 
-        // Definir título da página
-        printWindow.document.title = title;
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
 
-        setTimeout(() => {
-            printWindow.focus();
-            printWindow.print();
-        }, 500);
-    };
+    setTimeout(() => {
+        printWindow.focus();
+        printWindow.print();
+    }, 500);
+};
 
     // Funções para lidar com filtros no painel de status
     const handleFilterByStatus = (status) => {
@@ -2583,26 +2842,26 @@ export default function MainApp() {
     };
 
     const handleModalPrint = (printType) => {
-        const printData = prepareDataForSave();
-        const isBudgetStage = printData.status === 'Em orçamento' ||
-            printData.status === 'Aguardando aprovação do orçamento';
+    const printData = prepareDataForSave();
+    const isBudgetStage = printData.status === 'Em orçamento' ||
+        printData.status === 'Aguardando aprovação do orçamento';
 
-        const title = printType === 'internal' ?
-            'Relatório INTERNO' :
-            (isBudgetStage ? 'Proposta de orçamento' : 'Relatório de atendimento');
+    const title = printType === 'internal' ?
+        'Relatório INTERNO' :
+        (isBudgetStage ? 'Proposta de orçamento' : 'Relatório de atendimento');
 
-        const paymentConditions = `${printData.paymentCondition}${printData.installments ? ` ${printData.installments}` : ''}`;
-        const valorCobrado = printData.finalChargedAmount > 0 ?
-            parseCurrency(printData.finalChargedAmount) :
-            parseCurrency(printData.chargedAmount);
+    const paymentConditions = `${printData.paymentCondition}${printData.installments ? ` ${printData.installments}` : ''}`;
+    const valorCobrado = printData.finalChargedAmount > 0 ?
+        parseCurrency(printData.finalChargedAmount) :
+        parseCurrency(printData.chargedAmount);
 
-        let discountSection = '';
-        if (printData.discount5Days && printData.chargedAmount) {
-            const valorOriginal = parseCurrency(printData.chargedAmount);
-            const desconto = valorOriginal * 0.05;
-            const valorFinal = valorOriginal - desconto;
+    let discountSection = '';
+    if (printData.discount5Days && printData.chargedAmount) {
+        const valorOriginal = parseCurrency(printData.chargedAmount);
+        const desconto = valorOriginal * 0.05;
+        const valorFinal = valorOriginal - desconto;
 
-            discountSection = `
+        discountSection = `
         <div style="margin-top: 10px; padding: 8px; background: #f0fdf4; border-radius: 6px; border: 1px solid #bbf7d0;">
             <div style="font-size: 9px; font-weight: bold; color: #166534; margin-bottom: 3px;">DESCONTO APLICADO</div>
             <div style="display: flex; justify-content: space-between; font-size: 10px;">
@@ -2619,24 +2878,27 @@ export default function MainApp() {
             </div>
         </div>
     `;
-        }
+    }
 
-        const defects = printData.defect ? printData.defect.split('\n').filter(d => d.trim()) : [];
-        const solutions = printData.solution ? printData.solution.split('\n').filter(s => s.trim()) : [];
-        const observation = printData.equipmentObservation || '';
-        const photos = printData.photos || [];
+    const defects = printData.defect ? printData.defect.split('\n').filter(d => d.trim()) : [];
+    const solutions = printData.solution ? printData.solution.split('\n').filter(s => s.trim()) : [];
+    const observation = printData.equipmentObservation || '';
+    const photos = printData.photos || [];
 
-        let htmlContent = `
+    let htmlContent = `
 <!DOCTYPE html>
 <html>
 <head>
     <title>${title}</title>
+    <meta charset="UTF-8">
     <style>
         @media print {
-            @page { 
-                margin: 1.5cm 1cm;
+            /* REMOVER margens do navegador */
+            @page {
                 size: A4;
+                margin: 0;
             }
+            
             body {
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
                 color: #333;
@@ -2644,14 +2906,21 @@ export default function MainApp() {
                 padding: 0;
                 margin: 0;
                 font-size: 12px;
+                width: 100%;
+                height: 100%;
             }
+            
             .report-page {
-                padding: 20px;
+                width: 210mm; /* Largura A4 */
+                min-height: 297mm; /* Altura A4 */
+                padding: 15mm 20mm;
                 position: relative;
-                min-height: 25.7cm;
+                box-sizing: border-box;
+                background: white;
                 display: flex;
                 flex-direction: column;
             }
+            
             .header {
                 display: flex;
                 justify-content: space-between;
@@ -2661,16 +2930,19 @@ export default function MainApp() {
                 margin-bottom: 25px;
                 flex-wrap: wrap;
             }
+            
             .logo-container img {
-                height: 105px; /* AUMENTADO DE 70px PARA 105px */
-                max-width: 300px;
+                height: 70px;
+                max-width: 200px;
                 object-fit: contain;
             }
+            
             .report-info {
                 text-align: right;
                 flex: 1;
                 min-width: 250px;
             }
+            
             .report-title {
                 font-size: 18px;
                 font-weight: 900;
@@ -2678,6 +2950,7 @@ export default function MainApp() {
                 text-transform: uppercase;
                 margin-bottom: 5px;
             }
+            
             .internal-badge {
                 background: #b91c1c;
                 color: white;
@@ -2688,9 +2961,11 @@ export default function MainApp() {
                 margin-bottom: 4px;
                 display: inline-block;
             }
+            
             .section {
                 margin-bottom: 25px;
             }
+            
             .section-title {
                 background: #f8fafc;
                 padding: 8px 12px;
@@ -2701,6 +2976,7 @@ export default function MainApp() {
                 margin-bottom: 15px;
                 color: #1e40af;
             }
+            
             .client-grid {
                 display: grid;
                 grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -2708,15 +2984,14 @@ export default function MainApp() {
                 font-size: 12px;
                 margin-bottom: 25px;
             }
+            
             .equipment-details {
                 display: grid;
                 grid-template-columns: 1fr 1fr;
                 gap: 30px;
                 margin-top: 20px;
             }
-            .defects-section, .solutions-section {
-                flex: 1;
-            }
+            
             .observation-section {
                 margin-top: 20px;
                 padding: 15px;
@@ -2726,6 +3001,7 @@ export default function MainApp() {
                 font-size: 11px;
                 line-height: 1.4;
             }
+            
             .valor-section {
                 margin-top: 20px;
                 padding: 20px;
@@ -2735,6 +3011,7 @@ export default function MainApp() {
                 font-size: 12px;
                 line-height: 1.5;
             }
+            
             .valor-destaque {
                 font-size: 20px;
                 font-weight: 900;
@@ -2742,193 +3019,235 @@ export default function MainApp() {
                 text-align: center;
                 margin: 15px 0;
             }
+            
             .defects-list, .solutions-list {
                 margin: 8px 0;
                 padding-left: 15px;
             }
+            
             .defects-list li, .solutions-list li {
                 margin-bottom: 4px;
                 padding-left: 5px;
             }
+            
+            /* ÁREA DE ASSINATURA - MAIS DISTANTE DO CONTEÚDO */
             .signature-area {
-                margin-top: auto;
-                margin-bottom: 80px;
-                page-break-inside: avoid;
                 display: flex;
                 justify-content: space-around;
+                margin-top: 150px; /* AUMENTADO para mais distância do conteúdo */
+                margin-bottom: 50px; /* Aumentado para mais espaço */
+                page-break-inside: avoid;
                 position: relative;
             }
+            
             .signature-box {
                 border-top: 1px solid #333;
                 width: 250px;
                 text-align: center;
-                padding-top: 10px;
+                padding-top: 15px; /* Aumentado para mais espaço de assinatura */
                 font-size: 12px;
                 font-weight: 600;
-                min-height: 70px;
+                min-height: 120px; /* Altura aumentada */
             }
+            
+            /* RODAPÉ FIXO NO FINAL ABSOLUTO - CONTADOR REMOVIDO */
             .company-footer {
                 position: absolute;
-                bottom: 20px;
-                left: 20px;
-                right: 20px;
-                font-size: 9px;
+                bottom: 5mm; /* COLADO NO FINAL DA PÁGINA */
+                left: 20mm;
+                right: 20mm;
+                font-size: 8px;
                 color: #666;
                 text-align: center;
                 border-top: 1px solid #eee;
-                padding-top: 10px;
-                line-height: 1.4;
-                page-break-inside: avoid;
+                padding-top: 8px;
+                line-height: 1.2;
+                margin: 0;
+                background: white;
+                z-index: 10;
             }
-            .company-footer strong {
-                color: #1a56db;
-            }
-            .page-counter {
-                position: absolute;
-                bottom: 15px;
-                right: 20px;
-                font-size: 10px;
-                color: #999;
-                page-break-inside: avoid;
-            }
+            
+            /* CONTADOR DE PÁGINAS REMOVIDO - LINHA COMENTADA/EXCLUÍDA */
+            /* .page-counter { position: absolute; bottom: 5mm; right: 20mm; ... } */
+            
             .photo-grid {
                 display: grid;
                 grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
                 gap: 10px;
                 margin-top: 15px;
             }
+            
             .photo-item {
                 border: 1px solid #e2e8f0;
                 border-radius: 4px;
                 overflow: hidden;
             }
+            
             .photo-item img {
                 width: 100%;
                 height: 120px;
                 object-fit: cover;
             }
-            /* Esconder cabeçalho e rodapé do navegador */
-            @page {
-                margin: 0;
+            
+            .footer-notes {
+                margin-top: 30px;
+                font-size: 10px;
+                color: #666;
+                padding-top: 15px;
+                line-height: 1.5;
+                page-break-inside: avoid;
+                border-top: 1px solid #eee;
             }
-            body {
-                margin: 1.5cm 1cm 2cm 1cm;
+            
+            .footer-title {
+                font-weight: bold;
+                color: #1a56db;
+                margin-bottom: 5px;
+                font-size: 11px;
+            }
+            
+            /* Garantir que o conteúdo não sobreponha o rodapé */
+            .content-wrapper {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                padding-bottom: 60px; /* Aumentado para mais espaço antes da assinatura */
+                box-sizing: border-box;
+            }
+            
+            .page-break-avoid {
+                page-break-inside: avoid;
+                page-break-before: avoid;
+                page-break-after: avoid;
+            }
+        }
+        
+        /* Estilos para visualização em tela */
+        @media screen {
+            .report-page {
+                width: 210mm;
+                min-height: 297mm;
+                margin: 0 auto;
+                box-shadow: 0 0 10px rgba(0,0,0,0.1);
+                background: white;
             }
         }
     </style>
 </head>
 <body>
     <div class="report-page">
-        <div class="header">
-            <div class="logo-container">
-                <img src="${logo}" alt="Alfa Tecnologia Hospitalar" onerror="this.style.display='none';">
-            </div>
-            <div class="report-info">
-                ${printType === 'internal' ? '<div class="internal-badge">USO INTERNO - CONFIDENCIAL</div>' : ''}
-                <div class="report-title">${title}</div>
-                <div style="font-size:11px;color:#666;">Data: ${new Date().toLocaleDateString('pt-BR')}</div>
-            </div>
-        </div>
-        
-        <div class="section">
-            <div class="section-title">Dados do Cliente</div>
-            <div class="client-grid">
-                <div><strong>Cliente:</strong><br>${printData.client || '---'}</div>
-                <div><strong>CNPJ:</strong><br>${printData.cnpj || '---'}</div>
-                <div><strong>Atendimento:</strong><br>${printData.billingType} ${printData.maintenanceVisit ? '- ' + printData.maintenanceVisit : ''}</div>
-                <div><strong>Contato:</strong><br>${printData.contactPerson || '---'}</div>
-                <div><strong>E-mail:</strong><br>${printData.email || '---'}</div>
-                <div><strong>Endereço:</strong><br>${printData.address || '---'}</div>
-            </div>
-        </div>
-        
-        ${isBudgetStage && printType === 'client' ? `
-        <div class="valor-section">
-            <div class="footer-title">VALOR DA PROPOSTA</div>
-            <div class="valor-destaque">
-                R$ ${valorCobrado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-            </div>
-            <p><strong>Condições de pagamento:</strong> ${paymentConditions}</p>
-            ${discountSection}
-        </div>
-        ` : ''}
-        
-        <div class="section">
-            <div class="section-title">Equipamento</div>
-            <div style="margin-bottom: 20px;">
-                <div style="display: flex; justify-content: space-between; align-items: start;">
-                    <div style="flex: 1;">
-                        <div style="font-weight: bold; font-size: 14px; color: #1e40af; margin-bottom: 5px;">${printData.item || '---'}</div>
-                        <div style="font-size: 11px; color: #666; margin-bottom: 5px;">
-                            ${printData.manufacturer || ''} ${printData.model || ''}
-                        </div>
-                        <div style="font-size: 10px; color: #999;">NS: ${printData.serial || 'N/D'}</div>
-                        ${printData.quantity && parseInt(printData.quantity) > 1 ?
-                `<div style="font-size:10px;color:#666;margin-top:5px;"><strong>Quantidade:</strong> ${printData.quantity}</div>` :
-                ''}
-                        <div style="margin-top: 10px; font-size: 11px;">
-                            <strong>OS:</strong> ${printData.osNumber || '---'} | 
-                            <strong>Status:</strong> ${printData.status || '---'}
-                        </div>
-                    </div>
+        <div class="content-wrapper">
+            <div class="header">
+                <div class="logo-container">
+                    <img src="${logo}" alt="Alfa Tecnologia Hospitalar" onerror="this.style.display='none';">
+                </div>
+                <div class="report-info">
+                    ${printType === 'internal' ? '<div class="internal-badge">USO INTERNO - CONFIDENCIAL</div>' : ''}
+                    <div class="report-title">${title}</div>
+                    <div style="font-size:11px;color:#666;">Data: ${new Date().toLocaleDateString('pt-BR')}</div>
                 </div>
             </div>
             
-            <div class="equipment-details">
-                <div class="defects-section">
-                    <div style="font-weight: bold; font-size: 12px; color: #1e40af; margin-bottom: 10px;">DEFEITOS ENCONTRADOS</div>
-                    ${defects.length > 0 ?
-                `<ul class="defects-list">${defects.map(d => `<li>${d}</li>`).join('')}</ul>` :
-                '<div style="color: #999; font-style: italic;">Sem defeitos registrados</div>'}
-                </div>
-                
-                <div class="solutions-section">
-                    <div style="font-weight: bold; font-size: 12px; color: #059669; margin-bottom: 10px;">SOLUÇÃO APLICADA</div>
-                    ${solutions.length > 0 ?
-                `<ul class="solutions-list">${solutions.map(s => `<li>${s}</li>`).join('')}</ul>` :
-                '<div style="color: #999; font-style: italic;">Solução em análise</div>'}
+            <div class="section">
+                <div class="section-title">Dados do Cliente</div>
+                <div class="client-grid">
+                    <div><strong>Cliente:</strong><br>${printData.client || '---'}</div>
+                    <div><strong>CNPJ:</strong><br>${printData.cnpj || '---'}</div>
+                    <div><strong>Atendimento:</strong><br>${printData.billingType} ${printData.maintenanceVisit ? '- ' + printData.maintenanceVisit : ''}</div>
+                    <div><strong>Contato:</strong><br>${printData.contactPerson || '---'}</div>
+                    <div><strong>E-mail:</strong><br>${printData.email || '---'}</div>
+                    <div><strong>Endereço:</strong><br>${printData.address || '---'}</div>
                 </div>
             </div>
             
-            ${observation || photos.length > 0 ? `
-            <div class="observation-section">
-                ${observation ? `
-                <div style="margin-bottom: ${photos.length > 0 ? '15px' : '0'};">
-                    <div style="font-weight: bold; font-size: 11px; color: #7c3aed; margin-bottom: 5px;">OBSERVAÇÕES:</div>
-                    <div style="font-size: 11px; line-height: 1.4;">${observation}</div>
+            ${isBudgetStage && printType === 'client' ? `
+            <div class="valor-section">
+                <div class="footer-title">VALOR DA PROPOSTA</div>
+                <div class="valor-destaque">
+                    R$ ${valorCobrado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                 </div>
-                ` : ''}
-                
-                ${photos.length > 0 ? `
-                <div>
-                    <div style="font-weight: bold; font-size: 11px; color: #7c3aed; margin-bottom: 5px;">FOTOS:</div>
-                    <div class="photo-grid">
-                        ${photos.slice(0, 3).map((photo, idx) =>
-                    `<div class="photo-item">
-                                <img src="${photo}" alt="Foto ${idx + 1}" onerror="this.style.display='none';">
-                            </div>`
-                ).join('')}
-                    </div>
-                    ${photos.length > 3 ?
-                        `<div style="font-size: 10px; color: #666; margin-top: 5px;">+ ${photos.length - 3} foto(s) adicional(is)</div>` :
-                        ''}
-                </div>
-                ` : ''}
+                <p><strong>Condições de pagamento:</strong> ${paymentConditions}</p>
+                ${discountSection}
             </div>
             ` : ''}
-        </div>
-        
-        ${printType === 'client' && isBudgetStage ? `
-        <div class="footer-notes">
-            <div class="footer-title">INFORMAÇÕES IMPORTANTES:</div>
-            <p><strong>• Garantia:</strong> 3 meses. Não está coberto por garantia os danos causados por uso inadequado, queda ou choque mecânico, acondicionamento inadequado e/ou acondicionamento fora dos padrões recomendados pelo fabricante.</p>
-            <p><strong>• Prazo de entrega:</strong> ${printData.deliveryDeadline || 'A ser definido após aprovação do orçamento'}</p>
-        </div>
-        ` : ''}
-        
-        <div class="signature-area">
-            <div class="signature-box">Técnico Responsável</div>
-            <div class="signature-box">Cliente / Recebedor</div>
+            
+            <div class="section">
+                <div class="section-title">Equipamento</div>
+                <div style="margin-bottom: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: start;">
+                        <div style="flex: 1;">
+                            <div style="font-weight: bold; font-size: 14px; color: #1e40af; margin-bottom: 5px;">${printData.item || '---'}</div>
+                            <div style="font-size: 11px; color: #666; margin-bottom: 5px;">
+                                ${printData.manufacturer || ''} ${printData.model || ''}
+                            </div>
+                            <div style="font-size: 10px; color: #999;">NS: ${printData.serial || 'N/D'}</div>
+                            ${printData.quantity && parseInt(printData.quantity) > 1 ?
+        `<div style="font-size:10px;color:#666;margin-top:5px;"><strong>Quantidade:</strong> ${printData.quantity}</div>` :
+        ''}
+                            <div style="margin-top: 10px; font-size: 11px;">
+                                <strong>OS:</strong> ${printData.osNumber || '---'} | 
+                                <strong>Status:</strong> ${printData.status || '---'}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="equipment-details">
+                    <div class="defects-section">
+                        <div style="font-weight: bold; font-size: 12px; color: #1e40af; margin-bottom: 10px;">DEFEITOS ENCONTRADOS</div>
+                        ${defects.length > 0 ?
+        `<ul class="defects-list">${defects.map(d => `<li>${d}</li>`).join('')}</ul>` :
+        '<div style="color: #999; font-style: italic;">Sem defeitos registrados</div>'}
+                    </div>
+                    
+                    <div class="solutions-section">
+                        <div style="font-weight: bold; font-size: 12px; color: #059669; margin-bottom: 10px;">SOLUÇÃO APLICADA</div>
+                        ${solutions.length > 0 ?
+        `<ul class="solutions-list">${solutions.map(s => `<li>${s}</li>`).join('')}</ul>` :
+        '<div style="color: #999; font-style: italic;">Solução em análise</div>'}
+                    </div>
+                </div>
+                
+                ${observation || photos.length > 0 ? `
+                <div class="observation-section">
+                    ${observation ? `
+                    <div style="margin-bottom: ${photos.length > 0 ? '15px' : '0'};">
+                        <div style="font-weight: bold; font-size: 11px; color: #7c3aed; margin-bottom: 5px;">OBSERVAÇÕES:</div>
+                        <div style="font-size: 11px; line-height: 1.4;">${observation}</div>
+                    </div>
+                    ` : ''}
+                    
+                    ${photos.length > 0 ? `
+                    <div>
+                        <div style="font-weight: bold; font-size: 11px; color: #7c3aed; margin-bottom: 5px;">FOTOS:</div>
+                        <div class="photo-grid">
+                            ${photos.slice(0, 3).map((photo, idx) =>
+            `<div class="photo-item">
+                                        <img src="${photo}" alt="Foto ${idx + 1}" onerror="this.style.display='none';">
+                                    </div>`
+        ).join('')}
+                        </div>
+                        ${photos.length > 3 ?
+            `<div style="font-size: 10px; color: #666; margin-top: 5px;">+ ${photos.length - 3} foto(s) adicional(is)</div>` :
+            ''}
+                    </div>
+                    ` : ''}
+                </div>
+                ` : ''}
+            </div>
+            
+            ${printType === 'client' && isBudgetStage ? `
+            <div class="footer-notes">
+                <div class="footer-title">INFORMAÇÕES IMPORTANTES:</div>
+                <p><strong>• Garantia:</strong> 3 meses. Não está coberto por garantia os danos causados por uso inadequado, queda ou choque mecânico, acondicionamento inadequado e/ou acondicionamento fora dos padrões recomendados pelo fabricante.</p>
+                <p><strong>• Prazo de entrega:</strong> ${printData.deliveryDeadline || 'A ser definido após aprovação do orçamento'}</p>
+            </div>
+            ` : ''}
+            
+            <div class="signature-area page-break-avoid">
+                <div class="signature-box">Técnico Responsável</div>
+                <div class="signature-box">Cliente / Recebedor</div>
+            </div>
         </div>
         
         <div class="company-footer">
@@ -2937,53 +3256,25 @@ export default function MainApp() {
             Endereço: Travessa Moreira, 125 - CEP: 97070-540 - Bairro: Duque de Caxias, Santa Maria/ RS
         </div>
         
-        <div class="page-counter">Página 1 de 1</div>
+        <!-- CONTADOR DE PÁGINAS REMOVIDO -->
     </div>
 </body>
 </html>`;
 
-        const printWindow = window.open('', 'printWindow', 'width=800,height=600,scrollbars=yes');
-        if (!printWindow) {
-            showNotification('Permita pop-ups para imprimir o documento', 'error');
-            return;
-        }
+    const printWindow = window.open('', 'printWindow', 'width=800,height=600,scrollbars=yes');
+    if (!printWindow) {
+        showNotification('Permita pop-ups para imprimir o documento', 'error');
+        return;
+    }
 
-        printWindow.document.write(htmlContent);
-        printWindow.document.close();
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
 
-        // Adicionar meta tag para evitar que o navegador adicione seus cabeçalhos
-        const meta = printWindow.document.createElement('meta');
-        meta.name = 'viewport';
-        meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
-        printWindow.document.head.appendChild(meta);
-
-        // Adicionar estilo inline para esconder cabeçalhos/rodapés do navegador
-        const style = printWindow.document.createElement('style');
-        style.textContent = `
-        @media print {
-            @page {
-                margin: 0;
-                size: A4;
-            }
-            body {
-                margin: 1.5cm 1cm 2cm 1cm;
-            }
-            /* Ocultar cabeçalhos e rodapés do navegador */
-            @page :first {
-                margin-top: 0;
-            }
-        }
-    `;
-        printWindow.document.head.appendChild(style);
-
-        // Definir título da página
-        printWindow.document.title = title;
-
-        setTimeout(() => {
-            printWindow.focus();
-            printWindow.print();
-        }, 500);
-    };
+    setTimeout(() => {
+        printWindow.focus();
+        printWindow.print();
+    }, 500);
+};
 
     const exportToWord = () => {
         if (selectedOrders.length === 0) {
@@ -3729,6 +4020,62 @@ export default function MainApp() {
                                 </button>
                             )}
                         </div>
+
+                        {/* === ADICIONE ESTA SEÇÃO (Botões de ação quando há OSs selecionadas) === */}
+                        {selectedOrders.length > 0 && (
+                            <div className="bg-white rounded-2xl shadow-xl border border-slate-100 p-6 animate-in slide-in-from-top-4">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="text-lg font-black text-slate-800">
+                                        Ações para {selectedOrders.length} OS(s) selecionada(s):
+                                    </h3>
+                                    <button
+                                        onClick={() => setSelectedOrders([])}
+                                        className="text-sm text-red-600 hover:text-red-700 font-bold flex items-center gap-2"
+                                    >
+                                        <X size={16} /> Limpar seleção
+                                    </button>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                    {userData?.role !== 'client' && (
+                                        <button
+                                            onClick={() => setIsMoveModalOpen(true)}
+                                            className="bg-green-600 text-white p-4 rounded-xl font-bold flex flex-col items-center justify-center gap-2 shadow hover:bg-green-700 transition-colors h-24"
+                                        >
+                                            <ArrowRight size={20} />
+                                            <span className="text-sm">Movimentar OS</span>
+                                        </button>
+                                    )}
+
+                                    <button
+                                        onClick={() => handleOpenPaymentModal('client')}
+                                        className="bg-indigo-600 text-white p-4 rounded-xl font-bold flex flex-col items-center justify-center gap-2 shadow hover:bg-indigo-700 transition-colors h-24"
+                                    >
+                                        <Printer size={20} />
+                                        <span className="text-sm">Imprimir Cliente</span>
+                                    </button>
+
+                                    {userData?.role !== 'client' && (
+                                        <>
+                                            <button
+                                                onClick={() => handlePrint('internal')}
+                                                className="bg-slate-800 text-white p-4 rounded-xl font-bold flex flex-col items-center justify-center gap-2 shadow hover:bg-slate-900 transition-colors h-24"
+                                            >
+                                                <ShieldAlert size={20} />
+                                                <span className="text-sm">Imprimir Interno</span>
+                                            </button>
+                                            <button
+                                                onClick={exportToWord}
+                                                className="bg-emerald-600 text-white p-4 rounded-xl font-bold flex flex-col items-center justify-center gap-2 shadow hover:bg-emerald-700 transition-colors h-24"
+                                            >
+                                                <FileText size={20} />
+                                                <span className="text-sm">Exportar para Word</span>
+                                            </button>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        )}
 
                         <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
                             <div className="text-sm font-bold text-slate-700 flex items-center gap-2">
