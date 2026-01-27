@@ -143,6 +143,12 @@ const ToastNotification = ({ message, type = 'error', onClose }) => {
             icon: <Info size={20} />,
             title: 'Informação',
             border: 'border-l-4 border-blue-600'
+        },
+        warning: {
+            bg: 'bg-amber-500',
+            icon: <AlertCircle size={20} />,
+            title: 'Aviso!',
+            border: 'border-l-4 border-amber-600'
         }
     };
 
@@ -502,6 +508,7 @@ export default function MainApp() {
     const [selectedYear, setSelectedYear] = useState('');
     const [selectedDay, setSelectedDay] = useState('');
 
+
     // Estados
     const [currentPage, setCurrentPage] = useState('os');
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -512,6 +519,9 @@ export default function MainApp() {
     const [isLoading, setIsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [sortOrder, setSortOrder] = useState('desc');
+
+    const [rangeInput, setRangeInput] = useState('');
+    const [showRangeInput, setShowRangeInput] = useState(false);
 
     // Estados de sugestões/autocomplete
     const [showClientSuggestions, setShowClientSuggestions] = useState(false);
@@ -661,6 +671,103 @@ export default function MainApp() {
     };
 
     // === FUNÇÕES UTILITÁRIAS ===
+
+    // Adicione esta função após as outras funções principais
+    const handleSelectByRange = () => {
+        if (!rangeInput.trim()) {
+            showNotification('Digite um intervalo válido (ex: 10-20 ou 10,20,30)', 'error');
+            return;
+        }
+
+        const visibleOrders = sortedOrders.filter(o =>
+            o.client?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            o.osNumber?.includes(searchTerm)
+        );
+
+        let orderIdsToSelect = [];
+
+        try {
+            // Verifica se é um intervalo (ex: 10-20 ou 20-10)
+            if (rangeInput.includes('-')) {
+                let [firstStr, secondStr] = rangeInput.split('-').map(s => s.trim());
+                let start = parseInt(firstStr);
+                let end = parseInt(secondStr);
+
+                if (isNaN(start) || isNaN(end)) {
+                    showNotification('Formato inválido. Use: 10-20 ou 10,20,30', 'error');
+                    return;
+                }
+
+                // Se o primeiro número for maior que o segundo, inverte a ordem
+                if (start > end) {
+                    [start, end] = [end, start]; // Troca os valores
+                }
+
+                orderIdsToSelect = visibleOrders
+                    .filter(order => {
+                        const osNumMatch = order.osNumber?.match(/^(\d+)\//);
+                        if (!osNumMatch) return false;
+
+                        const osNum = parseInt(osNumMatch[1]);
+                        return !isNaN(osNum) && osNum >= start && osNum <= end;
+                    })
+                    .map(order => order.firestoreId);
+            }
+            // Verifica se é uma lista (ex: 10,20,30)
+            else if (rangeInput.includes(',')) {
+                const numbers = rangeInput.split(',')
+                    .map(s => parseInt(s.trim()))
+                    .filter(num => !isNaN(num));
+
+                if (numbers.length === 0) {
+                    showNotification('Formato inválido. Use números separados por vírgula', 'error');
+                    return;
+                }
+
+                orderIdsToSelect = visibleOrders
+                    .filter(order => {
+                        const osNumMatch = order.osNumber?.match(/^(\d+)\//);
+                        if (!osNumMatch) return false;
+
+                        const osNum = parseInt(osNumMatch[1]);
+                        return numbers.includes(osNum);
+                    })
+                    .map(order => order.firestoreId);
+            }
+            // Apenas um número específico
+            else {
+                const num = parseInt(rangeInput.trim());
+                if (isNaN(num)) {
+                    showNotification('Digite um número válido', 'error');
+                    return;
+                }
+
+                orderIdsToSelect = visibleOrders
+                    .filter(order => {
+                        const osNumMatch = order.osNumber?.match(/^(\d+)\//);
+                        if (!osNumMatch) return false;
+
+                        const osNum = parseInt(osNumMatch[1]);
+                        return osNum === num;
+                    })
+                    .map(order => order.firestoreId);
+            }
+
+            if (orderIdsToSelect.length === 0) {
+                showNotification('Nenhuma OS encontrada no intervalo especificado', 'warning');
+                return;
+            }
+
+            setSelectedOrders(orderIdsToSelect);
+            setRangeInput('');
+            setShowRangeInput(false);
+
+            showNotification(`${orderIdsToSelect.length} OS(s) selecionada(s) com sucesso!`, 'success');
+        } catch (error) {
+            console.error('Erro ao processar intervalo:', error);
+            showNotification('Erro ao processar intervalo. Verifique o formato.', 'error');
+        }
+    };
 
     const showNotification = (message, type = 'error') => {
         setNotification({
@@ -823,34 +930,86 @@ export default function MainApp() {
         return Array.from(map.values()).sort((a, b) => a.client.localeCompare(b.client));
     }, [orders, contracts]);
 
-    // Autocomplete de Defeitos
+    // Autocomplete de Defeitos - CORRIGIDO
     const uniqueDefects = useMemo(() => {
-        const allDefects = new Set();
+        if (!orders || orders.length === 0) return [];
+        const defectsSet = new Set();
         orders.forEach(o => {
-            if (o.defect && o.defect.length > 3) allDefects.add(o.defect);
             if (o.defectsList && Array.isArray(o.defectsList)) {
-                o.defectsList.forEach(d => { if (d && d.length > 2) allDefects.add(d) });
+                o.defectsList.forEach(d => {
+                    if (d && d.trim().length > 2) {
+                        const defects = d.split('\n');
+                        defects.forEach(defect => {
+                            if (defect.trim().length > 2) {
+                                defectsSet.add(defect.trim());
+                            }
+                        });
+                    }
+                });
+            }
+            if (o.defect && o.defect.trim().length > 2) {
+                const defects = o.defect.split('\n');
+                defects.forEach(defect => {
+                    if (defect.trim().length > 2) {
+                        defectsSet.add(defect.trim());
+                    }
+                });
             }
         });
-        return [...allDefects].sort();
+        return [...defectsSet].sort();
     }, [orders]);
 
-    // Autocomplete de Soluções
+    // Autocomplete de Soluções - CORRIGIDO
     const uniqueSolutions = useMemo(() => {
-        const allSolutions = new Set();
+        if (!orders || orders.length === 0) return [];
+        const solutionsSet = new Set();
         orders.forEach(o => {
-            if (o.solution && o.solution.length > 3) allSolutions.add(o.solution);
             if (o.manualSolutionsList && Array.isArray(o.manualSolutionsList)) {
-                o.manualSolutionsList.forEach(s => { if (s && s.length > 2) allSolutions.add(s) });
-            }
-            if (o.solutionsList && Array.isArray(o.solutionsList)) {
-                o.solutionsList.forEach(s => { if (s.text && s.text.length > 2) allSolutions.add(s.text) });
+                o.manualSolutionsList.forEach(s => {
+                    if (s && s.trim().length > 2) {
+                        const solutions = s.split('\n');
+                        solutions.forEach(solution => {
+                            if (solution.trim().length > 2) {
+                                solutionsSet.add(solution.trim());
+                            }
+                        });
+                    }
+                });
             }
             if (o.benchRepairList && Array.isArray(o.benchRepairList)) {
-                o.benchRepairList.forEach(s => { if (s && s.length > 2) allSolutions.add(s) });
+                o.benchRepairList.forEach(s => {
+                    if (s && s.trim().length > 2) {
+                        const solutions = s.split('\n');
+                        solutions.forEach(solution => {
+                            if (solution.trim().length > 2) {
+                                solutionsSet.add(solution.trim());
+                            }
+                        });
+                    }
+                });
+            }
+            if (o.solutionsList && Array.isArray(o.solutionsList)) {
+                o.solutionsList.forEach(s => {
+                    if (s.text && s.text.trim().length > 2) {
+                        const solutions = s.text.split('\n');
+                        solutions.forEach(solution => {
+                            if (solution.trim().length > 2) {
+                                solutionsSet.add(solution.trim());
+                            }
+                        });
+                    }
+                });
+            }
+            if (o.solution && o.solution.trim().length > 2) {
+                const solutions = o.solution.split('\n');
+                solutions.forEach(solution => {
+                    if (solution.trim().length > 2) {
+                        solutionsSet.add(solution.trim());
+                    }
+                });
             }
         });
-        return [...allSolutions].sort();
+        return [...solutionsSet].sort();
     }, [orders]);
 
     // Autocomplete de Equipamentos (com padronização case-insensitive)
@@ -1254,6 +1413,8 @@ export default function MainApp() {
         }
     };
 
+
+
     const openModal = (order = null) => {
         setTempSolution('');
         setTempCost('');
@@ -1350,14 +1511,32 @@ export default function MainApp() {
         setShowClientSuggestions(false);
     };
 
+    const processMultiLineText = (text) => {
+        if (!text) return [];
+        return text.split('\n')
+            .map(line => line.trim())
+            .filter(line => line.length > 0);
+    };
+
     const addDefectItem = () => {
         if (!tempDefect.trim()) {
             showNotification("Descrição do defeito é obrigatória", 'error');
             return;
         }
+
+        // Processar múltiplas linhas se o usuário colar várias
+        const defects = tempDefect.split('\n')
+            .map(line => line.trim())
+            .filter(line => line.length > 0);
+
+        if (defects.length === 0) {
+            showNotification("Descrição do defeito é obrigatória", 'error');
+            return;
+        }
+
         setFormData(prev => ({
             ...prev,
-            defectsList: [...prev.defectsList, tempDefect.trim()]
+            defectsList: [...prev.defectsList, ...defects]
         }));
         setTempDefect('');
         setShowDefectSuggestions(false);
@@ -1375,9 +1554,20 @@ export default function MainApp() {
             showNotification("Descrição da solução é obrigatória", 'error');
             return;
         }
+
+        // Processar múltiplas linhas se o usuário colar várias
+        const solutions = tempManualSolution.split('\n')
+            .map(line => line.trim())
+            .filter(line => line.length > 0);
+
+        if (solutions.length === 0) {
+            showNotification("Descrição da solução é obrigatória", 'error');
+            return;
+        }
+
         setFormData(prev => ({
             ...prev,
-            manualSolutionsList: [...prev.manualSolutionsList, tempManualSolution.trim()]
+            manualSolutionsList: [...prev.manualSolutionsList, ...solutions]
         }));
         setTempManualSolution('');
         setShowSolutionSuggestions(false);
@@ -1395,9 +1585,20 @@ export default function MainApp() {
             showNotification("Descrição da etapa do conserto é obrigatória", 'error');
             return;
         }
+
+        // Processar múltiplas linhas se o usuário colar várias
+        const steps = tempBenchRepair.split('\n')
+            .map(line => line.trim())
+            .filter(line => line.length > 0);
+
+        if (steps.length === 0) {
+            showNotification("Descrição da etapa do conserto é obrigatória", 'error');
+            return;
+        }
+
         setFormData(prev => ({
             ...prev,
-            benchRepairList: [...prev.benchRepairList, tempBenchRepair.trim()]
+            benchRepairList: [...prev.benchRepairList, ...steps]
         }));
         setTempBenchRepair('');
     };
@@ -1414,13 +1615,26 @@ export default function MainApp() {
             showNotification("Descrição do item/serviço é obrigatória", 'error');
             return;
         }
+
+        // Processar múltiplas linhas se o usuário colar várias
+        const items = tempSolution.split('\n')
+            .map(line => line.trim())
+            .filter(line => line.length > 0);
+
+        if (items.length === 0) {
+            showNotification("Descrição do item/serviço é obrigatória", 'error');
+            return;
+        }
+
+        const newItems = items.map(item => ({
+            id: Date.now() + Math.random(), // ID único
+            text: item,
+            cost: tempCost || "0,00"
+        }));
+
         setFormData(prev => ({
             ...prev,
-            solutionsList: [...prev.solutionsList, {
-                id: Date.now(),
-                text: tempSolution,
-                cost: tempCost || "0,00"
-            }]
+            solutionsList: [...prev.solutionsList, ...newItems]
         }));
         setTempSolution('');
         setTempCost('');
@@ -1712,7 +1926,6 @@ export default function MainApp() {
         });
     };
 
-    // === FUNÇÃO PARA IMPRIMIR (COM NOVAS MELHORIAS) ===
     const handlePrint = (printType, customPaymentConditions = null) => {
         const selectedData = ordersForUser.filter(o => selectedOrders.includes(o.firestoreId));
         if (selectedData.length === 0) {
@@ -1749,240 +1962,265 @@ export default function MainApp() {
             (hasBudgetStage ? 'Proposta de orçamento' : 'Relatório de atendimento');
 
         let htmlContent = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>${title}</title>
-        <style>
-            @media print {
-                @page { 
-                    margin: 1.5cm 1cm;
-                    size: A4;
-                }
-                @page :first {
-                    margin-top: 2cm;
-                }
-                body {
-                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                    color: #333;
-                    line-height: 1.4;
-                    padding: 0;
-                    margin: 0;
-                    font-size: 12px;
-                }
-                .report-page {
-                    padding: 20px;
-                    position: relative;
-                    min-height: 25.7cm;
-                    page-break-after: always;
-                }
-                .report-page:last-child {
-                    page-break-after: avoid;
-                }
-                .header {
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: flex-start;
-                    border-bottom: 2px solid #1a56db;
-                    padding-bottom: 15px;
-                    margin-bottom: 25px;
-                    flex-wrap: wrap;
-                }
-                .logo-container {
-                    flex: 0 0 auto;
-                }
-                .logo-container img {
-                    height: 70px;
-                    max-width: 200px;
-                    object-fit: contain;
-                }
-                .report-info {
-                    text-align: right;
-                    flex: 1;
-                    min-width: 250px;
-                }
-                .report-title {
-                    font-size: 18px;
-                    font-weight: 900;
-                    color: #1a56db;
-                    text-transform: uppercase;
-                    margin-bottom: 5px;
-                }
-                .internal-badge {
-                    background: #b91c1c;
-                    color: white;
-                    padding: 2px 8px;
-                    font-size: 10px;
-                    border-radius: 4px;
-                    font-weight: bold;
-                    margin-bottom: 4px;
-                    display: inline-block;
-                }
-                .section {
-                    margin-bottom: 25px;
-                }
-                .section-title {
-                    background: #f8fafc;
-                    padding: 8px 12px;
-                    font-size: 12px;
-                    font-weight: 900;
-                    text-transform: uppercase;
-                    border-left: 5px solid #1a56db;
-                    margin-bottom: 15px;
-                    color: #1e40af;
-                }
-                .client-grid {
-                    display: grid;
-                    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-                    gap: 15px;
-                    font-size: 12px;
-                    margin-bottom: 25px;
-                }
-                .items-table {
-                    width: 100%;
-                    border-collapse: collapse;
-                    margin-top: 15px;
-                    table-layout: fixed;
-                }
-                .items-table th {
-                    background: #f8fafc;
-                    text-align: left;
-                    padding: 12px 8px;
-                    font-size: 11px;
-                    text-transform: uppercase;
-                    color: #64748b;
-                    border-bottom: 2px solid #e2e8f0;
-                    word-wrap: break-word;
-                }
-                .items-table td {
-                    padding: 15px 8px;
-                    font-size: 12px;
-                    border-bottom: 1px solid #f1f5f9;
-                    vertical-align: top;
-                    word-wrap: break-word;
-                }
-                .os-tag {
-                    font-weight: 900;
-                    color: #1a56db;
-                    display: block;
-                    margin-bottom: 4px;
-                    font-size: 13px;
-                }
-                .signature-area {
-                    display: flex;
-                    justify-content: space-around;
-                    margin-top: 100px;
-                    margin-bottom: 60px;
-                    page-break-inside: avoid;
-                    position: relative;
-                }
-                .signature-box {
-                    border-top: 1px solid #333;
-                    width: 250px;
-                    text-align: center;
-                    padding-top: 10px;
-                    font-size: 12px;
-                    font-weight: 600;
-                    min-height: 70px;
-                }
-                .footer-notes {
-                    margin-top: 30px;
-                    font-size: 10px;
-                    color: #666;
-                    padding-top: 15px;
-                    line-height: 1.5;
-                    page-break-inside: avoid;
-                    border-top: 1px solid #eee;
-                }
-                .footer-notes p {
-                    margin: 8px 0;
-                }
-                .footer-title {
-                    font-weight: bold;
-                    color: #1a56db;
-                    margin-bottom: 5px;
-                    font-size: 11px;
-                }
-                .company-footer {
-                    position: absolute;
-                    bottom: 20px;
-                    left: 20px;
-                    right: 20px;
-                    font-size: 9px;
-                    color: #666;
-                    text-align: center;
-                    border-top: 1px solid #eee;
-                    padding-top: 10px;
-                    line-height: 1.4;
-                }
-                .company-footer strong {
-                    color: #1a56db;
-                }
-                .page-counter {
-                    position: absolute;
-                    bottom: 15px;
-                    right: 20px;
-                    font-size: 10px;
-                    color: #999;
-                }
-                .valor-section {
-                    margin-top: 20px;
-                    padding: 20px;
-                    background: #f0fdf4;
-                    border-left: 4px solid #10b981;
-                    border-radius: 8px;
-                    font-size: 12px;
-                    line-height: 1.5;
-                }
-                .valor-destaque {
-                    font-size: 20px;
-                    font-weight: 900;
-                    color: #166534;
-                    text-align: center;
-                    margin: 15px 0;
-                }
-                .defects-list, .solutions-list {
-                    margin: 8px 0;
-                    padding-left: 15px;
-                }
-                .defects-list li, .solutions-list li {
-                    margin-bottom: 4px;
-                    padding-left: 5px;
-                }
-                .observation-column {
-                    border-left: 2px solid #e2e8f0;
-                    padding-left: 15px;
-                    margin-left: 10px;
-                }
-                .photo-grid {
-                    display: grid;
-                    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-                    gap: 10px;
-                    margin-top: 15px;
-                }
-                .photo-item {
-                    border: 1px solid #e2e8f0;
-                    border-radius: 4px;
-                    overflow: hidden;
-                }
-                .photo-item img {
-                    width: 100%;
-                    height: 120px;
-                    object-fit: cover;
-                }
-                /* Ajustes para evitar quebra de página em assinaturas */
-                .page-break-avoid {
-                    page-break-inside: avoid;
-                }
-                /* Garantir que o footer não sobreponha assinaturas */
-                .content-wrapper {
-                    min-height: calc(100vh - 200px);
-                }
+<!DOCTYPE html>
+<html>
+<head>
+    <title>${title}</title>
+    <style>
+        @media print {
+            @page { 
+                margin: 1.5cm 1cm;
+                size: A4;
             }
-        </style>
-    </head>
-    <body>
-        <div class="content-wrapper">`;
+            @page :first {
+                margin-top: 2cm;
+            }
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                color: #333;
+                line-height: 1.4;
+                padding: 0;
+                margin: 0;
+                font-size: 12px;
+            }
+            .report-page {
+                padding: 20px;
+                position: relative;
+                min-height: 25.7cm;
+                page-break-after: always;
+                display: flex;
+                flex-direction: column;
+            }
+            .report-page:last-child {
+                page-break-after: auto;
+            }
+            .header {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-start;
+                border-bottom: 2px solid #1a56db;
+                padding-bottom: 15px;
+                margin-bottom: 25px;
+                flex-wrap: wrap;
+            }
+            .logo-container {
+                flex: 0 0 auto;
+            }
+            .logo-container img {
+                height: 105px;
+                max-width: 300px;
+                object-fit: contain;
+            }
+            .report-info {
+                text-align: right;
+                flex: 1;
+                min-width: 250px;
+            }
+            .report-title {
+                font-size: 18px;
+                font-weight: 900;
+                color: #1a56db;
+                text-transform: uppercase;
+                margin-bottom: 5px;
+            }
+            .internal-badge {
+                background: #b91c1c;
+                color: white;
+                padding: 2px 8px;
+                font-size: 10px;
+                border-radius: 4px;
+                font-weight: bold;
+                margin-bottom: 4px;
+                display: inline-block;
+            }
+            .section {
+                margin-bottom: 25px;
+            }
+            .section-title {
+                background: #f8fafc;
+                padding: 8px 12px;
+                font-size: 12px;
+                font-weight: 900;
+                text-transform: uppercase;
+                border-left: 5px solid #1a56db;
+                margin-bottom: 15px;
+                color: #1e40af;
+            }
+            .client-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                gap: 15px;
+                font-size: 12px;
+                margin-bottom: 25px;
+            }
+            .items-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 15px;
+                table-layout: fixed;
+            }
+            .items-table th {
+                background: #f8fafc;
+                text-align: left;
+                padding: 12px 8px;
+                font-size: 11px;
+                text-transform: uppercase;
+                color: #64748b;
+                border-bottom: 2px solid #e2e8f0;
+                word-wrap: break-word;
+            }
+            .items-table td {
+                padding: 15px 8px;
+                font-size: 12px;
+                border-bottom: 1px solid #f1f5f9;
+                vertical-align: top;
+                word-wrap: break-word;
+            }
+            .os-tag {
+                font-weight: 900;
+                color: #1a56db;
+                display: block;
+                margin-bottom: 4px;
+                font-size: 13px;
+            }
+            .signature-area {
+                margin-top: 100px;
+                margin-bottom: 100px;
+                page-break-inside: avoid;
+                display: flex;
+                justify-content: space-around;
+                page-break-inside: avoid;
+                position: relative;
+            }
+            .signature-box {
+                border-top: 1px solid #333;
+                width: 250px;
+                text-align: center;
+                padding-top: 10px;
+                font-size: 12px;
+                font-weight: 600;
+                min-height: 70px;
+            }
+            .footer-notes {
+                margin-top: 30px;
+                font-size: 10px;
+                color: #666;
+                padding-top: 15px;
+                line-height: 1.5;
+                page-break-inside: avoid;
+                border-top: 1px solid #eee;
+            }
+            .footer-notes p {
+                margin: 8px 0;
+            }
+            .footer-title {
+                font-weight: bold;
+                color: #1a56db;
+                margin-bottom: 5px;
+                font-size: 11px;
+            }
+            .company-footer {
+                position: absolute;
+                bottom: 20px;
+                left: 20px;
+                right: 20px;
+                font-size: 9px;
+                color: #666;
+                text-align: center;
+                border-top: 1px solid #eee;
+                padding-top: 10px;
+                line-height: 1.4;
+                page-break-inside: avoid;
+            }
+            .company-footer strong {
+                color: #1a56db;
+            }
+            .last-page-footer {
+                margin-top: 100px;
+                font-size: 9px;
+                color: #666;
+                text-align: center;
+                border-top: 1px solid #eee;
+                padding-top: 10px;
+                line-height: 1.4;
+                page-break-inside: avoid;
+            }
+            .last-page-footer strong {
+                color: #1a56db;
+            }
+            .page-counter {
+                position: absolute;
+                bottom: 15px;
+                right: 20px;
+                font-size: 10px;
+                color: #999;
+                page-break-inside: avoid;
+            }
+            .valor-section {
+                margin-top: 20px;
+                padding: 20px;
+                background: #f0fdf4;
+                border-left: 4px solid #10b981;
+                border-radius: 8px;
+                font-size: 12px;
+                line-height: 1.5;
+            }
+            .valor-destaque {
+                font-size: 20px;
+                font-weight: 900;
+                color: #166534;
+                text-align: center;
+                margin: 15px 0;
+            }
+            .defects-list, .solutions-list {
+                margin: 8px 0;
+                padding-left: 15px;
+            }
+            .defects-list li, .solutions-list li {
+                margin-bottom: 4px;
+                padding-left: 5px;
+            }
+            .observation-column {
+                border-left: 2px solid #e2e8f0;
+                padding-left: 15px;
+                margin-left: 10px;
+            }
+            .photo-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+                gap: 10px;
+                margin-top: 15px;
+            }
+            .photo-item {
+                border: 1px solid #e2e8f0;
+                border-radius: 4px;
+                overflow: hidden;
+            }
+            .photo-item img {
+                width: 100%;
+                height: 120px;
+                object-fit: cover;
+            }
+            /* Ajustes para evitar quebra de página em assinaturas */
+            .page-break-avoid {
+                page-break-inside: avoid;
+            }
+            /* Garantir que o footer não sobreponha assinaturas */
+            .content-wrapper {
+                min-height: calc(100vh - 200px);
+            }
+            /* Esconder cabeçalho e rodapé do navegador */
+            @page {
+                margin: 0;
+            }
+            body {
+                margin: 1.5cm 1cm 2cm 1cm;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="content-wrapper">`;
 
         Object.values(groups).forEach((group, groupIndex) => {
             const budgetItems = group.items.filter(item =>
@@ -2001,6 +2239,9 @@ export default function MainApp() {
                     valorTotalGrupo += valor;
                 });
             }
+
+            const totalGroups = Object.values(groups).length;
+            const isLastPage = groupIndex === totalGroups - 1;
 
             htmlContent += `
         <div class="report-page">
@@ -2163,15 +2404,20 @@ export default function MainApp() {
             <div class="signature-area page-break-avoid">
                 <div class="signature-box">Técnico Responsável</div>
                 <div class="signature-box">Cliente / Recebedor</div>
-            </div>
-            
-            <div class="company-footer">
+            </div>`;
+
+            // Se for a última página, adicionamos o rodapé da empresa
+            if (isLastPage) {
+                htmlContent += `
+            <div class="last-page-footer">
                 <strong>Alfa Tecnologia Hospitalar</strong> - CNPJ: 50.993.453/0001-34<br/>
                 (55) 9 9137-9413 - alfa.manutencaosm@gmail.com<br/>
                 Endereço: Travessa Moreira, 125 - CEP: 97070-540 - Bairro: Duque de Caxias, Santa Maria/ RS
-            </div>
-            
-            <div class="page-counter">Página ${groupIndex + 1} de ${Object.values(groups).length}</div>
+            </div>`;
+            }
+
+            htmlContent += `
+            <div class="page-counter">Página ${groupIndex + 1} de ${totalGroups}</div>
         </div>`;
         });
 
@@ -2188,6 +2434,34 @@ export default function MainApp() {
 
         printWindow.document.write(htmlContent);
         printWindow.document.close();
+
+        // Adicionar meta tag para evitar que o navegador adicione seus cabeçalhos
+        const meta = printWindow.document.createElement('meta');
+        meta.name = 'viewport';
+        meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+        printWindow.document.head.appendChild(meta);
+
+        // Adicionar estilo inline para esconder cabeçalhos/rodapés do navegador
+        const style = printWindow.document.createElement('style');
+        style.textContent = `
+        @media print {
+            @page {
+                margin: 0;
+                size: A4;
+            }
+            body {
+                margin: 1.5cm 1cm 2cm 1cm;
+            }
+            /* Ocultar cabeçalhos e rodapés do navegador */
+            @page :first {
+                margin-top: 0;
+            }
+        }
+    `;
+        printWindow.document.head.appendChild(style);
+
+        // Definir título da página
+        printWindow.document.title = title;
 
         setTimeout(() => {
             printWindow.focus();
@@ -2375,6 +2649,8 @@ export default function MainApp() {
                 padding: 20px;
                 position: relative;
                 min-height: 25.7cm;
+                display: flex;
+                flex-direction: column;
             }
             .header {
                 display: flex;
@@ -2386,8 +2662,8 @@ export default function MainApp() {
                 flex-wrap: wrap;
             }
             .logo-container img {
-                height: 70px;
-                max-width: 200px;
+                height: 105px; /* AUMENTADO DE 70px PARA 105px */
+                max-width: 300px;
                 object-fit: contain;
             }
             .report-info {
@@ -2475,11 +2751,11 @@ export default function MainApp() {
                 padding-left: 5px;
             }
             .signature-area {
+                margin-top: auto;
+                margin-bottom: 80px;
+                page-break-inside: avoid;
                 display: flex;
                 justify-content: space-around;
-                margin-top: 100px;
-                margin-bottom: 60px;
-                page-break-inside: avoid;
                 position: relative;
             }
             .signature-box {
@@ -2502,6 +2778,7 @@ export default function MainApp() {
                 border-top: 1px solid #eee;
                 padding-top: 10px;
                 line-height: 1.4;
+                page-break-inside: avoid;
             }
             .company-footer strong {
                 color: #1a56db;
@@ -2512,6 +2789,7 @@ export default function MainApp() {
                 right: 20px;
                 font-size: 10px;
                 color: #999;
+                page-break-inside: avoid;
             }
             .photo-grid {
                 display: grid;
@@ -2528,6 +2806,13 @@ export default function MainApp() {
                 width: 100%;
                 height: 120px;
                 object-fit: cover;
+            }
+            /* Esconder cabeçalho e rodapé do navegador */
+            @page {
+                margin: 0;
+            }
+            body {
+                margin: 1.5cm 1cm 2cm 1cm;
             }
         }
     </style>
@@ -2665,6 +2950,34 @@ export default function MainApp() {
 
         printWindow.document.write(htmlContent);
         printWindow.document.close();
+
+        // Adicionar meta tag para evitar que o navegador adicione seus cabeçalhos
+        const meta = printWindow.document.createElement('meta');
+        meta.name = 'viewport';
+        meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+        printWindow.document.head.appendChild(meta);
+
+        // Adicionar estilo inline para esconder cabeçalhos/rodapés do navegador
+        const style = printWindow.document.createElement('style');
+        style.textContent = `
+        @media print {
+            @page {
+                margin: 0;
+                size: A4;
+            }
+            body {
+                margin: 1.5cm 1cm 2cm 1cm;
+            }
+            /* Ocultar cabeçalhos e rodapés do navegador */
+            @page :first {
+                margin-top: 0;
+            }
+        }
+    `;
+        printWindow.document.head.appendChild(style);
+
+        // Definir título da página
+        printWindow.document.title = title;
 
         setTimeout(() => {
             printWindow.focus();
@@ -3176,9 +3489,87 @@ export default function MainApp() {
                                     </div>
                                 )}
                             </div>
-
                             <div className="flex gap-2">
-                                <button onClick={() => setSortOrder(prev => prev === 'desc' ? 'asc' : 'asc')} className="bg-white p-5 rounded-2xl shadow-xl shadow-slate-200/50 border-none hover:bg-slate-50 transition-colors text-slate-600" title={sortOrder === 'desc' ? "Mais Recentes Primeiro" : "Mais Antigos Primeiro"}>
+                                {/* Botão para seleção por intervalo */}
+                                <div className="relative">
+                                    <button
+                                        onClick={() => setShowRangeInput(!showRangeInput)}
+                                        className={`p-5 rounded-2xl font-bold flex items-center justify-center gap-2 transition-colors ${showRangeInput
+                                            ? 'bg-blue-600 text-white shadow-xl shadow-blue-200'
+                                            : 'bg-white text-slate-600 shadow-xl shadow-slate-200/50 hover:bg-slate-50'
+                                            }`}
+                                        title="Seleção por intervalo"
+                                    >
+                                        <ListPlus size={24} />
+                                        <span className="hidden sm:inline">Intervalo</span>
+                                    </button>
+
+                                    {showRangeInput && (
+                                        <div className="absolute top-full right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-slate-100 p-4 w-80 animate-in slide-in-from-top-2 z-50">
+                                            <div className="space-y-3">
+                                                <div className="flex items-center justify-between">
+                                                    <h4 className="text-sm font-bold text-slate-700">Seleção por Intervalo</h4>
+                                                    <button
+                                                        onClick={() => setShowRangeInput(false)}
+                                                        className="text-slate-400 hover:text-slate-600"
+                                                    >
+                                                        <X size={16} />
+                                                    </button>
+                                                </div>
+
+                                                <div className="space-y-2">
+                                                    <div className="text-xs text-slate-500 font-medium">
+                                                        Digite o intervalo de números de OS:
+                                                    </div>
+
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Ex: 10-20 ou 10,20,30 ou apenas 10"
+                                                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500/20"
+                                                        value={rangeInput}
+                                                        onChange={e => setRangeInput(e.target.value)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter') handleSelectByRange();
+                                                        }}
+                                                        autoFocus
+                                                    />
+
+                                                    <div className="text-[10px] text-slate-400 space-y-1">
+                                                        <div className="flex items-center gap-1">
+                                                            <Check size={10} /> Formato: 10-20 (intervalo)
+                                                        </div>
+                                                        <div className="flex items-center gap-1">
+                                                            <Check size={10} /> Formato: 10,20,30 (lista)
+                                                        </div>
+                                                        <div className="flex items-center gap-1">
+                                                            <Check size={10} /> Formato: 10 (única)
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex gap-2 pt-2">
+                                                    <button
+                                                        onClick={handleSelectByRange}
+                                                        className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold text-sm hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+                                                    >
+                                                        <Check size={16} /> Aplicar
+                                                    </button>
+                                                    <button
+                                                        onClick={() => {
+                                                            setRangeInput('');
+                                                            setShowRangeInput(false);
+                                                        }}
+                                                        className="px-4 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold text-sm hover:bg-slate-200 transition-colors"
+                                                    >
+                                                        Cancelar
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <button onClick={() => setSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')} className="bg-white p-5 rounded-2xl shadow-xl shadow-slate-200/50 border-none hover:bg-slate-50 transition-colors text-slate-600" title={sortOrder === 'desc' ? "Mais Recentes Primeiro" : "Mais Antigos Primeiro"}>
                                     {sortOrder === 'desc' ? <ArrowDownWideNarrow size={24} /> : <ArrowUpNarrowWide size={24} />}
                                 </button>
 
@@ -3400,16 +3791,16 @@ export default function MainApp() {
                         <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-0">
                             <div className="lg:col-span-4 bg-white rounded-[2rem] shadow-xl border border-slate-100 flex flex-col overflow-hidden max-h-[calc(100vh-250px)]">
                                 <div className="p-6 border-b border-slate-100 bg-slate-50/50">
-                                    <div className="relative group mb-3 z-30">
+                                    <div className={`relative group mb-3 ${isSidebarOpen ? 'lg:z-10' : 'z-30'}`}>
                                         <Search className="absolute left-4 top-3.5 text-slate-400 group-focus-within:text-blue-600 transition-colors" size={18} />
                                         <input
-                                            className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-200 shadow-sm focus:ring-2 focus:ring-blue-500/20 text-sm font-bold outline-none bg-white relative z-20"
+                                            className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-200 shadow-sm focus:ring-2 focus:ring-blue-500/20 text-sm font-bold outline-none bg-white relative"
                                             placeholder="Buscar OS para filtrar..."
                                             value={searchTerm}
                                             onChange={e => setSearchTerm(e.target.value)}
                                         />
                                         {searchTerm && (
-                                            <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden animate-in slide-in-from-top-2 z-50">
+                                            <div className={`absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden animate-in slide-in-from-top-2 ${isSidebarOpen ? 'lg:z-20' : 'z-50'}`}>
                                                 {ordersForUser
                                                     .filter(o => o.client?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                                                         o.osNumber?.includes(searchTerm) ||
@@ -4094,68 +4485,6 @@ export default function MainApp() {
                                             <p className="text-[10px] text-slate-400 mt-1 ml-2">Quantidade do item/equipamento</p>
                                         </div>
                                     </div>
-
-                                    {/* NOVO: Campo para upload de fotos */}
-                                    <div className="space-y-4">
-                                        <div className="flex items-center gap-2 text-purple-600 font-bold uppercase text-xs tracking-widest">
-                                            <Camera size={16} /> Fotos do Equipamento
-                                        </div>
-                                        <div className="bg-purple-50 p-6 rounded-2xl border border-purple-100 space-y-4">
-                                            <div className="space-y-2">
-                                                <label className="text-xs font-bold text-purple-600 uppercase">Enviar Fotos</label>
-                                                <div className="relative">
-                                                    <input
-                                                        type="file"
-                                                        multiple
-                                                        accept="image/*"
-                                                        onChange={handlePhotoUpload}
-                                                        className="w-full p-4 bg-white border border-purple-200 rounded-2xl outline-none font-bold cursor-pointer"
-                                                        disabled={uploadingPhotos}
-                                                    />
-                                                    <div className="absolute right-4 top-1/2 transform -translate-y-1/2">
-                                                        {uploadingPhotos ? (
-                                                            <Loader2 className="animate-spin text-purple-600" size={20} />
-                                                        ) : (
-                                                            <Upload className="text-purple-600" size={20} />
-                                                        )}
-                                                    </div>
-                                                </div>
-                                                <p className="text-[10px] text-purple-400 mt-1 ml-2">
-                                                    Envie fotos do equipamento para documentação. Formatos suportados: JPG, PNG, etc.
-                                                </p>
-                                            </div>
-
-                                            {formData.photos.length > 0 && (
-                                                <div className="space-y-2">
-                                                    <label className="text-xs font-bold text-purple-600 uppercase">Fotos Enviadas ({formData.photos.length})</label>
-                                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                                        {formData.photos.map((photo, index) => (
-                                                            <div key={index} className="relative group">
-                                                                <img
-                                                                    src={photo}
-                                                                    alt={`Foto ${index + 1}`}
-                                                                    className="w-full h-32 object-cover rounded-xl border border-purple-200"
-                                                                />
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => removePhoto(index)}
-                                                                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
-                                                                >
-                                                                    <X size={12} />
-                                                                </button>
-                                                                <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[10px] px-2 py-1 rounded-b-xl opacity-0 group-hover:opacity-100 transition-opacity">
-                                                                    Foto {index + 1}
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                    <p className="text-[10px] text-purple-400 mt-1 ml-2">
-                                                        Clique no "X" para remover uma foto
-                                                    </p>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
                                 </div>
                                 <div className="space-y-6">
                                     <div className="flex items-center gap-2 text-emerald-600 font-bold uppercase text-xs tracking-widest"><Wrench size={16} /> Laudo Técnico</div>
@@ -4180,7 +4509,9 @@ export default function MainApp() {
                                                         <div className="absolute top-full left-0 right-14 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
                                                             <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400">Sugestões</div>
                                                             {uniqueDefects.filter(d => d.toLowerCase().includes(tempDefect.toLowerCase())).slice(0, 5).map((d, idx) => (
-                                                                <div key={idx} className="p-3 hover:bg-emerald-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700" onMouseDown={(e) => { e.preventDefault(); setTempDefect(d); setShowDefectSuggestions(false); }}>{d.length > 50 ? d.substring(0, 50) + '...' : d}</div>
+                                                                <div key={idx} className="p-3 hover:bg-emerald-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700" onMouseDown={(e) => { e.preventDefault(); setTempDefect(d); setShowDefectSuggestions(false); }}>
+                                                                    {d.length > 50 ? d.substring(0, 50) + '...' : d}
+                                                                </div>
                                                             ))}
                                                         </div>
                                                     )}
@@ -4223,13 +4554,16 @@ export default function MainApp() {
                                                             <button type="button" onClick={addManualSolutionItem} className="bg-indigo-600 text-white p-3 rounded-xl shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-colors"><Plus size={20} /></button>
 
                                                             {showSolutionSuggestions && uniqueSolutions.length > 0 && (
-                                                                <div className="absolute top-full left-0 right-14 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
+                                                                <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
                                                                     <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400">Sugestões</div>
-                                                                    {uniqueSolutions.filter(s => s.toLowerCase().includes(tempManualSolution.toLowerCase())).slice(0, 5).map((s, idx) => (
-                                                                        <div key={idx} className="p-3 hover:bg-indigo-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700" onMouseDown={(e) => { e.preventDefault(); setTempManualSolution(s); setShowSolutionSuggestions(false); }}>{s.length > 50 ? s.substring(0, 50) + '...' : s}</div>
+                                                                    {uniqueSolutions.filter(s => s.toLowerCase().includes(tempSolution.toLowerCase())).slice(0, 5).map((s, idx) => (
+                                                                        <div key={idx} className="p-3 hover:bg-green-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700" onMouseDown={(e) => { e.preventDefault(); setTempSolution(s); setShowSolutionSuggestions(false); }}>
+                                                                            {s}
+                                                                        </div>
                                                                     ))}
                                                                 </div>
                                                             )}
+
                                                         </div>
                                                     </div>
                                                     <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
@@ -4257,14 +4591,17 @@ export default function MainApp() {
                                                                 onFocus={() => setShowSolutionSuggestions(true)}
                                                                 onBlur={() => setTimeout(() => setShowSolutionSuggestions(false), 200)}
                                                             />
-                                                            {showSolutionSuggestions && uniqueSolutions.length > 0 && (
+                                                            {showSolutionSuggestions && uniqueSolutionsList.length > 0 && (
                                                                 <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
                                                                     <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400">Sugestões</div>
-                                                                    {uniqueSolutions.filter(s => s.toLowerCase().includes(tempSolution.toLowerCase())).slice(0, 5).map((s, idx) => (
-                                                                        <div key={idx} className="p-3 hover:bg-green-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700" onMouseDown={(e) => { e.preventDefault(); setTempSolution(s); setShowSolutionSuggestions(false); }}>{s}</div>
+                                                                    {uniqueSolutionsList.filter(s => s.toLowerCase().includes(tempSolution.toLowerCase())).slice(0, 5).map((s, idx) => (
+                                                                        <div key={idx} className="p-3 hover:bg-green-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700" onMouseDown={(e) => { e.preventDefault(); setTempSolution(s); setShowSolutionSuggestions(false); }}>
+                                                                            {s}
+                                                                        </div>
                                                                     ))}
                                                                 </div>
                                                             )}
+
                                                         </div>
                                                         <div className="flex gap-2">
                                                             <input placeholder="Valor R$ 0,00" className="flex-1 p-2 bg-white border border-green-200 rounded-lg text-sm" value={tempCost} onChange={e => setTempCost(e.target.value)} />
