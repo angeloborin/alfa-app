@@ -33,6 +33,25 @@ const MESES = [
     "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
 ];
 
+// Hook para detectar cliques fora do elemento
+const useOutsideClick = (ref, callback) => {
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (ref.current && !ref.current.contains(event.target)) {
+                callback();
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        document.addEventListener('touchstart', handleClickOutside);
+
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+            document.removeEventListener('touchstart', handleClickOutside);
+        };
+    }, [ref, callback]);
+};
+
 // Componente de Gráfico Donut Simples
 const SimpleDonutChart = ({ data, colors, onClick }) => {
     const total = data.reduce((acc, item) => acc + item.value, 0);
@@ -532,10 +551,28 @@ export default function MainApp() {
     const contractModalRef = useRef(null);
     const deleteModalRef = useRef(null);
     const moveModalRef = useRef(null);
+    const searchDropdownRef = useRef(null);
+    const statusSearchDropdownRef = useRef(null);
 
     const [selectedMonth, setSelectedMonth] = useState('');
     const [selectedYear, setSelectedYear] = useState('');
     const [selectedDay, setSelectedDay] = useState('');
+
+    const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+    const [showStatusSearchDropdown, setShowStatusSearchDropdown] = useState(false);
+
+    // Adicione estes hooks junto com os outros hooks
+    useOutsideClick(searchDropdownRef, () => {
+        if (showSearchDropdown) {
+            setShowSearchDropdown(false);
+        }
+    });
+
+    useOutsideClick(statusSearchDropdownRef, () => {
+        if (showStatusSearchDropdown) {
+            setShowStatusSearchDropdown(false);
+        }
+    });
 
 
     // Estados
@@ -2178,41 +2215,41 @@ export default function MainApp() {
 
     // === FUNÇÃO PARA IMPRIMIR (COM NOVAS MELHORIAS) ===
     const handlePrint = (printType, customPaymentConditions = null) => {
-    const selectedData = ordersForUser.filter(o => selectedOrders.includes(o.firestoreId));
-    if (selectedData.length === 0) {
-        showNotification('Selecione pelo menos uma OS para imprimir', 'error');
-        return;
-    }
-
-    const groups = {};
-    selectedData.forEach(os => {
-        const key = `${os.client}-${os.cnpj || 'no-cnpj'}-${os.billingType}-${os.maintenanceVisit || 'no-visit'}`;
-        if (!groups[key]) {
-            groups[key] = {
-                header: {
-                    client: os.client,
-                    cnpj: os.cnpj,
-                    contactPerson: os.contactPerson,
-                    email: os.email,
-                    address: os.address,
-                    billingType: os.billingType,
-                    maintenanceVisit: os.maintenanceVisit
-                },
-                items: []
-            };
+        const selectedData = ordersForUser.filter(o => selectedOrders.includes(o.firestoreId));
+        if (selectedData.length === 0) {
+            showNotification('Selecione pelo menos uma OS para imprimir', 'error');
+            return;
         }
-        groups[key].items.push(os);
-    });
 
-    const hasBudgetStage = selectedData.some(os =>
-        os.status === 'Em orçamento' || os.status === 'Aguardando aprovação do orçamento'
-    );
+        const groups = {};
+        selectedData.forEach(os => {
+            const key = `${os.client}-${os.cnpj || 'no-cnpj'}-${os.billingType}-${os.maintenanceVisit || 'no-visit'}`;
+            if (!groups[key]) {
+                groups[key] = {
+                    header: {
+                        client: os.client,
+                        cnpj: os.cnpj,
+                        contactPerson: os.contactPerson,
+                        email: os.email,
+                        address: os.address,
+                        billingType: os.billingType,
+                        maintenanceVisit: os.maintenanceVisit
+                    },
+                    items: []
+                };
+            }
+            groups[key].items.push(os);
+        });
 
-    const title = printType === 'internal' ?
-        'Relatório INTERNO' :
-        (hasBudgetStage ? 'Proposta de orçamento' : 'Relatório de atendimento');
+        const hasBudgetStage = selectedData.some(os =>
+            os.status === 'Em orçamento' || os.status === 'Aguardando aprovação do orçamento'
+        );
 
-    let htmlContent = `
+        const title = printType === 'internal' ?
+            'Relatório INTERNO' :
+            (hasBudgetStage ? 'Proposta de orçamento' : 'Relatório de atendimento');
+
+        let htmlContent = `
 <!DOCTYPE html>
 <html>
 <head>
@@ -2514,26 +2551,26 @@ export default function MainApp() {
 <body>
     <div class="content-wrapper">`;
 
-    Object.values(groups).forEach((group, groupIndex) => {
-        const isLastPage = groupIndex === Object.values(groups).length - 1;
-        const budgetItems = group.items.filter(item =>
-            item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento'
-        );
-        const hasBudgetInGroup = budgetItems.length > 0;
+        Object.values(groups).forEach((group, groupIndex) => {
+            const isLastPage = groupIndex === Object.values(groups).length - 1;
+            const budgetItems = group.items.filter(item =>
+                item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento'
+            );
+            const hasBudgetInGroup = budgetItems.length > 0;
 
-        let valorTotalGrupo = 0;
-        if (hasBudgetInGroup) {
-            budgetItems.forEach(item => {
-                const valor = customPaymentConditions ?
-                    customPaymentConditions.finalChargedAmount / selectedData.length :
-                    (item.finalChargedAmount ?
-                        parseCurrency(item.finalChargedAmount) :
-                        parseCurrency(item.chargedAmount));
-                valorTotalGrupo += valor;
-            });
-        }
+            let valorTotalGrupo = 0;
+            if (hasBudgetInGroup) {
+                budgetItems.forEach(item => {
+                    const valor = customPaymentConditions ?
+                        customPaymentConditions.finalChargedAmount / selectedData.length :
+                        (item.finalChargedAmount ?
+                            parseCurrency(item.finalChargedAmount) :
+                            parseCurrency(item.chargedAmount));
+                    valorTotalGrupo += valor;
+                });
+            }
 
-        htmlContent += `
+            htmlContent += `
         <div class="report-page ${isLastPage ? 'last-page' : ''}">
             <div class="${isLastPage ? 'last-page-content' : 'page-content'}">
                 <div class="header">
@@ -2588,23 +2625,23 @@ export default function MainApp() {
                         </thead>
                         <tbody>`;
 
-        group.items.forEach(item => {
-            const defects = item.defect ? item.defect.split('\n').filter(d => d.trim()) : [];
-            const solutions = item.solution ? item.solution.split('\n').filter(s => s.trim()) : [];
-            const observation = item.equipmentObservation || '';
-            const photos = item.photos || [];
+            group.items.forEach(item => {
+                const defects = item.defect ? item.defect.split('\n').filter(d => d.trim()) : [];
+                const solutions = item.solution ? item.solution.split('\n').filter(s => s.trim()) : [];
+                const observation = item.equipmentObservation || '';
+                const photos = item.photos || [];
 
-            const list = item.solutionsList || [];
-            const total = list.reduce((acc, curr) => acc + parseFloat(curr.cost.replace('.', '').replace(',', '.') || 0), 0);
+                const list = item.solutionsList || [];
+                const total = list.reduce((acc, curr) => acc + parseFloat(curr.cost.replace('.', '').replace(',', '.') || 0), 0);
 
-            const isItemBudget = item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento';
-            const valorItem = customPaymentConditions ?
-                customPaymentConditions.finalChargedAmount / selectedData.length :
-                (item.finalChargedAmount ?
-                    parseCurrency(item.finalChargedAmount) :
-                    parseCurrency(item.chargedAmount));
+                const isItemBudget = item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento';
+                const valorItem = customPaymentConditions ?
+                    customPaymentConditions.finalChargedAmount / selectedData.length :
+                    (item.finalChargedAmount ?
+                        parseCurrency(item.finalChargedAmount) :
+                        parseCurrency(item.chargedAmount));
 
-            htmlContent += `
+                htmlContent += `
                             <tr>
                                 <td>
                                     <span class="os-tag">${item.osNumber || '---'}</span>
@@ -2625,21 +2662,21 @@ export default function MainApp() {
                                     </div>
                                     <small>NS: ${item.serial || 'N/D'}</small>
                                     ${item.quantity && parseInt(item.quantity) > 1 ?
-                    `<div style="font-size:10px;color:#666;margin-top:2px;"><strong>Quantidade:</strong> ${item.quantity}</div>` :
-                    ''}
+                        `<div style="font-size:10px;color:#666;margin-top:2px;"><strong>Quantidade:</strong> ${item.quantity}</div>` :
+                        ''}
                                 </td>
                                 <td>
                                     <div style="margin-bottom: 15px;">
                                         <div style="font-weight: bold; font-size: 11px; color: #1e40af; margin-bottom: 5px;">DEFEITO:</div>
                                         ${defects.length > 0 ?
-                    `<ul class="defects-list">${defects.map(d => `<li>${d}</li>`).join('')}</ul>` :
-                    '<div style="color: #999; font-style: italic;">Sem defeitos registrados</div>'}
+                        `<ul class="defects-list">${defects.map(d => `<li>${d}</li>`).join('')}</ul>` :
+                        '<div style="color: #999; font-style: italic;">Sem defeitos registrados</div>'}
                                     </div>
                                     <div>
                                         <div style="font-weight: bold; font-size: 11px; color: #059669; margin-bottom: 5px;">SOLUÇÃO:</div>
                                         ${solutions.length > 0 ?
-                    `<ul class="solutions-list">${solutions.map(s => `<li>${s}</li>`).join('')}</ul>` :
-                    '<div style="color: #999; font-style: italic;">Solução em análise</div>'}
+                        `<ul class="solutions-list">${solutions.map(s => `<li>${s}</li>`).join('')}</ul>` :
+                        '<div style="color: #999; font-style: italic;">Solução em análise</div>'}
                                     </div>
                                 </td>
                                 <td class="observation-column">
@@ -2655,33 +2692,33 @@ export default function MainApp() {
                                         <div style="font-weight: bold; font-size: 11px; color: #7c3aed; margin-bottom: 5px;">FOTOS:</div>
                                         <div class="photo-grid">
                                             ${photos.slice(0, 3).map((photo, idx) =>
-                    `<div class="photo-item">
+                            `<div class="photo-item">
                                                         <img src="${photo}" alt="Foto ${idx + 1}" onerror="this.style.display='none';">
                                                     </div>`
-                ).join('')}
+                        ).join('')}
                                         </div>
                                         ${photos.length > 3 ?
-                    `<div style="font-size: 10px; color: #666; margin-top: 5px;">+ ${photos.length - 3} foto(s) adicional(is)</div>` :
-                    ''}
+                            `<div style="font-size: 10px; color: #666; margin-top: 5px;">+ ${photos.length - 3} foto(s) adicional(is)</div>` :
+                            ''}
                                     </div>
                                     ` : ''}
                                 </td>
                             </tr>`;
-        });
+            });
 
-        htmlContent += `
+            htmlContent += `
                         </tbody>
                     </table>
                 </div>`;
 
-        if (printType === 'client' && hasBudgetInGroup) {
-            const budgetItem = budgetItems[0];
-            const deliveryDeadline = budgetItem.deliveryDeadline || 'A ser definido após aprovação do orçamento';
-            const paymentConditions = customPaymentConditions ?
-                `${customPaymentConditions.paymentCondition}${customPaymentConditions.installments ? ` ${customPaymentConditions.installments}` : ''}` :
-                `${budgetItem.paymentCondition || 'À vista'}${budgetItem.installments ? ` ${budgetItem.installments}` : ''}`;
+            if (printType === 'client' && hasBudgetInGroup) {
+                const budgetItem = budgetItems[0];
+                const deliveryDeadline = budgetItem.deliveryDeadline || 'A ser definido após aprovação do orçamento';
+                const paymentConditions = customPaymentConditions ?
+                    `${customPaymentConditions.paymentCondition}${customPaymentConditions.installments ? ` ${customPaymentConditions.installments}` : ''}` :
+                    `${budgetItem.paymentCondition || 'À vista'}${budgetItem.installments ? ` ${budgetItem.installments}` : ''}`;
 
-            htmlContent += `
+                htmlContent += `
                 <div class="footer-notes page-break-avoid">
                     <div class="footer-title">INFORMAÇÕES IMPORTANTES:</div>
                     <p><strong>• Garantia:</strong> 3 meses. Não está coberto por garantia os danos causados por uso inadequado, queda ou choque mecânico, acondicionamento inadequado e/ou acondicionamento fora dos padrões recomendados pelo fabricante.</p>
@@ -2689,9 +2726,9 @@ export default function MainApp() {
                     <p><strong>• Valor Total da Proposta:</strong> R$ ${valorTotalGrupo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                     <p><strong>• Condições de pagamento:</strong> ${paymentConditions}</p>
                 </div>`;
-        }
+            }
 
-        htmlContent += `
+            htmlContent += `
                 <div class="signature-area page-break-avoid">
                     <div class="signature-box">Técnico Responsável</div>
                     <div class="signature-box">Cliente / Recebedor</div>
@@ -2706,27 +2743,27 @@ export default function MainApp() {
             
             <!-- CONTADOR DE PÁGINAS REMOVIDO -->
         </div>`;
-    });
+        });
 
-    htmlContent += `
+        htmlContent += `
     </div>
 </body>
 </html>`;
 
-    const printWindow = window.open('', 'printWindow', 'width=800,height=600,scrollbars=yes');
-    if (!printWindow) {
-        showNotification('Permita pop-ups para imprimir o documento', 'error');
-        return;
-    }
+        const printWindow = window.open('', 'printWindow', 'width=800,height=600,scrollbars=yes');
+        if (!printWindow) {
+            showNotification('Permita pop-ups para imprimir o documento', 'error');
+            return;
+        }
 
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
+        printWindow.document.write(htmlContent);
+        printWindow.document.close();
 
-    setTimeout(() => {
-        printWindow.focus();
-        printWindow.print();
-    }, 500);
-};
+        setTimeout(() => {
+            printWindow.focus();
+            printWindow.print();
+        }, 500);
+    };
 
     // Funções para lidar com filtros no painel de status
     const handleFilterByStatus = (status) => {
@@ -2842,26 +2879,26 @@ export default function MainApp() {
     };
 
     const handleModalPrint = (printType) => {
-    const printData = prepareDataForSave();
-    const isBudgetStage = printData.status === 'Em orçamento' ||
-        printData.status === 'Aguardando aprovação do orçamento';
+        const printData = prepareDataForSave();
+        const isBudgetStage = printData.status === 'Em orçamento' ||
+            printData.status === 'Aguardando aprovação do orçamento';
 
-    const title = printType === 'internal' ?
-        'Relatório INTERNO' :
-        (isBudgetStage ? 'Proposta de orçamento' : 'Relatório de atendimento');
+        const title = printType === 'internal' ?
+            'Relatório INTERNO' :
+            (isBudgetStage ? 'Proposta de orçamento' : 'Relatório de atendimento');
 
-    const paymentConditions = `${printData.paymentCondition}${printData.installments ? ` ${printData.installments}` : ''}`;
-    const valorCobrado = printData.finalChargedAmount > 0 ?
-        parseCurrency(printData.finalChargedAmount) :
-        parseCurrency(printData.chargedAmount);
+        const paymentConditions = `${printData.paymentCondition}${printData.installments ? ` ${printData.installments}` : ''}`;
+        const valorCobrado = printData.finalChargedAmount > 0 ?
+            parseCurrency(printData.finalChargedAmount) :
+            parseCurrency(printData.chargedAmount);
 
-    let discountSection = '';
-    if (printData.discount5Days && printData.chargedAmount) {
-        const valorOriginal = parseCurrency(printData.chargedAmount);
-        const desconto = valorOriginal * 0.05;
-        const valorFinal = valorOriginal - desconto;
+        let discountSection = '';
+        if (printData.discount5Days && printData.chargedAmount) {
+            const valorOriginal = parseCurrency(printData.chargedAmount);
+            const desconto = valorOriginal * 0.05;
+            const valorFinal = valorOriginal - desconto;
 
-        discountSection = `
+            discountSection = `
         <div style="margin-top: 10px; padding: 8px; background: #f0fdf4; border-radius: 6px; border: 1px solid #bbf7d0;">
             <div style="font-size: 9px; font-weight: bold; color: #166534; margin-bottom: 3px;">DESCONTO APLICADO</div>
             <div style="display: flex; justify-content: space-between; font-size: 10px;">
@@ -2878,14 +2915,14 @@ export default function MainApp() {
             </div>
         </div>
     `;
-    }
+        }
 
-    const defects = printData.defect ? printData.defect.split('\n').filter(d => d.trim()) : [];
-    const solutions = printData.solution ? printData.solution.split('\n').filter(s => s.trim()) : [];
-    const observation = printData.equipmentObservation || '';
-    const photos = printData.photos || [];
+        const defects = printData.defect ? printData.defect.split('\n').filter(d => d.trim()) : [];
+        const solutions = printData.solution ? printData.solution.split('\n').filter(s => s.trim()) : [];
+        const observation = printData.equipmentObservation || '';
+        const photos = printData.photos || [];
 
-    let htmlContent = `
+        let htmlContent = `
 <!DOCTYPE html>
 <html>
 <head>
@@ -3182,8 +3219,8 @@ export default function MainApp() {
                             </div>
                             <div style="font-size: 10px; color: #999;">NS: ${printData.serial || 'N/D'}</div>
                             ${printData.quantity && parseInt(printData.quantity) > 1 ?
-        `<div style="font-size:10px;color:#666;margin-top:5px;"><strong>Quantidade:</strong> ${printData.quantity}</div>` :
-        ''}
+                `<div style="font-size:10px;color:#666;margin-top:5px;"><strong>Quantidade:</strong> ${printData.quantity}</div>` :
+                ''}
                             <div style="margin-top: 10px; font-size: 11px;">
                                 <strong>OS:</strong> ${printData.osNumber || '---'} | 
                                 <strong>Status:</strong> ${printData.status || '---'}
@@ -3196,15 +3233,15 @@ export default function MainApp() {
                     <div class="defects-section">
                         <div style="font-weight: bold; font-size: 12px; color: #1e40af; margin-bottom: 10px;">DEFEITOS ENCONTRADOS</div>
                         ${defects.length > 0 ?
-        `<ul class="defects-list">${defects.map(d => `<li>${d}</li>`).join('')}</ul>` :
-        '<div style="color: #999; font-style: italic;">Sem defeitos registrados</div>'}
+                `<ul class="defects-list">${defects.map(d => `<li>${d}</li>`).join('')}</ul>` :
+                '<div style="color: #999; font-style: italic;">Sem defeitos registrados</div>'}
                     </div>
                     
                     <div class="solutions-section">
                         <div style="font-weight: bold; font-size: 12px; color: #059669; margin-bottom: 10px;">SOLUÇÃO APLICADA</div>
                         ${solutions.length > 0 ?
-        `<ul class="solutions-list">${solutions.map(s => `<li>${s}</li>`).join('')}</ul>` :
-        '<div style="color: #999; font-style: italic;">Solução em análise</div>'}
+                `<ul class="solutions-list">${solutions.map(s => `<li>${s}</li>`).join('')}</ul>` :
+                '<div style="color: #999; font-style: italic;">Solução em análise</div>'}
                     </div>
                 </div>
                 
@@ -3222,14 +3259,14 @@ export default function MainApp() {
                         <div style="font-weight: bold; font-size: 11px; color: #7c3aed; margin-bottom: 5px;">FOTOS:</div>
                         <div class="photo-grid">
                             ${photos.slice(0, 3).map((photo, idx) =>
-            `<div class="photo-item">
+                    `<div class="photo-item">
                                         <img src="${photo}" alt="Foto ${idx + 1}" onerror="this.style.display='none';">
                                     </div>`
-        ).join('')}
+                ).join('')}
                         </div>
                         ${photos.length > 3 ?
-            `<div style="font-size: 10px; color: #666; margin-top: 5px;">+ ${photos.length - 3} foto(s) adicional(is)</div>` :
-            ''}
+                        `<div style="font-size: 10px; color: #666; margin-top: 5px;">+ ${photos.length - 3} foto(s) adicional(is)</div>` :
+                        ''}
                     </div>
                     ` : ''}
                 </div>
@@ -3261,20 +3298,20 @@ export default function MainApp() {
 </body>
 </html>`;
 
-    const printWindow = window.open('', 'printWindow', 'width=800,height=600,scrollbars=yes');
-    if (!printWindow) {
-        showNotification('Permita pop-ups para imprimir o documento', 'error');
-        return;
-    }
+        const printWindow = window.open('', 'printWindow', 'width=800,height=600,scrollbars=yes');
+        if (!printWindow) {
+            showNotification('Permita pop-ups para imprimir o documento', 'error');
+            return;
+        }
 
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
+        printWindow.document.write(htmlContent);
+        printWindow.document.close();
 
-    setTimeout(() => {
-        printWindow.focus();
-        printWindow.print();
-    }, 500);
-};
+        setTimeout(() => {
+            printWindow.focus();
+            printWindow.print();
+        }, 500);
+    };
 
     const exportToWord = () => {
         if (selectedOrders.length === 0) {
@@ -3758,25 +3795,86 @@ export default function MainApp() {
                         )}
 
                         <div className="flex flex-col sm:flex-row gap-4">
-                            <div className="relative group z-20 flex-1">
+                            <div className="relative group z-20 flex-1" ref={searchDropdownRef}>
                                 <Search className="absolute left-5 top-5 text-slate-400 group-focus-within:text-blue-600 transition-colors" size={24} />
                                 <input
                                     className="w-full pl-14 pr-6 py-5 rounded-2xl border-none shadow-xl shadow-slate-200/50 focus:ring-4 focus:ring-blue-500/10 text-lg font-medium outline-none bg-white relative z-10"
-                                    placeholder="Pesquise por cliente, OS ou equipamento..."
+                                    placeholder="Pesquise por cliente, OS, equipamento, marca, modelo ou NS..."
                                     value={searchTerm}
-                                    onChange={e => setSearchTerm(e.target.value)}
+                                    onChange={e => {
+                                        const normalizedSearchTerm = e.target.value.toLowerCase().trim();
+                                        setSearchTerm(e.target.value);
+
+                                        if (e.target.value.trim()) {
+                                            setShowSearchDropdown(true);
+                                        } else {
+                                            setShowSearchDropdown(false);
+                                        }
+                                    }}
+                                    onFocus={() => {
+                                        if (searchTerm.trim()) {
+                                            setShowSearchDropdown(true);
+                                        }
+                                    }}
                                 />
-                                {searchTerm && (
-                                    <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden animate-in slide-in-from-top-2 z-50">
-                                        {ordersForUser.filter(o => o.client?.toLowerCase().includes(searchTerm.toLowerCase()) || o.osNumber?.includes(searchTerm) || o.item?.toLowerCase().includes(searchTerm.toLowerCase())).slice(0, 5).map(o => (
-                                            <div key={o.firestoreId} onClick={() => { openModal(o); setSearchTerm(''); }} className="p-4 border-b border-slate-50 hover:bg-blue-50 cursor-pointer flex justify-between items-center group/item transition-colors">
-                                                <div><div className="font-bold text-slate-800 flex items-center gap-2">{o.client}<span className="text-[10px] bg-slate-100 text-slate-500 px-2 rounded-full uppercase">{o.status}</span></div><div className="text-xs text-slate-500 mt-1"><span className="font-mono text-blue-600 font-bold">{o.osNumber}</span> - {o.item}</div></div>
-                                                <div className="text-xs font-bold text-blue-600 opacity-0 group-hover/item:opacity-100 flex items-center gap-1 transition-all">Abrir <ExternalLink size={14} /></div>
-                                            </div>
-                                        ))}
-                                        {ordersForUser.filter(o => o.client?.toLowerCase().includes(searchTerm.toLowerCase()) || o.osNumber?.includes(searchTerm) || o.item?.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 && (
-                                            <div className="p-6 text-center text-slate-400 text-sm font-medium">Nenhum resultado encontrado.</div>
-                                        )}
+                                {showSearchDropdown && searchTerm && (
+                                    <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden animate-in slide-in-from-top-2 z-50 max-h-96 overflow-y-auto">
+                                        {(() => {
+                                            const normalizedSearchTerm = searchTerm.toLowerCase().trim();
+                                            const allFilteredOrders = ordersForUser.filter(o => {
+                                                return (
+                                                    (o.client && o.client.toLowerCase().trim().includes(normalizedSearchTerm)) ||
+                                                    (o.osNumber && o.osNumber.includes(searchTerm)) ||
+                                                    (o.item && o.item.toLowerCase().trim().includes(normalizedSearchTerm)) ||
+                                                    (o.manufacturer && o.manufacturer.toLowerCase().trim().includes(normalizedSearchTerm)) ||
+                                                    (o.model && o.model.toLowerCase().trim().includes(normalizedSearchTerm)) ||
+                                                    (o.serial && o.serial.toLowerCase().trim().includes(normalizedSearchTerm))
+                                                );
+                                            });
+                                            const displayedOrders = allFilteredOrders.slice(0, 20);
+
+                                            return (
+                                                <>
+                                                    {displayedOrders.map(o => (
+                                                        <div
+                                                            key={o.firestoreId}
+                                                            onClick={() => {
+                                                                openModal(o);
+                                                                setSearchTerm('');
+                                                                setShowSearchDropdown(false);
+                                                            }}
+                                                            className="p-4 border-b border-slate-50 hover:bg-blue-50 cursor-pointer flex justify-between items-center group/item transition-colors"
+                                                        >
+                                                            <div>
+                                                                <div className="font-bold text-slate-800 flex items-center gap-2">
+                                                                    {o.client}
+                                                                    <span className="text-[10px] bg-slate-100 text-slate-500 px-2 rounded-full uppercase">{o.status}</span>
+                                                                </div>
+                                                                <div className="text-xs text-slate-500 mt-1">
+                                                                    <span className="font-mono text-blue-600 font-bold">{o.osNumber}</span> - {o.item}
+                                                                    {(o.manufacturer || o.model || o.serial) && (
+                                                                        <div className="text-[10px] text-slate-400 mt-1">
+                                                                            {o.manufacturer && `Marca: ${o.manufacturer} `}
+                                                                            {o.model && `| Modelo: ${o.model} `}
+                                                                            {o.serial && `| NS: ${o.serial}`}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                            <div className="text-xs font-bold text-blue-600 opacity-0 group-hover/item:opacity-100 flex items-center gap-1 transition-all">Abrir <ExternalLink size={14} /></div>
+                                                        </div>
+                                                    ))}
+                                                    {allFilteredOrders.length === 0 && (
+                                                        <div className="p-6 text-center text-slate-400 text-sm font-medium">Nenhum resultado encontrado.</div>
+                                                    )}
+                                                    {allFilteredOrders.length > 20 && (
+                                                        <div className="p-4 text-center text-xs text-slate-500 bg-slate-50 border-t border-slate-100">
+                                                            Mostrando 20 de {allFilteredOrders.length} resultados. Digite mais para refinar a busca.
+                                                        </div>
+                                                    )}
+                                                </>
+                                            );
+                                        })()}
                                     </div>
                                 )}
                             </div>
@@ -3885,10 +3983,17 @@ export default function MainApp() {
                                                     type="checkbox"
                                                     className="w-4 h-4 rounded border-slate-300 text-blue-600"
                                                     onChange={(e) => {
-                                                        const visibleOrders = sortedOrders.filter(o =>
-                                                            o.client?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                                            o.osNumber?.includes(searchTerm)
-                                                        );
+                                                        const visibleOrders = sortedOrders.filter(o => {
+                                                            const normalizedSearchTerm = searchTerm.toLowerCase().trim();
+                                                            return (
+                                                                (o.client && o.client.toLowerCase().trim().includes(normalizedSearchTerm)) ||
+                                                                (o.osNumber && o.osNumber.includes(searchTerm)) ||
+                                                                (o.item && o.item.toLowerCase().trim().includes(normalizedSearchTerm)) ||
+                                                                (o.manufacturer && o.manufacturer.toLowerCase().trim().includes(normalizedSearchTerm)) ||
+                                                                (o.model && o.model.toLowerCase().trim().includes(normalizedSearchTerm)) ||
+                                                                (o.serial && o.serial.toLowerCase().trim().includes(normalizedSearchTerm))
+                                                            );
+                                                        });
 
                                                         if (e.target.checked) {
                                                             setSelectedOrders(visibleOrders.map(o => o.firestoreId));
@@ -3923,7 +4028,17 @@ export default function MainApp() {
                                     </thead>
                                     <tbody className="divide-y divide-slate-50">
                                         {isLoading ? <tr><td colSpan="6" className="p-20 text-center"><Loader2 className="animate-spin mx-auto text-blue-600" size={32} /></td></tr> :
-                                            sortedOrders.filter(o => o.client?.toLowerCase().includes(searchTerm.toLowerCase()) || o.osNumber?.includes(searchTerm)).map(o => (
+                                            sortedOrders.filter(o => {
+                                                const normalizedSearchTerm = searchTerm.toLowerCase().trim();
+                                                const clientMatch = o.client?.toLowerCase().includes(normalizedSearchTerm);
+                                                const osNumberMatch = o.osNumber?.includes(searchTerm);
+                                                const itemMatch = o.item?.toLowerCase().includes(normalizedSearchTerm);
+                                                const manufacturerMatch = o.manufacturer?.toLowerCase().includes(normalizedSearchTerm);
+                                                const modelMatch = o.model?.toLowerCase().includes(normalizedSearchTerm);
+                                                const serialMatch = o.serial?.toLowerCase().includes(normalizedSearchTerm);
+
+                                                return clientMatch || osNumberMatch || itemMatch || manufacturerMatch || modelMatch || serialMatch;
+                                            }).map(o => (
                                                 <tr key={o.firestoreId} className={`hover:bg-blue-50/30 transition-colors group ${selectedOrders.includes(o.firestoreId) ? 'bg-blue-50/50' : ''}`}>
                                                     <td className="px-6 py-4 text-center">
                                                         <input
@@ -4138,42 +4253,85 @@ export default function MainApp() {
                         <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-0">
                             <div className="lg:col-span-4 bg-white rounded-[2rem] shadow-xl border border-slate-100 flex flex-col overflow-hidden max-h-[calc(100vh-250px)]">
                                 <div className="p-6 border-b border-slate-100 bg-slate-50/50">
-                                    <div className={`relative group mb-3 ${isSidebarOpen ? 'lg:z-10' : 'z-30'}`}>
+                                    <div className={`relative group mb-3 ${isSidebarOpen ? 'lg:z-10' : 'z-30'}`} ref={statusSearchDropdownRef}>
                                         <Search className="absolute left-4 top-3.5 text-slate-400 group-focus-within:text-blue-600 transition-colors" size={18} />
                                         <input
                                             className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-200 shadow-sm focus:ring-2 focus:ring-blue-500/20 text-sm font-bold outline-none bg-white relative"
-                                            placeholder="Buscar OS para filtrar..."
+                                            placeholder="Buscar OS por cliente, equipamento, marca, modelo ou NS..."
                                             value={searchTerm}
-                                            onChange={e => setSearchTerm(e.target.value)}
-                                        />
-                                        {searchTerm && (
-                                            <div className={`absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden animate-in slide-in-from-top-2 ${isSidebarOpen ? 'lg:z-20' : 'z-50'}`}>
-                                                {ordersForUser
-                                                    .filter(o => o.client?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                                        o.osNumber?.includes(searchTerm) ||
-                                                        o.item?.toLowerCase().includes(searchTerm.toLowerCase()))
-                                                    .slice(0, 5)
-                                                    .map(o => (
-                                                        <div
-                                                            key={o.firestoreId}
-                                                            onClick={() => { openModal(o); setSearchTerm(''); }}
-                                                            className="p-3 border-b border-slate-50 hover:bg-blue-50 cursor-pointer flex justify-between items-center group/item transition-colors"
-                                                        >
-                                                            <div>
-                                                                <div className="font-bold text-slate-800 text-xs flex items-center gap-2">{o.client}</div>
-                                                                <div className="text-[10px] text-slate-500 mt-0.5">
-                                                                    <span className="font-mono text-blue-600 font-bold">{o.osNumber}</span> - {o.item}
-                                                                </div>
-                                                            </div>
-                                                            <div className="text-[10px] font-bold text-blue-600 opacity-0 group-hover/item:opacity-100 flex items-center gap-1 transition-all">
-                                                                Abrir <ExternalLink size={12} />
-                                                            </div>
-                                                        </div>
-                                                    ))
+                                            onChange={e => {
+                                                const normalizedSearchTerm = e.target.value.toLowerCase().trim();
+                                                setSearchTerm(e.target.value);
+
+                                                if (e.target.value.trim()) {
+                                                    setShowStatusSearchDropdown(true);
+                                                } else {
+                                                    setShowStatusSearchDropdown(false);
                                                 }
-                                                {ordersForUser.filter(o => o.client?.toLowerCase().includes(searchTerm.toLowerCase()) || o.osNumber?.includes(searchTerm) || o.item?.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 && (
-                                                    <div className="p-4 text-center text-slate-400 text-[10px] font-medium">Nenhum resultado.</div>
-                                                )}
+                                            }}
+                                            onFocus={() => {
+                                                if (searchTerm.trim()) {
+                                                    setShowStatusSearchDropdown(true);
+                                                }
+                                            }}
+                                        />
+                                        {showStatusSearchDropdown && searchTerm && (
+                                            <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden animate-in slide-in-from-top-2 max-h-96 overflow-y-auto">
+                                                {(() => {
+                                                    const normalizedSearchTerm = searchTerm.toLowerCase().trim();
+                                                    const allFilteredOrders = ordersForUser.filter(o => {
+                                                        return (
+                                                            (o.client && o.client.toLowerCase().trim().includes(normalizedSearchTerm)) ||
+                                                            (o.osNumber && o.osNumber.includes(searchTerm)) ||
+                                                            (o.item && o.item.toLowerCase().trim().includes(normalizedSearchTerm)) ||
+                                                            (o.manufacturer && o.manufacturer.toLowerCase().trim().includes(normalizedSearchTerm)) ||
+                                                            (o.model && o.model.toLowerCase().trim().includes(normalizedSearchTerm)) ||
+                                                            (o.serial && o.serial.toLowerCase().trim().includes(normalizedSearchTerm))
+                                                        );
+                                                    });
+                                                    const displayedOrders = allFilteredOrders.slice(0, 20);
+
+                                                    return (
+                                                        <>
+                                                            {displayedOrders.map(o => (
+                                                                <div
+                                                                    key={o.firestoreId}
+                                                                    onClick={() => {
+                                                                        openModal(o);
+                                                                        setSearchTerm('');
+                                                                        setShowStatusSearchDropdown(false);
+                                                                    }}
+                                                                    className="p-3 border-b border-slate-50 hover:bg-blue-50 cursor-pointer flex justify-between items-center group/item transition-colors"
+                                                                >
+                                                                    <div>
+                                                                        <div className="font-bold text-slate-800 text-xs flex items-center gap-2">{o.client}</div>
+                                                                        <div className="text-[10px] text-slate-500 mt-0.5">
+                                                                            <span className="font-mono text-blue-600 font-bold">{o.osNumber}</span> - {o.item}
+                                                                            {(o.manufacturer || o.model || o.serial) && (
+                                                                                <div className="text-[9px] text-slate-400 mt-0.5">
+                                                                                    {o.manufacturer && `Marca: ${o.manufacturer} `}
+                                                                                    {o.model && `| Modelo: ${o.model} `}
+                                                                                    {o.serial && `| NS: ${o.serial}`}
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="text-[10px] font-bold text-blue-600 opacity-0 group-hover/item:opacity-100 flex items-center gap-1 transition-all">
+                                                                        Abrir <ExternalLink size={12} />
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                            {allFilteredOrders.length === 0 && (
+                                                                <div className="p-4 text-center text-slate-400 text-[10px] font-medium">Nenhum resultado.</div>
+                                                            )}
+                                                            {allFilteredOrders.length > 20 && (
+                                                                <div className="p-3 text-center text-[10px] text-slate-500 bg-slate-50 border-t border-slate-100">
+                                                                    Mostrando 20 de {allFilteredOrders.length} resultados
+                                                                </div>
+                                                            )}
+                                                        </>
+                                                    );
+                                                })()}
                                             </div>
                                         )}
                                     </div>
@@ -4237,10 +4395,18 @@ export default function MainApp() {
                                                         if (billingFilter && o.billingType !== billingFilter) filtered = false;
 
                                                         // Aplicar busca
-                                                        if (searchTerm && !o.client?.toLowerCase().includes(searchTerm.toLowerCase()) &&
-                                                            !o.osNumber?.includes(searchTerm) &&
-                                                            !o.item?.toLowerCase().includes(searchTerm.toLowerCase())) {
-                                                            filtered = false;
+                                                        if (searchTerm) {
+                                                            const normalizedSearchTerm = searchTerm.toLowerCase().trim();
+                                                            if (
+                                                                !(o.client && o.client.toLowerCase().trim().includes(normalizedSearchTerm)) &&
+                                                                !(o.osNumber && o.osNumber.includes(searchTerm)) &&
+                                                                !(o.item && o.item.toLowerCase().trim().includes(normalizedSearchTerm)) &&
+                                                                !(o.manufacturer && o.manufacturer.toLowerCase().trim().includes(normalizedSearchTerm)) &&
+                                                                !(o.model && o.model.toLowerCase().trim().includes(normalizedSearchTerm)) &&
+                                                                !(o.serial && o.serial.toLowerCase().trim().includes(normalizedSearchTerm))
+                                                            ) {
+                                                                filtered = false;
+                                                            }
                                                         }
 
                                                         return filtered;
@@ -4271,10 +4437,19 @@ export default function MainApp() {
                                             if (billingFilter && o.billingType !== billingFilter) return false;
 
                                             // Aplicar busca
-                                            if (searchTerm && !o.client?.toLowerCase().includes(searchTerm.toLowerCase()) &&
-                                                !o.osNumber?.includes(searchTerm) &&
-                                                !o.item?.toLowerCase().includes(searchTerm.toLowerCase())) {
-                                                return false;
+                                            if (searchTerm) {
+                                                const normalizedSearchTerm = searchTerm.toLowerCase().trim();
+                                                const clientMatch = o.client?.toLowerCase().includes(normalizedSearchTerm);
+                                                const osNumberMatch = o.osNumber?.includes(searchTerm);
+                                                const itemMatch = o.item?.toLowerCase().includes(normalizedSearchTerm);
+                                                const manufacturerMatch = o.manufacturer?.toLowerCase().includes(normalizedSearchTerm);
+                                                const modelMatch = o.model?.toLowerCase().includes(normalizedSearchTerm);
+                                                const serialMatch = o.serial?.toLowerCase().includes(normalizedSearchTerm);
+
+                                                // Se não houver correspondência em nenhum campo, filtra fora
+                                                if (!(clientMatch || osNumberMatch || itemMatch || manufacturerMatch || modelMatch || serialMatch)) {
+                                                    return false;
+                                                }
                                             }
 
                                             return true;
