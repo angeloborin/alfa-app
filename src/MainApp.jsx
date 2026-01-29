@@ -3695,6 +3695,8 @@ export default function MainApp() {
                             {hasPermission('canManageUsers') && (
                                 <NavItem icon={<Shield size={isSidebarOpen ? 20 : 22} />} label="Usuários" active={currentPage === 'users'} onClick={() => setCurrentPage('users')} isSidebarOpen={isSidebarOpen} />
                             )}
+
+
                             <div className="pt-2 border-t border-slate-800 mt-2">
                                 <NavItem icon={<Info size={isSidebarOpen ? 20 : 22} />} label="Sobre" active={currentPage === 'about'} onClick={() => setCurrentPage('about')} isSidebarOpen={isSidebarOpen} />
                             </div>
@@ -3702,8 +3704,10 @@ export default function MainApp() {
                     )}
                 </nav>
 
-                <div className="flex flex-col border-t border-slate-800">
-                    <div className="flex items-center justify-between p-4">
+                <div className="flex flex-col border-t border-slate-800 mt-auto">
+                    {/* Container dos botões - muda o layout baseado no estado da sidebar */}
+                    <div className={`${isSidebarOpen ? 'flex justify-between items-center p-4' : 'flex flex-col items-center p-2 space-y-2'}`}>
+                        {/* Botão de recolher/expandir sidebar (sempre visível no desktop) */}
                         <button
                             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
                             className="text-slate-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-slate-800 lg:flex hidden"
@@ -3712,10 +3716,22 @@ export default function MainApp() {
                             <ChevronRight className={`transition-transform duration-300 ${isSidebarOpen ? 'rotate-180' : ''}`} size={20} />
                         </button>
 
+                        {/* Botão para ocultar/mostrar valores - VISÍVEL APENAS PARA ADMIN */}
+                        {userData?.role !== 'client' && (
+                            <button
+                                onClick={() => setShowValues(!showValues)}
+                                className="text-slate-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-slate-800"
+                                title={!isSidebarOpen ? (showValues ? "Ocultar Valores" : "Mostrar Valores") : ""}
+                            >
+                                {showValues ? <Eye size={20} /> : <EyeOff size={20} />}
+                            </button>
+                        )}
+
+                        {/* Botão de logout */}
                         <button
                             onClick={handleLogout}
                             className="text-red-400 hover:text-red-500 transition-colors p-1 rounded-lg hover:bg-slate-800"
-                            title="Sair"
+                            title={!isSidebarOpen ? "Sair" : ""}
                         >
                             <LogOut size={20} />
                         </button>
@@ -3894,7 +3910,16 @@ export default function MainApp() {
                                     </button>
 
                                     {showRangeInput && (
-                                        <div className="absolute top-full right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-slate-100 p-4 w-80 animate-in slide-in-from-top-2 z-50">
+                                        <div className="
+        fixed inset-x-4 top-20 
+        sm:absolute sm:inset-x-auto sm:top-full sm:right-0 sm:mt-2 
+        bg-white rounded-2xl shadow-2xl border border-slate-100 p-4 
+        w-auto sm:w-80 
+        animate-in slide-in-from-top-2 
+        z-50
+        max-h-[80vh] overflow-y-auto
+    ">
+                                            {/* conteúdo do dropdown (mantém igual) */}
                                             <div className="space-y-3">
                                                 <div className="flex items-center justify-between">
                                                     <h4 className="text-sm font-bold text-slate-700">Seleção por Intervalo</h4>
