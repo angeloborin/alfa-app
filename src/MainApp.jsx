@@ -370,49 +370,16 @@ const MaintenanceVisitSelect = ({ value, onChange, billingType }) => {
     );
 };
 
-// Modal de Condições de Pagamento para Múltiplas OSs
+// MODAL DE CONDIÇÕES DE PAGAMENTO PARA MÚLTIPLAS OSs - CORRIGIDO
 const PaymentConditionsModal = ({
     isOpen,
     onClose,
     selectedOrdersCount,
-    totalValue,
+    totalOriginalValue, // Nome alterado para ficar mais claro
     initialData,
     onConfirm
 }) => {
-    const [paymentData, setPaymentData] = useState({
-        paymentCondition: 'À vista',
-        installments: '',
-        discount5Days: false,
-        finalChargedAmount: totalValue
-    });
-
-    useEffect(() => {
-        if (isOpen) {
-            setPaymentData({
-                paymentCondition: initialData.paymentCondition || 'À vista',
-                installments: initialData.installments || '',
-                discount5Days: initialData.discount5Days || false,
-                finalChargedAmount: totalValue
-            });
-        }
-    }, [isOpen, initialData, totalValue]);
-
-    useEffect(() => {
-        if (paymentData.discount5Days) {
-            const discount = totalValue * 0.05;
-            const final = totalValue - discount;
-            setPaymentData(prev => ({
-                ...prev,
-                finalChargedAmount: final
-            }));
-        } else {
-            setPaymentData(prev => ({
-                ...prev,
-                finalChargedAmount: totalValue
-            }));
-        }
-    }, [paymentData.discount5Days, totalValue]);
-
+    // Definir installmentOptions dentro do componente
     const installmentOptions = {
         'Boleto': [
             "30 / 60 dias",
@@ -424,6 +391,98 @@ const PaymentConditionsModal = ({
             "3x (30/60/90 Dias)",
             "4x (30/60/90/120 Dias)"
         ]
+    };
+
+    // Estado inicial baseado no valor ORIGINAL (chargedAmount)
+    const [paymentData, setPaymentData] = useState({
+        paymentCondition: 'À vista',
+        installments: '',
+        discount5Days: false,
+        finalChargedAmount: totalOriginalValue, // Começa com valor original
+        originalValue: totalOriginalValue // Valor base para cálculos
+    });
+
+    useEffect(() => {
+        if (isOpen) {
+            // Inicializar com os dados da primeira OS
+            const initialPaymentCondition = initialData.paymentCondition || 'À vista';
+            const initialInstallments = initialData.installments || '';
+            const initialDiscount5Days = initialData.discount5Days || false;
+
+            // Calcular o valor final baseado nos dados iniciais
+            let finalAmount = totalOriginalValue;
+            if (initialDiscount5Days && initialPaymentCondition === 'Boleto' && initialInstallments === "5 dias (5% de desconto)") {
+                finalAmount = totalOriginalValue * 0.95; // Aplica desconto
+            }
+
+            setPaymentData({
+                paymentCondition: initialPaymentCondition,
+                installments: initialInstallments,
+                discount5Days: initialDiscount5Days,
+                finalChargedAmount: finalAmount,
+                originalValue: totalOriginalValue
+            });
+        }
+    }, [isOpen, initialData, totalOriginalValue]);
+
+    // Função para calcular o valor final baseado nas condições
+    const calculateFinalAmount = (condition, installments, discount5Days, originalValue) => {
+        if (condition === 'Boleto' && installments === "5 dias (5% de desconto)" && discount5Days) {
+            return originalValue * 0.95;
+        }
+        return originalValue;
+    };
+
+    const handlePaymentConditionChange = (e) => {
+        const newCondition = e.target.value;
+        let newInstallments = '';
+        let newDiscount5Days = false;
+
+        // Resetar parcelas quando mudar a condição
+        if (newCondition === 'Boleto') {
+            newInstallments = "30 / 60 dias";
+            newDiscount5Days = false;
+        } else if (newCondition === 'Cartão') {
+            newInstallments = "1x (30 Dias)";
+            newDiscount5Days = false;
+        } else if (newCondition === 'À vista') {
+            newInstallments = '';
+            newDiscount5Days = false;
+        }
+
+        const finalAmount = calculateFinalAmount(
+            newCondition,
+            newInstallments,
+            newDiscount5Days,
+            paymentData.originalValue
+        );
+
+        setPaymentData({
+            ...paymentData,
+            paymentCondition: newCondition,
+            installments: newInstallments,
+            discount5Days: newDiscount5Days,
+            finalChargedAmount: finalAmount
+        });
+    };
+
+    const handleInstallmentsChange = (e) => {
+        const newInstallments = e.target.value;
+        const is5DaysDiscount = newInstallments === "5 dias (5% de desconto)";
+
+        const finalAmount = calculateFinalAmount(
+            paymentData.paymentCondition,
+            newInstallments,
+            is5DaysDiscount,
+            paymentData.originalValue
+        );
+
+        setPaymentData({
+            ...paymentData,
+            installments: newInstallments,
+            discount5Days: is5DaysDiscount,
+            finalChargedAmount: finalAmount
+        });
     };
 
     const handleConfirm = () => {
@@ -448,9 +507,9 @@ const PaymentConditionsModal = ({
 
                 <div className="space-y-4">
                     <div className="space-y-2">
-                        <label className="text-xs font-bold text-slate-400 uppercase">Valor Total</label>
+                        <label className="text-xs font-bold text-slate-400 uppercase">Valor Original</label>
                         <div className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-2xl text-slate-800 text-center">
-                            R$ {totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            R$ {paymentData.originalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                         </div>
                     </div>
 
@@ -458,11 +517,7 @@ const PaymentConditionsModal = ({
                         <label className="text-xs font-bold text-slate-400 uppercase">Condição de Pagamento</label>
                         <AccessibleSelect
                             value={paymentData.paymentCondition}
-                            onChange={(e) => setPaymentData({
-                                ...paymentData,
-                                paymentCondition: e.target.value,
-                                installments: e.target.value === 'À vista' ? '' : paymentData.installments
-                            })}
+                            onChange={handlePaymentConditionChange}
                             options={['À vista', 'Boleto', 'Cartão']}
                             label="Condição de pagamento"
                         />
@@ -475,14 +530,7 @@ const PaymentConditionsModal = ({
                                 <div className="space-y-3">
                                     <AccessibleSelect
                                         value={paymentData.installments}
-                                        onChange={(e) => {
-                                            const is5Days = e.target.value === "5 dias (5% de desconto)";
-                                            setPaymentData({
-                                                ...paymentData,
-                                                installments: e.target.value,
-                                                discount5Days: is5Days
-                                            });
-                                        }}
+                                        onChange={handleInstallmentsChange}
                                         options={installmentOptions['Boleto']}
                                         label="Parcelas boleto"
                                     />
@@ -492,7 +540,7 @@ const PaymentConditionsModal = ({
                                             <div className="flex justify-between items-center">
                                                 <span className="text-xs font-bold text-green-700 uppercase">Desconto de 5%</span>
                                                 <span className="text-sm font-black text-green-600">
-                                                    - R$ {(totalValue * 0.05).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                    - R$ {(paymentData.originalValue * 0.05).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                                 </span>
                                             </div>
                                             <div className="flex justify-between items-center pt-1 border-t border-green-100">
@@ -507,7 +555,21 @@ const PaymentConditionsModal = ({
                             ) : (
                                 <AccessibleSelect
                                     value={paymentData.installments}
-                                    onChange={(e) => setPaymentData({ ...paymentData, installments: e.target.value })}
+                                    onChange={(e) => {
+                                        const newInstallments = e.target.value;
+                                        const finalAmount = calculateFinalAmount(
+                                            paymentData.paymentCondition,
+                                            newInstallments,
+                                            false, // Cartão nunca tem desconto de 5 dias
+                                            paymentData.originalValue
+                                        );
+                                        setPaymentData({
+                                            ...paymentData,
+                                            installments: newInstallments,
+                                            discount5Days: false, // Garantir que cartão não tenha desconto
+                                            finalChargedAmount: finalAmount
+                                        });
+                                    }}
                                     options={installmentOptions['Cartão']}
                                     label="Parcelas cartão"
                                 />
@@ -690,7 +752,7 @@ export default function MainApp() {
 
     // === ESTADO PARA MODAL DE PAGAMENTO ===
     const [paymentModalData, setPaymentModalData] = useState({
-        totalValue: 0,
+        totalOriginalValue: 0, 
         paymentCondition: 'À vista',
         installments: '',
         discount5Days: false,
@@ -2173,47 +2235,52 @@ export default function MainApp() {
             return;
         }
 
-        const totalValue = selectedData.reduce((acc, os) => {
-            const valor = os.finalChargedAmount ?
-                parseCurrency(os.finalChargedAmount) :
-                parseCurrency(os.chargedAmount);
-            return acc + valor;
+        // Calcular o valor total SOMANDO os chargedAmount (valores originais)
+        const totalOriginalValue = selectedData.reduce((acc, os) => {
+            // Usar chargedAmount como valor base (original)
+            return acc + parseCurrency(os.chargedAmount);
         }, 0);
 
         const firstOS = selectedData[0];
 
         setPaymentModalData({
-            totalValue,
+            totalOriginalValue, // Valor ORIGINAL (sem desconto)
             paymentCondition: firstOS?.paymentCondition || 'À vista',
             installments: firstOS?.installments || '',
             discount5Days: firstOS?.discount5Days || false,
-            finalChargedAmount: totalValue
+            finalChargedAmount: firstOS?.finalChargedAmount || totalOriginalValue
         });
 
         setIsPaymentModalOpen(true);
     };
 
     const handleConfirmPrintWithPayment = (paymentData) => {
-        const selectedData = ordersForUser.filter(o => selectedOrders.includes(o.firestoreId));
+    const selectedData = ordersForUser.filter(o => selectedOrders.includes(o.firestoreId));
 
-        const updatePromises = selectedData.map(async (os) => {
-            try {
-                await updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', os.firestoreId), {
-                    paymentCondition: paymentData.paymentCondition,
-                    installments: paymentData.installments,
-                    discount5Days: paymentData.discount5Days,
-                    finalChargedAmount: paymentData.finalChargedAmount
-                });
-            } catch (error) {
-                console.error('Erro ao atualizar condições de pagamento:', error);
+    const updatePromises = selectedData.map(async (os) => {
+        try {
+            // Manter o chargedAmount original e calcular o finalChargedAmount baseado nas novas condições
+            let finalChargedAmount = parseCurrency(os.chargedAmount);
+            if (paymentData.discount5Days && paymentData.paymentCondition === 'Boleto') {
+                finalChargedAmount = parseCurrency(os.chargedAmount) * 0.95;
             }
-        });
 
-        Promise.all(updatePromises).then(() => {
-            setIsPaymentModalOpen(false);
-            handlePrint('client', paymentData);
-        });
-    };
+            await updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', os.firestoreId), {
+                paymentCondition: paymentData.paymentCondition,
+                installments: paymentData.installments,
+                discount5Days: paymentData.discount5Days,
+                finalChargedAmount: finalChargedAmount
+            });
+        } catch (error) {
+            console.error('Erro ao atualizar condições de pagamento:', error);
+        }
+    });
+
+    Promise.all(updatePromises).then(() => {
+        setIsPaymentModalOpen(false);
+        handlePrint('client', paymentData);
+    });
+};
 
     const handlePrint = async (printType, customPaymentConditions = null) => {
         const selectedData = ordersForUser.filter(o => selectedOrders.includes(o.firestoreId));
@@ -4064,6 +4131,75 @@ export default function MainApp() {
                                 <div className="space-y-6">
                                     <div className="flex items-center gap-2 text-orange-600 font-bold uppercase text-xs tracking-widest"><Package size={16} /> Equipamento</div>
                                     <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                                        {/* NÚMERO DE SÉRIE - AGORA É O PRIMEIRO CAMPO */}
+                                        <div className="relative">
+                                            <input
+                                                placeholder="Número de Série"
+                                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold font-mono"
+                                                value={formData.serial}
+                                                onChange={e => {
+                                                    const serial = e.target.value;
+                                                    setFormData({ ...formData, serial });
+
+                                                    // Buscar equipamento pelo número de série
+                                                    if (serial && serial.trim() !== '') {
+                                                        const foundOrder = orders.find(o =>
+                                                            o.serial && o.serial.toLowerCase() === serial.toLowerCase().trim()
+                                                        );
+                                                        if (foundOrder) {
+                                                            setFormData(prev => ({
+                                                                ...prev,
+                                                                item: foundOrder.item || prev.item,
+                                                                manufacturer: foundOrder.manufacturer || prev.manufacturer,
+                                                                model: foundOrder.model || prev.model
+                                                            }));
+                                                        }
+                                                    }
+                                                    setShowSerialSuggestions(true);
+                                                }}
+                                                onFocus={() => setShowSerialSuggestions(true)}
+                                                onBlur={() => setTimeout(() => setShowSerialSuggestions(false), 200)}
+                                            />
+                                            {showSerialSuggestions && uniqueSerials.length > 0 && (
+                                                <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
+                                                    <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400">Sugestões de NS</div>
+                                                    {uniqueSerials.filter(s => s.toLowerCase().includes(formData.serial.toLowerCase())).slice(0, 5).map((s, idx) => {
+                                                        // Encontrar o equipamento completo pelo serial
+                                                        const orderWithSerial = orders.find(o => o.serial === s);
+                                                        return (
+                                                            <div
+                                                                key={idx}
+                                                                className="p-3 hover:bg-orange-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700 font-mono font-bold"
+                                                                onMouseDown={(e) => {
+                                                                    e.preventDefault();
+                                                                    if (orderWithSerial) {
+                                                                        setFormData({
+                                                                            ...formData,
+                                                                            serial: s,
+                                                                            item: orderWithSerial.item || formData.item,
+                                                                            manufacturer: orderWithSerial.manufacturer || formData.manufacturer,
+                                                                            model: orderWithSerial.model || formData.model
+                                                                        });
+                                                                    } else {
+                                                                        setFormData({ ...formData, serial: s });
+                                                                    }
+                                                                    setShowSerialSuggestions(false);
+                                                                }}
+                                                            >
+                                                                {s}
+                                                                {orderWithSerial && (
+                                                                    <div className="text-xs text-slate-400 font-normal mt-1">
+                                                                        {orderWithSerial.item} - {orderWithSerial.manufacturer} {orderWithSerial.model}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* ITEM / NOME */}
                                         <div className="relative">
                                             <input
                                                 placeholder="Item / Nome"
@@ -4087,6 +4223,8 @@ export default function MainApp() {
                                             )}
                                             {fieldErrors.item && <p className="text-red-500 text-xs mt-1 ml-4">Item/Equipamento é obrigatório</p>}
                                         </div>
+
+                                        {/* MARCA */}
                                         <div className="relative">
                                             <input
                                                 placeholder="Marca"
@@ -4108,6 +4246,8 @@ export default function MainApp() {
                                                 </div>
                                             )}
                                         </div>
+
+                                        {/* MODELO */}
                                         <div className="relative">
                                             <input
                                                 placeholder="Modelo"
@@ -4129,28 +4269,9 @@ export default function MainApp() {
                                                 </div>
                                             )}
                                         </div>
-                                        <div className="relative">
-                                            <input
-                                                placeholder="Número de Série"
-                                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold font-mono"
-                                                value={formData.serial}
-                                                onChange={e => {
-                                                    setFormData({ ...formData, serial: e.target.value });
-                                                    setShowSerialSuggestions(true);
-                                                }}
-                                                onFocus={() => setShowSerialSuggestions(true)}
-                                                onBlur={() => setTimeout(() => setShowSerialSuggestions(false), 200)}
-                                            />
-                                            {showSerialSuggestions && uniqueSerials.length > 0 && (
-                                                <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
-                                                    <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400">Sugestões de NS</div>
-                                                    {uniqueSerials.filter(s => s.toLowerCase().includes(formData.serial.toLowerCase())).slice(0, 5).map((s, idx) => (
-                                                        <div key={idx} className="p-3 hover:bg-orange-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700 font-mono font-bold" onMouseDown={(e) => { e.preventDefault(); setFormData({ ...formData, serial: s }); setShowSerialSuggestions(false); }}>{s}</div>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
                                     </div>
+
+                                    {/* OBSERVAÇÕES E QUANTIDADE - MANTIDAS NO MESMO LUGAR */}
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         <div className="space-y-2">
                                             <label className="text-xs font-bold text-slate-500 uppercase">Observações (opcional)</label>
@@ -4229,7 +4350,6 @@ export default function MainApp() {
                                                 label="Tipo de solução"
                                             />
 
-                                            {/* SOLUÇÃO: Preenchimento manual */}
                                             {formData.solutionType === "Preenchimento manual" && (
                                                 <div className="space-y-4 animate-in fade-in">
                                                     <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100 space-y-3">
@@ -4238,7 +4358,10 @@ export default function MainApp() {
                                                                 placeholder="Descreva uma etapa da solução..."
                                                                 className="flex-1 p-3 bg-white border border-indigo-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20"
                                                                 value={tempManualSolution}
-                                                                onChange={e => { setTempManualSolution(e.target.value); setShowSolutionSuggestions(true); }}
+                                                                onChange={e => {
+                                                                    setTempManualSolution(e.target.value);
+                                                                    setShowSolutionSuggestions(true);
+                                                                }}
                                                                 onFocus={() => setShowSolutionSuggestions(true)}
                                                                 onBlur={() => setTimeout(() => setShowSolutionSuggestions(false), 200)}
                                                                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addManualSolutionItem(); } }}
@@ -4246,18 +4369,31 @@ export default function MainApp() {
                                                             <button type="button" onClick={addManualSolutionItem} className="bg-indigo-600 text-white p-3 rounded-xl shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-colors"><Plus size={20} /></button>
 
                                                             {showSolutionSuggestions && uniqueSolutions.length > 0 && (
-                                                                <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
+                                                                <div className="absolute top-full left-0 right-14 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
                                                                     <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400">Sugestões</div>
-                                                                    {uniqueSolutions.filter(s => s.toLowerCase().includes(tempSolution.toLowerCase())).slice(0, 5).map((s, idx) => (
-                                                                        <div key={idx} className="p-3 hover:bg-green-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700" onMouseDown={(e) => { e.preventDefault(); setTempSolution(s); setShowSolutionSuggestions(false); }}>
-                                                                            {s}
-                                                                        </div>
-                                                                    ))}
+                                                                    {uniqueSolutions
+                                                                        .filter(s => s.toLowerCase().includes(tempManualSolution.toLowerCase()))
+                                                                        .slice(0, 5)
+                                                                        .map((s, idx) => (
+                                                                            <div
+                                                                                key={idx}
+                                                                                className="p-3 hover:bg-indigo-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700"
+                                                                                onMouseDown={(e) => {
+                                                                                    e.preventDefault();
+                                                                                    setTempManualSolution(s);
+                                                                                    setShowSolutionSuggestions(false);
+                                                                                }}
+                                                                            >
+                                                                                {s.length > 50 ? s.substring(0, 50) + '...' : s}
+                                                                            </div>
+                                                                        ))
+                                                                    }
                                                                 </div>
                                                             )}
-
                                                         </div>
                                                     </div>
+
+                                                    {/* LISTA DE SOLUÇÕES MANUAIS ADICIONADAS - MANTENHA ESTA SEÇÃO */}
                                                     <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                                                         {formData.manualSolutionsList && formData.manualSolutionsList.map((s, i) => (
                                                             <div key={i} className="flex justify-between items-start p-3 bg-white border rounded-xl shadow-sm animate-in slide-in-from-left-2">
@@ -4274,26 +4410,41 @@ export default function MainApp() {
                                             {formData.solutionType === "Manual com custos detalhados" && (
                                                 <div className="space-y-4 animate-in fade-in">
                                                     <div className="bg-green-50 p-4 rounded-2xl border border-green-100 space-y-3">
+                                                        // Na seção "Manual com custos detalhados" (por volta da linha 2120), substitua o input:
                                                         <div className="relative">
                                                             <input
                                                                 placeholder="Item, Peça ou Serviço"
                                                                 className="w-full p-2 bg-white border border-green-200 rounded-lg text-sm"
                                                                 value={tempSolution}
-                                                                onChange={e => { setTempSolution(e.target.value); setShowSolutionSuggestions(true); }}
+                                                                onChange={e => {
+                                                                    setTempSolution(e.target.value);
+                                                                    setShowSolutionSuggestions(true);
+                                                                }}
                                                                 onFocus={() => setShowSolutionSuggestions(true)}
                                                                 onBlur={() => setTimeout(() => setShowSolutionSuggestions(false), 200)}
                                                             />
                                                             {showSolutionSuggestions && uniqueSolutionsList.length > 0 && (
                                                                 <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
                                                                     <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400">Sugestões</div>
-                                                                    {uniqueSolutionsList.filter(s => s.toLowerCase().includes(tempSolution.toLowerCase())).slice(0, 5).map((s, idx) => (
-                                                                        <div key={idx} className="p-3 hover:bg-green-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700" onMouseDown={(e) => { e.preventDefault(); setTempSolution(s); setShowSolutionSuggestions(false); }}>
-                                                                            {s}
-                                                                        </div>
-                                                                    ))}
+                                                                    {uniqueSolutionsList
+                                                                        .filter(s => s.toLowerCase().includes(tempSolution.toLowerCase()))
+                                                                        .slice(0, 5)
+                                                                        .map((s, idx) => (
+                                                                            <div
+                                                                                key={idx}
+                                                                                className="p-3 hover:bg-green-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700"
+                                                                                onMouseDown={(e) => {
+                                                                                    e.preventDefault();
+                                                                                    setTempSolution(s);
+                                                                                    setShowSolutionSuggestions(false);
+                                                                                }}
+                                                                            >
+                                                                                {s}
+                                                                            </div>
+                                                                        ))
+                                                                    }
                                                                 </div>
                                                             )}
-
                                                         </div>
                                                         <div className="flex gap-2">
                                                             <input placeholder="Valor R$ 0,00" className="flex-1 p-2 bg-white border border-green-200 rounded-lg text-sm" value={tempCost} onChange={e => setTempCost(e.target.value)} />
@@ -4861,7 +5012,7 @@ export default function MainApp() {
                 isOpen={isPaymentModalOpen}
                 onClose={() => setIsPaymentModalOpen(false)}
                 selectedOrdersCount={selectedOrders.length}
-                totalValue={paymentModalData.totalValue}
+                totalOriginalValue={paymentModalData.totalOriginalValue}
                 initialData={paymentModalData}
                 onConfirm={handleConfirmPrintWithPayment}
             />
