@@ -23,8 +23,10 @@ import { useAuth } from "./auth/AuthContext";
 import UserManagement from './components/UserManagement';
 import Login from './components/Login';
 import logo from './assets/logo.png';
-
 import { saveAs } from 'file-saver';
+import { PDFDownloadLink, PDFViewer, BlobProvider } from '@react-pdf/renderer';
+import DocumentoPDF from './components/DocumentoPDF';
+import { pdf } from '@react-pdf/renderer';
 
 const finalAppId = 'alfa-tecnologia-hospitalar-prod';
 
@@ -2213,8 +2215,7 @@ export default function MainApp() {
         });
     };
 
-    // === FUNÇÃO PARA IMPRIMIR (COM NOVAS MELHORIAS) ===
-    const handlePrint = (printType, customPaymentConditions = null) => {
+    const handlePrint = async (printType, customPaymentConditions = null) => {
         const selectedData = ordersForUser.filter(o => selectedOrders.includes(o.firestoreId));
         if (selectedData.length === 0) {
             showNotification('Selecione pelo menos uma OS para imprimir', 'error');
@@ -2249,520 +2250,47 @@ export default function MainApp() {
             'Relatório INTERNO' :
             (hasBudgetStage ? 'Proposta de orçamento' : 'Relatório de atendimento');
 
-        let htmlContent = `
-<!DOCTYPE html>
-<html>
-<head>
-    <title>${title}</title>
-    <meta charset="UTF-8">
-    <style>
-        @media print {
-            /* REMOVER margens do navegador - DEIXE O NAVEgador controlar */
-            @page {
-                size: A4;
-                margin: 0;
-            }
-            
-            body {
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                color: #333;
-                line-height: 1.4;
-                padding: 0;
-                margin: 0;
-                font-size: 12px;
-                width: 100%;
-                height: 100%;
-            }
-            
-            .report-page {
-                width: 210mm; /* Largura A4 */
-                min-height: 297mm; /* Altura A4 */
-                padding: 15mm 20mm;
-                position: relative;
-                box-sizing: border-box;
-                page-break-after: always;
-                background: white;
-            }
-            
-            .report-page:last-child {
-                page-break-after: avoid;
-                display: flex;
-                flex-direction: column;
-            }
-            
-            .header {
-                display: flex;
-                justify-content: space-between;
-                align-items: flex-start;
-                border-bottom: 2px solid #1a56db;
-                padding-bottom: 15px;
-                margin-bottom: 25px;
-                flex-wrap: wrap;
-            }
-            
-            .logo-container {
-                flex: 0 0 auto;
-            }
-            
-            .logo-container img {
-                height: 70px;
-                max-width: 200px;
-                object-fit: contain;
-            }
-            
-            .report-info {
-                text-align: right;
-                flex: 1;
-                min-width: 250px;
-            }
-            
-            .report-title {
-                font-size: 18px;
-                font-weight: 900;
-                color: #1a56db;
-                text-transform: uppercase;
-                margin-bottom: 5px;
-            }
-            
-            .internal-badge {
-                background: #b91c1c;
-                color: white;
-                padding: 2px 8px;
-                font-size: 10px;
-                border-radius: 4px;
-                font-weight: bold;
-                margin-bottom: 4px;
-                display: inline-block;
-            }
-            
-            .section {
-                margin-bottom: 25px;
-            }
-            
-            .section-title {
-                background: #f8fafc;
-                padding: 8px 12px;
-                font-size: 12px;
-                font-weight: 900;
-                text-transform: uppercase;
-                border-left: 5px solid #1a56db;
-                margin-bottom: 15px;
-                color: #1e40af;
-            }
-            
-            .client-grid {
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-                gap: 15px;
-                font-size: 12px;
-                margin-bottom: 25px;
-            }
-            
-            .items-table {
-                width: 100%;
-                border-collapse: collapse;
-                margin-top: 15px;
-                table-layout: fixed;
-            }
-            
-            .items-table th {
-                background: #f8fafc;
-                text-align: left;
-                padding: 12px 8px;
-                font-size: 11px;
-                text-transform: uppercase;
-                color: #64748b;
-                border-bottom: 2px solid #e2e8f0;
-                word-wrap: break-word;
-            }
-            
-            .items-table td {
-                padding: 15px 8px;
-                font-size: 12px;
-                border-bottom: 1px solid #f1f5f9;
-                vertical-align: top;
-                word-wrap: break-word;
-            }
-            
-            .os-tag {
-                font-weight: 900;
-                color: #1a56db;
-                display: block;
-                margin-bottom: 4px;
-                font-size: 13px;
-            }
-            
-            /* ÁREA DE ASSINATURA - MAIS DISTANTE DO CONTEÚDO */
-            .signature-area {
-                display: flex;
-                justify-content: space-around;
-                margin-top: 150px; /* AUMENTADO de auto para 150px para mais distância */
-                margin-bottom: 50px; /* Aumentado para dar mais espaço */
-                page-break-inside: avoid;
-                position: relative;
-            }
-            
-            .signature-box {
-                border-top: 1px solid #333;
-                width: 250px;
-                text-align: center;
-                padding-top: 15px; /* Aumentado para mais espaço de assinatura */
-                font-size: 12px;
-                font-weight: 600;
-                min-height: 120px; /* Altura aumentada para assinatura digital */
-            }
-            
-            .footer-notes {
-                margin-top: 30px;
-                font-size: 10px;
-                color: #666;
-                padding-top: 15px;
-                line-height: 1.5;
-                page-break-inside: avoid;
-                border-top: 1px solid #eee;
-            }
-            
-            .footer-notes p {
-                margin: 8px 0;
-            }
-            
-            .footer-title {
-                font-weight: bold;
-                color: #1a56db;
-                margin-bottom: 5px;
-                font-size: 11px;
-            }
-            
-            /* RODAPÉ FIXO NO FINAL ABSOLUTO - CONTADOR REMOVIDO */
-            .company-footer {
-                position: absolute;
-                bottom: 5mm; /* COLADO NO FINAL DA PÁGINA */
-                left: 20mm;
-                right: 20mm;
-                font-size: 8px;
-                color: #666;
-                text-align: center;
-                border-top: 1px solid #eee;
-                padding-top: 8px;
-                line-height: 1.2;
-                margin: 0;
-                background: white;
-                z-index: 10;
-            }
-            
-            /* CONTADOR DE PÁGINAS REMOVIDO - LINHA ABAIXO COMENTADA/EXCLUÍDA */
-            /* .page-counter { position: absolute; bottom: 5mm; right: 20mm; ... } */
-            
-            .valor-section {
-                margin-top: 20px;
-                padding: 20px;
-                background: #f0fdf4;
-                border-left: 4px solid #10b981;
-                border-radius: 8px;
-                font-size: 12px;
-                line-height: 1.5;
-            }
-            
-            .valor-destaque {
-                font-size: 20px;
-                font-weight: 900;
-                color: #166534;
-                text-align: center;
-                margin: 15px 0;
-            }
-            
-            .defects-list, .solutions-list {
-                margin: 8px 0;
-                padding-left: 15px;
-            }
-            
-            .defects-list li, .solutions-list li {
-                margin-bottom: 4px;
-                padding-left: 5px;
-            }
-            
-            .observation-column {
-                border-left: 2px solid #e2e8f0;
-                padding-left: 15px;
-                margin-left: 10px;
-            }
-            
-            .photo-grid {
-                display: grid;
-                grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-                gap: 10px;
-                margin-top: 15px;
-            }
-            
-            .photo-item {
-                border: 1px solid #e2e8f0;
-                border-radius: 4px;
-                overflow: hidden;
-            }
-            
-            .photo-item img {
-                width: 100%;
-                height: 120px;
-                object-fit: cover;
-            }
-            
-            /* Garantir que o conteúdo não sobreponha o rodapé */
-            .page-content {
-                padding-bottom: 50px; /* Aumentado para mais espaço antes da assinatura */
-                box-sizing: border-box;
-            }
-            
-            /* Estilo para evitar quebra de página em assinaturas */
-            .page-break-avoid {
-                page-break-inside: avoid;
-                page-break-before: avoid;
-                page-break-after: avoid;
-            }
-            
-            /* Para a última página, garantir que assinatura e rodapé fiquem juntos */
-            .last-page-content {
-                flex: 1;
-                display: flex;
-                flex-direction: column;
-            }
-            
-            .last-page-content .signature-area {
-                margin-top: 150px; /* Mantido igual às outras páginas */
-                margin-bottom: 70px; /* Mais espaço para o rodapé na última página */
-            }
-            
-            .last-page-content .company-footer {
-                bottom: 2mm; /* Ainda mais colado no final */
-            }
-        }
-        
-        /* Estilos para visualização em tela */
-        @media screen {
-            .report-page {
-                width: 210mm;
-                min-height: 297mm;
-                margin: 0 auto 20px;
-                box-shadow: 0 0 10px rgba(0,0,0,0.1);
-                background: white;
-            }
-        }
-    </style>
-</head>
-<body>
-    <div class="content-wrapper">`;
+        try {
+            showNotification('Gerando PDF...', 'info');
 
-        Object.values(groups).forEach((group, groupIndex) => {
-            const isLastPage = groupIndex === Object.values(groups).length - 1;
-            const budgetItems = group.items.filter(item =>
-                item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento'
+            // Criar o documento PDF
+            const pdfDoc = (
+                <DocumentoPDF
+                    groups={groups}
+                    printType={printType}
+                    title={title}
+                    customPaymentConditions={customPaymentConditions}
+                />
             );
-            const hasBudgetInGroup = budgetItems.length > 0;
 
-            let valorTotalGrupo = 0;
-            if (hasBudgetInGroup) {
-                budgetItems.forEach(item => {
-                    const valor = customPaymentConditions ?
-                        customPaymentConditions.finalChargedAmount / selectedData.length :
-                        (item.finalChargedAmount ?
-                            parseCurrency(item.finalChargedAmount) :
-                            parseCurrency(item.chargedAmount));
-                    valorTotalGrupo += valor;
-                });
+            // Gerar o blob do PDF
+            const pdfBlob = await pdf(pdfDoc).toBlob();
+            const pdfUrl = URL.createObjectURL(pdfBlob);
+
+            // Abrir em nova janela
+            const printWindow = window.open(pdfUrl, '_blank');
+            if (!printWindow) {
+                showNotification('Permita pop-ups para visualizar o documento', 'error');
+                // Fallback: download direto
+                const link = document.createElement('a');
+                link.href = pdfUrl;
+                link.download = `${title.toLowerCase().replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
             }
 
-            htmlContent += `
-        <div class="report-page ${isLastPage ? 'last-page' : ''}">
-            <div class="${isLastPage ? 'last-page-content' : 'page-content'}">
-                <div class="header">
-                    <div class="logo-container">
-                        <img src="${logo}" alt="Alfa Tecnologia Hospitalar" onerror="this.style.display='none';">
-                    </div>
-                    <div class="report-info">
-                        ${printType === 'internal' ? '<div class="internal-badge">USO INTERNO - CONFIDENCIAL</div>' : ''}
-                        <div class="report-title">${title}</div>
-                        <div style="font-size:11px;color:#666;">Data: ${new Date().toLocaleDateString('pt-BR')}</div>
-                    </div>
-                </div>
-                
-                <div class="section">
-                    <div class="section-title">Dados do Cliente</div>
-                    <div class="client-grid">
-                        <div><strong>Cliente:</strong><br>${group.header.client || '---'}</div>
-                        <div><strong>CNPJ:</strong><br>${group.header.cnpj || '---'}</div>
-                        <div><strong>Atendimento:</strong><br>${group.header.billingType} ${group.header.maintenanceVisit ? '- ' + group.header.maintenanceVisit : ''}</div>
-                        <div><strong>Contato:</strong><br>${group.header.contactPerson || '---'}</div>
-                        <div><strong>E-mail:</strong><br>${group.header.email || '---'}</div>
-                        <div><strong>Endereço:</strong><br>${group.header.address || '---'}</div>
-                    </div>
-                </div>
-                
-                ${hasBudgetInGroup && printType === 'client' ? `
-                <div class="valor-section">
-                    <div class="footer-title">VALOR TOTAL DA PROPOSTA</div>
-                    <div class="valor-destaque">
-                        R$ ${valorTotalGrupo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                    </div>
-                    <p><strong>Quantidade de itens em orçamento:</strong> ${budgetItems.length}</p>
-                    ${customPaymentConditions ?
-                        `<p><strong>Condições de pagamento:</strong> ${customPaymentConditions.paymentCondition}${customPaymentConditions.installments ? ` ${customPaymentConditions.installments}` : ''}</p>` :
-                        (budgetItems[0] && budgetItems[0].paymentCondition ?
-                            `<p><strong>Condições de pagamento:</strong> ${budgetItems[0].paymentCondition}${budgetItems[0].installments ? ` ${budgetItems[0].installments}` : ''}</p>` :
-                            '')
-                    }
-                </div>
-                ` : ''}
-                
-                <div class="section">
-                    <div class="section-title">Lista de Equipamentos</div>
-                    <table class="items-table">
-                        <thead>
-                            <tr>
-                                <th width="15%">OS</th>
-                                <th width="25%">Equipamento</th>
-                                <th width="30%">Defeito / Solução</th>
-                                <th width="30%">Observações</th>
-                            </tr>
-                        </thead>
-                        <tbody>`;
+            // Limpar memória após 30 segundos
+            setTimeout(() => {
+                URL.revokeObjectURL(pdfUrl);
+            }, 30000);
 
-            group.items.forEach(item => {
-                const defects = item.defect ? item.defect.split('\n').filter(d => d.trim()) : [];
-                const solutions = item.solution ? item.solution.split('\n').filter(s => s.trim()) : [];
-                const observation = item.equipmentObservation || '';
-                const photos = item.photos || [];
+            showNotification('PDF gerado com sucesso!', 'success');
 
-                const list = item.solutionsList || [];
-                const total = list.reduce((acc, curr) => acc + parseFloat(curr.cost.replace('.', '').replace(',', '.') || 0), 0);
-
-                const isItemBudget = item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento';
-                const valorItem = customPaymentConditions ?
-                    customPaymentConditions.finalChargedAmount / selectedData.length :
-                    (item.finalChargedAmount ?
-                        parseCurrency(item.finalChargedAmount) :
-                        parseCurrency(item.chargedAmount));
-
-                htmlContent += `
-                            <tr>
-                                <td>
-                                    <span class="os-tag">${item.osNumber || '---'}</span>
-                                    <small>${item.status || '---'}</small>
-                                    ${isItemBudget && printType === 'client' ? `
-                                    <div style="margin-top: 5px; padding: 3px; background: #f0fdf4; border-radius: 4px; text-align: center;">
-                                        <div style="font-size: 9px; font-weight: bold; color: #166534;">VALOR</div>
-                                        <div style="font-size: 11px; font-weight: 900; color: #166534;">
-                                            R$ ${valorItem.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                        </div>
-                                    </div>
-                                    ` : ''}
-                                </td>
-                                <td>
-                                    <strong>${item.item || '---'}</strong><br>
-                                    <div style="font-size:10px;color:#666;margin-bottom:2px;">
-                                        ${item.manufacturer || ''} ${item.model || ''}
-                                    </div>
-                                    <small>NS: ${item.serial || 'N/D'}</small>
-                                    ${item.quantity && parseInt(item.quantity) > 1 ?
-                        `<div style="font-size:10px;color:#666;margin-top:2px;"><strong>Quantidade:</strong> ${item.quantity}</div>` :
-                        ''}
-                                </td>
-                                <td>
-                                    <div style="margin-bottom: 15px;">
-                                        <div style="font-weight: bold; font-size: 11px; color: #1e40af; margin-bottom: 5px;">DEFEITO:</div>
-                                        ${defects.length > 0 ?
-                        `<ul class="defects-list">${defects.map(d => `<li>${d}</li>`).join('')}</ul>` :
-                        '<div style="color: #999; font-style: italic;">Sem defeitos registrados</div>'}
-                                    </div>
-                                    <div>
-                                        <div style="font-weight: bold; font-size: 11px; color: #059669; margin-bottom: 5px;">SOLUÇÃO:</div>
-                                        ${solutions.length > 0 ?
-                        `<ul class="solutions-list">${solutions.map(s => `<li>${s}</li>`).join('')}</ul>` :
-                        '<div style="color: #999; font-style: italic;">Solução em análise</div>'}
-                                    </div>
-                                </td>
-                                <td class="observation-column">
-                                    ${observation ? `
-                                    <div style="margin-bottom: 15px;">
-                                        <div style="font-weight: bold; font-size: 11px; color: #7c3aed; margin-bottom: 5px;">OBSERVAÇÃO:</div>
-                                        <div style="font-size: 11px; line-height: 1.4;">${observation}</div>
-                                    </div>
-                                    ` : ''}
-                                    
-                                    ${photos.length > 0 ? `
-                                    <div>
-                                        <div style="font-weight: bold; font-size: 11px; color: #7c3aed; margin-bottom: 5px;">FOTOS:</div>
-                                        <div class="photo-grid">
-                                            ${photos.slice(0, 3).map((photo, idx) =>
-                            `<div class="photo-item">
-                                                        <img src="${photo}" alt="Foto ${idx + 1}" onerror="this.style.display='none';">
-                                                    </div>`
-                        ).join('')}
-                                        </div>
-                                        ${photos.length > 3 ?
-                            `<div style="font-size: 10px; color: #666; margin-top: 5px;">+ ${photos.length - 3} foto(s) adicional(is)</div>` :
-                            ''}
-                                    </div>
-                                    ` : ''}
-                                </td>
-                            </tr>`;
-            });
-
-            htmlContent += `
-                        </tbody>
-                    </table>
-                </div>`;
-
-            if (printType === 'client' && hasBudgetInGroup) {
-                const budgetItem = budgetItems[0];
-                const deliveryDeadline = budgetItem.deliveryDeadline || 'A ser definido após aprovação do orçamento';
-                const paymentConditions = customPaymentConditions ?
-                    `${customPaymentConditions.paymentCondition}${customPaymentConditions.installments ? ` ${customPaymentConditions.installments}` : ''}` :
-                    `${budgetItem.paymentCondition || 'À vista'}${budgetItem.installments ? ` ${budgetItem.installments}` : ''}`;
-
-                htmlContent += `
-                <div class="footer-notes page-break-avoid">
-                    <div class="footer-title">INFORMAÇÕES IMPORTANTES:</div>
-                    <p><strong>• Garantia:</strong> 3 meses. Não está coberto por garantia os danos causados por uso inadequado, queda ou choque mecânico, acondicionamento inadequado e/ou acondicionamento fora dos padrões recomendados pelo fabricante.</p>
-                    <p><strong>• Prazo de entrega:</strong> ${deliveryDeadline}</p>
-                    <p><strong>• Valor Total da Proposta:</strong> R$ ${valorTotalGrupo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                    <p><strong>• Condições de pagamento:</strong> ${paymentConditions}</p>
-                </div>`;
-            }
-
-            htmlContent += `
-                <div class="signature-area page-break-avoid">
-                    <div class="signature-box">Técnico Responsável</div>
-                    <div class="signature-box">Cliente / Recebedor</div>
-                </div>
-            </div>
-            
-            <div class="company-footer">
-                <strong>Alfa Tecnologia Hospitalar</strong> - CNPJ: 50.993.453/0001-34<br/>
-                (55) 9 9137-9413 - alfa.manutencaosm@gmail.com<br/>
-                Endereço: Travessa Moreira, 125 - CEP: 97070-540 - Bairro: Duque de Caxias, Santa Maria/ RS
-            </div>
-            
-            <!-- CONTADOR DE PÁGINAS REMOVIDO -->
-        </div>`;
-        });
-
-        htmlContent += `
-    </div>
-</body>
-</html>`;
-
-        const printWindow = window.open('', 'printWindow', 'width=800,height=600,scrollbars=yes');
-        if (!printWindow) {
-            showNotification('Permita pop-ups para imprimir o documento', 'error');
-            return;
+        } catch (error) {
+            console.error('Erro ao gerar PDF:', error);
+            showNotification('Erro ao gerar PDF: ' + error.message, 'error');
         }
-
-        printWindow.document.write(htmlContent);
-        printWindow.document.close();
-
-        setTimeout(() => {
-            printWindow.focus();
-            printWindow.print();
-        }, 500);
     };
 
     // Funções para lidar com filtros no painel de status
@@ -2878,7 +2406,7 @@ export default function MainApp() {
         }
     };
 
-    const handleModalPrint = (printType) => {
+    const handleModalPrint = async (printType) => {
         const printData = prepareDataForSave();
         const isBudgetStage = printData.status === 'Em orçamento' ||
             printData.status === 'Aguardando aprovação do orçamento';
@@ -2887,430 +2415,60 @@ export default function MainApp() {
             'Relatório INTERNO' :
             (isBudgetStage ? 'Proposta de orçamento' : 'Relatório de atendimento');
 
-        const paymentConditions = `${printData.paymentCondition}${printData.installments ? ` ${printData.installments}` : ''}`;
-        const valorCobrado = printData.finalChargedAmount > 0 ?
-            parseCurrency(printData.finalChargedAmount) :
-            parseCurrency(printData.chargedAmount);
+        try {
+            showNotification('Gerando PDF...', 'info');
 
-        let discountSection = '';
-        if (printData.discount5Days && printData.chargedAmount) {
-            const valorOriginal = parseCurrency(printData.chargedAmount);
-            const desconto = valorOriginal * 0.05;
-            const valorFinal = valorOriginal - desconto;
+            // Criar grupo para uma única OS
+            const groups = {
+                [printData.client]: {
+                    header: {
+                        client: printData.client,
+                        cnpj: printData.cnpj,
+                        contactPerson: printData.contactPerson,
+                        email: printData.email,
+                        address: printData.address,
+                        billingType: printData.billingType,
+                        maintenanceVisit: printData.maintenanceVisit
+                    },
+                    items: [printData]
+                }
+            };
 
-            discountSection = `
-        <div style="margin-top: 10px; padding: 8px; background: #f0fdf4; border-radius: 6px; border: 1px solid #bbf7d0;">
-            <div style="font-size: 9px; font-weight: bold; color: #166534; margin-bottom: 3px;">DESCONTO APLICADO</div>
-            <div style="display: flex; justify-content: space-between; font-size: 10px;">
-                <span>Valor Original:</span>
-                <span>R$ ${valorOriginal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; font-size: 10px;">
-                <span>Desconto (5%):</span>
-                <span style="color: #dc2626;">- R$ ${desconto.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; font-size: 11px; font-weight: bold; margin-top: 3px; border-top: 1px dashed #86efac; padding-top: 3px;">
-                <span>VALOR FINAL:</span>
-                <span style="color: #166534;">R$ ${valorFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-            </div>
-        </div>
-    `;
+            // Criar o documento PDF
+            const pdfDoc = (
+                <DocumentoPDF
+                    groups={groups}
+                    printType={printType}
+                    title={title}
+                />
+            );
+
+            // Gerar o blob do PDF
+            const pdfBlob = await pdf(pdfDoc).toBlob();
+            const pdfUrl = URL.createObjectURL(pdfBlob);
+
+            // Abrir em nova janela
+            const printWindow = window.open(pdfUrl, '_blank');
+            if (!printWindow) {
+                showNotification('Permita pop-ups para visualizar o documento', 'error');
+                // Fallback: download direto
+                const link = document.createElement('a');
+                link.href = pdfUrl;
+                link.download = `${title.toLowerCase().replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+
+            // Limpar memória após 30 segundos
+            setTimeout(() => {
+                URL.revokeObjectURL(pdfUrl);
+            }, 30000);
+
+        } catch (error) {
+            console.error('Erro ao gerar PDF:', error);
+            showNotification('Erro ao gerar PDF: ' + error.message, 'error');
         }
-
-        const defects = printData.defect ? printData.defect.split('\n').filter(d => d.trim()) : [];
-        const solutions = printData.solution ? printData.solution.split('\n').filter(s => s.trim()) : [];
-        const observation = printData.equipmentObservation || '';
-        const photos = printData.photos || [];
-
-        let htmlContent = `
-<!DOCTYPE html>
-<html>
-<head>
-    <title>${title}</title>
-    <meta charset="UTF-8">
-    <style>
-        @media print {
-            /* REMOVER margens do navegador */
-            @page {
-                size: A4;
-                margin: 0;
-            }
-            
-            body {
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                color: #333;
-                line-height: 1.4;
-                padding: 0;
-                margin: 0;
-                font-size: 12px;
-                width: 100%;
-                height: 100%;
-            }
-            
-            .report-page {
-                width: 210mm; /* Largura A4 */
-                min-height: 297mm; /* Altura A4 */
-                padding: 15mm 20mm;
-                position: relative;
-                box-sizing: border-box;
-                background: white;
-                display: flex;
-                flex-direction: column;
-            }
-            
-            .header {
-                display: flex;
-                justify-content: space-between;
-                align-items: flex-start;
-                border-bottom: 2px solid #1a56db;
-                padding-bottom: 15px;
-                margin-bottom: 25px;
-                flex-wrap: wrap;
-            }
-            
-            .logo-container img {
-                height: 70px;
-                max-width: 200px;
-                object-fit: contain;
-            }
-            
-            .report-info {
-                text-align: right;
-                flex: 1;
-                min-width: 250px;
-            }
-            
-            .report-title {
-                font-size: 18px;
-                font-weight: 900;
-                color: #1a56db;
-                text-transform: uppercase;
-                margin-bottom: 5px;
-            }
-            
-            .internal-badge {
-                background: #b91c1c;
-                color: white;
-                padding: 2px 8px;
-                font-size: 10px;
-                border-radius: 4px;
-                font-weight: bold;
-                margin-bottom: 4px;
-                display: inline-block;
-            }
-            
-            .section {
-                margin-bottom: 25px;
-            }
-            
-            .section-title {
-                background: #f8fafc;
-                padding: 8px 12px;
-                font-size: 12px;
-                font-weight: 900;
-                text-transform: uppercase;
-                border-left: 5px solid #1a56db;
-                margin-bottom: 15px;
-                color: #1e40af;
-            }
-            
-            .client-grid {
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-                gap: 15px;
-                font-size: 12px;
-                margin-bottom: 25px;
-            }
-            
-            .equipment-details {
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 30px;
-                margin-top: 20px;
-            }
-            
-            .observation-section {
-                margin-top: 20px;
-                padding: 15px;
-                background: #f8fafc;
-                border-left: 4px solid #94a3b8;
-                border-radius: 6px;
-                font-size: 11px;
-                line-height: 1.4;
-            }
-            
-            .valor-section {
-                margin-top: 20px;
-                padding: 20px;
-                background: #f0fdf4;
-                border-left: 4px solid #10b981;
-                border-radius: 8px;
-                font-size: 12px;
-                line-height: 1.5;
-            }
-            
-            .valor-destaque {
-                font-size: 20px;
-                font-weight: 900;
-                color: #166534;
-                text-align: center;
-                margin: 15px 0;
-            }
-            
-            .defects-list, .solutions-list {
-                margin: 8px 0;
-                padding-left: 15px;
-            }
-            
-            .defects-list li, .solutions-list li {
-                margin-bottom: 4px;
-                padding-left: 5px;
-            }
-            
-            /* ÁREA DE ASSINATURA - MAIS DISTANTE DO CONTEÚDO */
-            .signature-area {
-                display: flex;
-                justify-content: space-around;
-                margin-top: 150px; /* AUMENTADO para mais distância do conteúdo */
-                margin-bottom: 50px; /* Aumentado para mais espaço */
-                page-break-inside: avoid;
-                position: relative;
-            }
-            
-            .signature-box {
-                border-top: 1px solid #333;
-                width: 250px;
-                text-align: center;
-                padding-top: 15px; /* Aumentado para mais espaço de assinatura */
-                font-size: 12px;
-                font-weight: 600;
-                min-height: 120px; /* Altura aumentada */
-            }
-            
-            /* RODAPÉ FIXO NO FINAL ABSOLUTO - CONTADOR REMOVIDO */
-            .company-footer {
-                position: absolute;
-                bottom: 5mm; /* COLADO NO FINAL DA PÁGINA */
-                left: 20mm;
-                right: 20mm;
-                font-size: 8px;
-                color: #666;
-                text-align: center;
-                border-top: 1px solid #eee;
-                padding-top: 8px;
-                line-height: 1.2;
-                margin: 0;
-                background: white;
-                z-index: 10;
-            }
-            
-            /* CONTADOR DE PÁGINAS REMOVIDO - LINHA COMENTADA/EXCLUÍDA */
-            /* .page-counter { position: absolute; bottom: 5mm; right: 20mm; ... } */
-            
-            .photo-grid {
-                display: grid;
-                grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-                gap: 10px;
-                margin-top: 15px;
-            }
-            
-            .photo-item {
-                border: 1px solid #e2e8f0;
-                border-radius: 4px;
-                overflow: hidden;
-            }
-            
-            .photo-item img {
-                width: 100%;
-                height: 120px;
-                object-fit: cover;
-            }
-            
-            .footer-notes {
-                margin-top: 30px;
-                font-size: 10px;
-                color: #666;
-                padding-top: 15px;
-                line-height: 1.5;
-                page-break-inside: avoid;
-                border-top: 1px solid #eee;
-            }
-            
-            .footer-title {
-                font-weight: bold;
-                color: #1a56db;
-                margin-bottom: 5px;
-                font-size: 11px;
-            }
-            
-            /* Garantir que o conteúdo não sobreponha o rodapé */
-            .content-wrapper {
-                flex: 1;
-                display: flex;
-                flex-direction: column;
-                padding-bottom: 60px; /* Aumentado para mais espaço antes da assinatura */
-                box-sizing: border-box;
-            }
-            
-            .page-break-avoid {
-                page-break-inside: avoid;
-                page-break-before: avoid;
-                page-break-after: avoid;
-            }
-        }
-        
-        /* Estilos para visualização em tela */
-        @media screen {
-            .report-page {
-                width: 210mm;
-                min-height: 297mm;
-                margin: 0 auto;
-                box-shadow: 0 0 10px rgba(0,0,0,0.1);
-                background: white;
-            }
-        }
-    </style>
-</head>
-<body>
-    <div class="report-page">
-        <div class="content-wrapper">
-            <div class="header">
-                <div class="logo-container">
-                    <img src="${logo}" alt="Alfa Tecnologia Hospitalar" onerror="this.style.display='none';">
-                </div>
-                <div class="report-info">
-                    ${printType === 'internal' ? '<div class="internal-badge">USO INTERNO - CONFIDENCIAL</div>' : ''}
-                    <div class="report-title">${title}</div>
-                    <div style="font-size:11px;color:#666;">Data: ${new Date().toLocaleDateString('pt-BR')}</div>
-                </div>
-            </div>
-            
-            <div class="section">
-                <div class="section-title">Dados do Cliente</div>
-                <div class="client-grid">
-                    <div><strong>Cliente:</strong><br>${printData.client || '---'}</div>
-                    <div><strong>CNPJ:</strong><br>${printData.cnpj || '---'}</div>
-                    <div><strong>Atendimento:</strong><br>${printData.billingType} ${printData.maintenanceVisit ? '- ' + printData.maintenanceVisit : ''}</div>
-                    <div><strong>Contato:</strong><br>${printData.contactPerson || '---'}</div>
-                    <div><strong>E-mail:</strong><br>${printData.email || '---'}</div>
-                    <div><strong>Endereço:</strong><br>${printData.address || '---'}</div>
-                </div>
-            </div>
-            
-            ${isBudgetStage && printType === 'client' ? `
-            <div class="valor-section">
-                <div class="footer-title">VALOR DA PROPOSTA</div>
-                <div class="valor-destaque">
-                    R$ ${valorCobrado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                </div>
-                <p><strong>Condições de pagamento:</strong> ${paymentConditions}</p>
-                ${discountSection}
-            </div>
-            ` : ''}
-            
-            <div class="section">
-                <div class="section-title">Equipamento</div>
-                <div style="margin-bottom: 20px;">
-                    <div style="display: flex; justify-content: space-between; align-items: start;">
-                        <div style="flex: 1;">
-                            <div style="font-weight: bold; font-size: 14px; color: #1e40af; margin-bottom: 5px;">${printData.item || '---'}</div>
-                            <div style="font-size: 11px; color: #666; margin-bottom: 5px;">
-                                ${printData.manufacturer || ''} ${printData.model || ''}
-                            </div>
-                            <div style="font-size: 10px; color: #999;">NS: ${printData.serial || 'N/D'}</div>
-                            ${printData.quantity && parseInt(printData.quantity) > 1 ?
-                `<div style="font-size:10px;color:#666;margin-top:5px;"><strong>Quantidade:</strong> ${printData.quantity}</div>` :
-                ''}
-                            <div style="margin-top: 10px; font-size: 11px;">
-                                <strong>OS:</strong> ${printData.osNumber || '---'} | 
-                                <strong>Status:</strong> ${printData.status || '---'}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="equipment-details">
-                    <div class="defects-section">
-                        <div style="font-weight: bold; font-size: 12px; color: #1e40af; margin-bottom: 10px;">DEFEITOS ENCONTRADOS</div>
-                        ${defects.length > 0 ?
-                `<ul class="defects-list">${defects.map(d => `<li>${d}</li>`).join('')}</ul>` :
-                '<div style="color: #999; font-style: italic;">Sem defeitos registrados</div>'}
-                    </div>
-                    
-                    <div class="solutions-section">
-                        <div style="font-weight: bold; font-size: 12px; color: #059669; margin-bottom: 10px;">SOLUÇÃO APLICADA</div>
-                        ${solutions.length > 0 ?
-                `<ul class="solutions-list">${solutions.map(s => `<li>${s}</li>`).join('')}</ul>` :
-                '<div style="color: #999; font-style: italic;">Solução em análise</div>'}
-                    </div>
-                </div>
-                
-                ${observation || photos.length > 0 ? `
-                <div class="observation-section">
-                    ${observation ? `
-                    <div style="margin-bottom: ${photos.length > 0 ? '15px' : '0'};">
-                        <div style="font-weight: bold; font-size: 11px; color: #7c3aed; margin-bottom: 5px;">OBSERVAÇÕES:</div>
-                        <div style="font-size: 11px; line-height: 1.4;">${observation}</div>
-                    </div>
-                    ` : ''}
-                    
-                    ${photos.length > 0 ? `
-                    <div>
-                        <div style="font-weight: bold; font-size: 11px; color: #7c3aed; margin-bottom: 5px;">FOTOS:</div>
-                        <div class="photo-grid">
-                            ${photos.slice(0, 3).map((photo, idx) =>
-                    `<div class="photo-item">
-                                        <img src="${photo}" alt="Foto ${idx + 1}" onerror="this.style.display='none';">
-                                    </div>`
-                ).join('')}
-                        </div>
-                        ${photos.length > 3 ?
-                        `<div style="font-size: 10px; color: #666; margin-top: 5px;">+ ${photos.length - 3} foto(s) adicional(is)</div>` :
-                        ''}
-                    </div>
-                    ` : ''}
-                </div>
-                ` : ''}
-            </div>
-            
-            ${printType === 'client' && isBudgetStage ? `
-            <div class="footer-notes">
-                <div class="footer-title">INFORMAÇÕES IMPORTANTES:</div>
-                <p><strong>• Garantia:</strong> 3 meses. Não está coberto por garantia os danos causados por uso inadequado, queda ou choque mecânico, acondicionamento inadequado e/ou acondicionamento fora dos padrões recomendados pelo fabricante.</p>
-                <p><strong>• Prazo de entrega:</strong> ${printData.deliveryDeadline || 'A ser definido após aprovação do orçamento'}</p>
-            </div>
-            ` : ''}
-            
-            <div class="signature-area page-break-avoid">
-                <div class="signature-box">Técnico Responsável</div>
-                <div class="signature-box">Cliente / Recebedor</div>
-            </div>
-        </div>
-        
-        <div class="company-footer">
-            <strong>Alfa Tecnologia Hospitalar</strong> - CNPJ: 50.993.453/0001-34<br/>
-            (55) 9 9137-9413 - alfa.manutencaosm@gmail.com<br/>
-            Endereço: Travessa Moreira, 125 - CEP: 97070-540 - Bairro: Duque de Caxias, Santa Maria/ RS
-        </div>
-        
-        <!-- CONTADOR DE PÁGINAS REMOVIDO -->
-    </div>
-</body>
-</html>`;
-
-        const printWindow = window.open('', 'printWindow', 'width=800,height=600,scrollbars=yes');
-        if (!printWindow) {
-            showNotification('Permita pop-ups para imprimir o documento', 'error');
-            return;
-        }
-
-        printWindow.document.write(htmlContent);
-        printWindow.document.close();
-
-        setTimeout(() => {
-            printWindow.focus();
-            printWindow.print();
-        }, 500);
     };
 
     const exportToWord = () => {
@@ -3671,7 +2829,7 @@ export default function MainApp() {
                                 <img
                                     src={logo}
                                     alt="Logo Alfa Tecnologia Hospitalar"
-                                    className="h-20 object-contain"
+                                    className="h-12 object-contain"
                                 />
                             </div>
                         </div>
@@ -3695,8 +2853,6 @@ export default function MainApp() {
                             {hasPermission('canManageUsers') && (
                                 <NavItem icon={<Shield size={isSidebarOpen ? 20 : 22} />} label="Usuários" active={currentPage === 'users'} onClick={() => setCurrentPage('users')} isSidebarOpen={isSidebarOpen} />
                             )}
-
-
                             <div className="pt-2 border-t border-slate-800 mt-2">
                                 <NavItem icon={<Info size={isSidebarOpen ? 20 : 22} />} label="Sobre" active={currentPage === 'about'} onClick={() => setCurrentPage('about')} isSidebarOpen={isSidebarOpen} />
                             </div>
@@ -3704,10 +2860,8 @@ export default function MainApp() {
                     )}
                 </nav>
 
-                <div className="flex flex-col border-t border-slate-800 mt-auto">
-                    {/* Container dos botões - muda o layout baseado no estado da sidebar */}
-                    <div className={`${isSidebarOpen ? 'flex justify-between items-center p-4' : 'flex flex-col items-center p-2 space-y-2'}`}>
-                        {/* Botão de recolher/expandir sidebar (sempre visível no desktop) */}
+                <div className="flex flex-col border-t border-slate-800">
+                    <div className="flex items-center justify-between p-4">
                         <button
                             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
                             className="text-slate-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-slate-800 lg:flex hidden"
@@ -3716,22 +2870,10 @@ export default function MainApp() {
                             <ChevronRight className={`transition-transform duration-300 ${isSidebarOpen ? 'rotate-180' : ''}`} size={20} />
                         </button>
 
-                        {/* Botão para ocultar/mostrar valores - VISÍVEL APENAS PARA ADMIN */}
-                        {userData?.role !== 'client' && (
-                            <button
-                                onClick={() => setShowValues(!showValues)}
-                                className="text-slate-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-slate-800"
-                                title={!isSidebarOpen ? (showValues ? "Ocultar Valores" : "Mostrar Valores") : ""}
-                            >
-                                {showValues ? <Eye size={20} /> : <EyeOff size={20} />}
-                            </button>
-                        )}
-
-                        {/* Botão de logout */}
                         <button
                             onClick={handleLogout}
                             className="text-red-400 hover:text-red-500 transition-colors p-1 rounded-lg hover:bg-slate-800"
-                            title={!isSidebarOpen ? "Sair" : ""}
+                            title="Sair"
                         >
                             <LogOut size={20} />
                         </button>
@@ -3910,16 +3052,7 @@ export default function MainApp() {
                                     </button>
 
                                     {showRangeInput && (
-                                        <div className="
-        fixed inset-x-4 top-20 
-        sm:absolute sm:inset-x-auto sm:top-full sm:right-0 sm:mt-2 
-        bg-white rounded-2xl shadow-2xl border border-slate-100 p-4 
-        w-auto sm:w-80 
-        animate-in slide-in-from-top-2 
-        z-50
-        max-h-[80vh] overflow-y-auto
-    ">
-                                            {/* conteúdo do dropdown (mantém igual) */}
+                                        <div className="absolute top-full right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-slate-100 p-4 w-80 animate-in slide-in-from-top-2 z-50">
                                             <div className="space-y-3">
                                                 <div className="flex items-center justify-between">
                                                     <h4 className="text-sm font-bold text-slate-700">Seleção por Intervalo</h4>
