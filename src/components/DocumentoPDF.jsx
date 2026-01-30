@@ -12,7 +12,6 @@ import {
 import logo from '../assets/logo.png';
 import assinatura from '../assets/assinatura.jpg';
 
-// Não use fontes externas - apenas fontes padrão do PDF
 const styles = StyleSheet.create({
     page: {
         padding: 25,
@@ -92,7 +91,7 @@ const styles = StyleSheet.create({
     itemsTable: {
         width: '100%',
         marginTop: 10,
-        marginBottom: 20,
+        marginBottom: 0,
     },
     tableHeader: {
         flexDirection: 'row',
@@ -121,9 +120,12 @@ const styles = StyleSheet.create({
         color: '#1a56db',
         fontSize: 8,
     },
-    // Área de rodapé (apenas última página)
+    // Área de rodapé
     footerArea: {
-        marginTop: 30,
+        position: 'absolute',
+        bottom: 40,
+        left: 25,
+        right: 25,
         paddingTop: 20,
         borderTopWidth: 1,
         borderTopColor: '#eee',
@@ -132,7 +134,7 @@ const styles = StyleSheet.create({
     signatureArea: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        marginTop: 20,
+        marginTop: 10,
         alignItems: 'flex-end',
     },
     signatureBox: {
@@ -160,7 +162,7 @@ const styles = StyleSheet.create({
         marginTop: 2,
     },
     companyFooter: {
-        marginTop: 25,
+        marginTop: 15,
         fontSize: 8,
         color: '#666',
         textAlign: 'center',
@@ -200,7 +202,6 @@ const styles = StyleSheet.create({
         fontSize: 7,
         lineHeight: 1.1,
     },
-    // Contador de páginas
     pageCounter: {
         position: 'absolute',
         bottom: 15,
@@ -209,10 +210,9 @@ const styles = StyleSheet.create({
         color: '#666',
         fontFamily: 'Helvetica',
     },
-    // Espaçamento extra para página única
-    singlePageSpacing: {
-        flex: 1,
-        minHeight: 200,
+    // Espaçamento flexível
+    spacer: {
+        flexGrow: 1,
     },
 });
 
@@ -227,47 +227,6 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
         if (!value) return 0;
         if (typeof value === 'number') return value;
         return parseFloat(value.toString().replace(/\./g, '').replace(',', '.')) || 0;
-    };
-
-    const calculateTotalValue = (groupItems) => {
-        const budgetItems = groupItems.filter(item =>
-            item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento'
-        );
-        
-        if (customPaymentConditions) {
-            return customPaymentConditions.finalChargedAmount;
-        }
-        
-        let total = 0;
-        budgetItems.forEach(item => {
-            const valor = item.finalChargedAmount ?
-                parseCurrency(item.finalChargedAmount) :
-                parseCurrency(item.chargedAmount);
-            total += valor;
-        });
-        return total;
-    };
-
-    // Juntar todos os itens de todos os grupos em uma única lista
-    const getAllItems = () => {
-        const groupsArray = Object.values(groups);
-        let allItems = [];
-        
-        groupsArray.forEach((group, groupIndex) => {
-            // Adiciona um marcador de início de grupo
-            allItems.push({ 
-                isGroupHeader: true, 
-                groupData: group,
-                groupIndex: groupIndex 
-            });
-            
-            // Adiciona os itens do grupo
-            group.items.forEach(item => {
-                allItems.push({ ...item, groupIndex });
-            });
-        });
-        
-        return allItems;
     };
 
     // Calcular total de orçamentos
@@ -291,71 +250,64 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
         return total;
     };
 
-    // Distribuir itens de forma inteligente
+    // Preparar todos os itens
+    const prepareAllItems = () => {
+        const groupsArray = Object.values(groups);
+        let allItems = [];
+        
+        groupsArray.forEach((group, groupIndex) => {
+            // Adiciona os itens do grupo
+            group.items.forEach(item => {
+                allItems.push({ 
+                    ...item,
+                    groupIndex,
+                    client: group.header.client
+                });
+            });
+        });
+        
+        return allItems;
+    };
+
+    // Função de distribuição SIMPLES
     const distributeItems = (items) => {
         const totalItems = items.length;
         
-        // Se tiver 15 ou menos itens (incluindo headers), tudo em uma página
-        if (totalItems <= 15) {
+        if (totalItems <= 10) {
             return [items];
         }
         
-        // Contar quantos itens cabem por página (considerando espaço do header na primeira)
-        const itemsPerFirstPage = 12; // Menos porque tem header
-        const itemsPerOtherPage = 16; // Mais porque não tem header
-        
         const pages = [];
-        let currentPage = [];
-        let currentPageIndex = 0;
-        let itemsAdded = 0;
         
-        for (let i = 0; i < totalItems; i++) {
-            const item = items[i];
-            
-            // Se for primeira página e já tiver muitos itens, ou se for outras páginas e já tiver limite
-            if ((currentPageIndex === 0 && currentPage.length >= itemsPerFirstPage) ||
-                (currentPageIndex > 0 && currentPage.length >= itemsPerOtherPage)) {
-                pages.push(currentPage);
-                currentPage = [];
-                currentPageIndex++;
-            }
-            
-            currentPage.push(item);
-            itemsAdded++;
-            
-            // Se for o último item, fecha a página
-            if (i === totalItems - 1) {
-                pages.push(currentPage);
-            }
-        }
+        // Primeira página: 10 itens (com cabeçalho)
+        const firstPageItems = Math.min(10, totalItems);
+        pages.push(items.slice(0, firstPageItems));
         
-        // Otimização: se última página tiver muito poucos itens, redistribui
-        if (pages.length >= 2) {
-            const lastPage = pages[pages.length - 1];
-            const secondLastPage = pages[pages.length - 2];
-            
-            // Se última página tiver menos de 4 itens, junta com a anterior
-            if (lastPage.length < 4 && secondLastPage.length + lastPage.length <= 20) {
-                pages[pages.length - 2] = [...secondLastPage, ...lastPage];
-                pages.pop();
-            }
+        let remainingItems = items.slice(firstPageItems);
+        
+        // Demais páginas: 15 itens cada (mais espaço)
+        const itemsPerOtherPage = 15;
+        
+        while (remainingItems.length > 0) {
+            const pageItems = remainingItems.slice(0, itemsPerOtherPage);
+            pages.push(pageItems);
+            remainingItems = remainingItems.slice(itemsPerOtherPage);
         }
         
         return pages;
     };
 
-    const allItems = getAllItems();
+    const allItems = prepareAllItems();
     const totalBudgetValue = calculateTotalBudget();
     const pages = distributeItems(allItems);
     const totalPages = pages.length;
     
     // Contar itens orçados
     const budgetItemsCount = allItems.filter(item => 
-        !item.isGroupHeader && 
-        (item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento')
+        item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento'
     ).length;
     
-    // Pegar o primeiro grupo para dados do cliente (assumindo que todos os grupos são do mesmo cliente)
+    // Pegar o primeiro grupo para dados do cliente
     const firstGroup = Object.values(groups)[0];
     const headerData = firstGroup?.header || {};
 
@@ -369,82 +321,82 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                     <Page key={pageIndex} size="A4" style={styles.page}>
                         {/* Cabeçalho - APENAS na primeira página */}
                         {isFirstPage && (
-                            <View style={styles.header}>
-                                <View style={styles.logoSection}>
-                                    <Image 
-                                        src={logo}
-                                        style={styles.logo}
-                                    />
-                                </View>
-                                <View style={styles.reportInfo}>
-                                    {printType === 'internal' && (
-                                        <Text style={styles.internalBadge}>USO INTERNO - CONFIDENCIAL</Text>
-                                    )}
-                                    <Text style={styles.reportTitle}>{title}</Text>
-                                    <Text style={{ fontSize: 8, color: '#666' }}>
-                                        Data: {new Date().toLocaleDateString('pt-BR')}
-                                    </Text>
-                                </View>
-                            </View>
-                        )}
-
-                        {/* Dados do Cliente - APENAS na primeira página */}
-                        {isFirstPage && (
-                            <View style={styles.section}>
-                                <Text style={styles.sectionTitle}>Dados do Cliente</Text>
-                                <View style={styles.clientGrid}>
-                                    <View style={styles.clientItem}>
-                                        <Text style={styles.clientLabel}>Cliente:</Text>
-                                        <Text style={styles.clientValue}>{headerData.client || '---'}</Text>
+                            <>
+                                <View style={styles.header}>
+                                    <View style={styles.logoSection}>
+                                        <Image 
+                                            src={logo}
+                                            style={styles.logo}
+                                        />
                                     </View>
-                                    <View style={styles.clientItem}>
-                                        <Text style={styles.clientLabel}>CNPJ:</Text>
-                                        <Text style={styles.clientValue}>{headerData.cnpj || '---'}</Text>
-                                    </View>
-                                    <View style={styles.clientItem}>
-                                        <Text style={styles.clientLabel}>Contato:</Text>
-                                        <Text style={styles.clientValue}>{headerData.contactPerson || '---'}</Text>
-                                    </View>
-                                    <View style={styles.clientItem}>
-                                        <Text style={styles.clientLabel}>E-mail:</Text>
-                                        <Text style={styles.clientValue}>{headerData.email || '---'}</Text>
-                                    </View>
-                                    <View style={styles.clientItem}>
-                                        <Text style={styles.clientLabel}>Endereço:</Text>
-                                        <Text style={styles.clientValue}>{headerData.address || '---'}</Text>
-                                    </View>
-                                    <View style={styles.clientItem}>
-                                        <Text style={styles.clientLabel}>Atendimento:</Text>
-                                        <Text style={styles.clientValue}>
-                                            {headerData.billingType} {headerData.maintenanceVisit ? `- ${headerData.maintenanceVisit}` : ''}
+                                    <View style={styles.reportInfo}>
+                                        {printType === 'internal' && (
+                                            <Text style={styles.internalBadge}>USO INTERNO - CONFIDENCIAL</Text>
+                                        )}
+                                        <Text style={styles.reportTitle}>{title}</Text>
+                                        <Text style={{ fontSize: 8, color: '#666' }}>
+                                            Data: {new Date().toLocaleDateString('pt-BR')}
                                         </Text>
                                     </View>
                                 </View>
-                            </View>
-                        )}
 
-                        {/* Valor da Proposta - APENAS na primeira página */}
-                        {isFirstPage && budgetItemsCount > 0 && printType === 'client' && (
-                            <View style={styles.valorSection}>
-                                <Text style={styles.bold}>VALOR TOTAL DA PROPOSTA</Text>
-                                <Text style={styles.valorDestaque}>
-                                    {formatMoney(totalBudgetValue)}
-                                </Text>
-                                <Text style={{ marginBottom: 4 }}>
-                                    <Text style={styles.bold}>Itens em orçamento:</Text> {budgetItemsCount}
-                                </Text>
-                                <Text style={{ marginBottom: 4 }}>
-                                    <Text style={styles.bold}>Condições:</Text> {customPaymentConditions ?
-                                        `${customPaymentConditions.paymentCondition}${customPaymentConditions.installments ? ` ${customPaymentConditions.installments}` : ''}` :
-                                        `${headerData.paymentCondition || 'À vista'}${headerData.installments ? ` ${headerData.installments}` : ''}`
-                                    }
-                                </Text>
-                                {customPaymentConditions?.discount5Days && (
-                                    <Text style={{ marginBottom: 4 }}>
-                                        <Text style={styles.bold}>Desconto:</Text> 5% para pagamento em 5 dias
-                                    </Text>
+                                {/* Dados do Cliente - APENAS na primeira página */}
+                                <View style={styles.section}>
+                                    <Text style={styles.sectionTitle}>Dados do Cliente</Text>
+                                    <View style={styles.clientGrid}>
+                                        <View style={styles.clientItem}>
+                                            <Text style={styles.clientLabel}>Cliente:</Text>
+                                            <Text style={styles.clientValue}>{headerData.client || '---'}</Text>
+                                        </View>
+                                        <View style={styles.clientItem}>
+                                            <Text style={styles.clientLabel}>CNPJ:</Text>
+                                            <Text style={styles.clientValue}>{headerData.cnpj || '---'}</Text>
+                                        </View>
+                                        <View style={styles.clientItem}>
+                                            <Text style={styles.clientLabel}>Contato:</Text>
+                                            <Text style={styles.clientValue}>{headerData.contactPerson || '---'}</Text>
+                                        </View>
+                                        <View style={styles.clientItem}>
+                                            <Text style={styles.clientLabel}>E-mail:</Text>
+                                            <Text style={styles.clientValue}>{headerData.email || '---'}</Text>
+                                        </View>
+                                        <View style={styles.clientItem}>
+                                            <Text style={styles.clientLabel}>Endereço:</Text>
+                                            <Text style={styles.clientValue}>{headerData.address || '---'}</Text>
+                                        </View>
+                                        <View style={styles.clientItem}>
+                                            <Text style={styles.clientLabel}>Atendimento:</Text>
+                                            <Text style={styles.clientValue}>
+                                                {headerData.billingType} {headerData.maintenanceVisit ? `- ${headerData.maintenanceVisit}` : ''}
+                                            </Text>
+                                        </View>
+                                    </View>
+                                </View>
+
+                                {/* Valor da Proposta - APENAS na primeira página */}
+                                {budgetItemsCount > 0 && printType === 'client' && (
+                                    <View style={styles.valorSection}>
+                                        <Text style={styles.bold}>VALOR TOTAL DA PROPOSTA</Text>
+                                        <Text style={styles.valorDestaque}>
+                                            {formatMoney(totalBudgetValue)}
+                                        </Text>
+                                        <Text style={{ marginBottom: 4 }}>
+                                            <Text style={styles.bold}>Itens em orçamento:</Text> {budgetItemsCount}
+                                        </Text>
+                                        <Text style={{ marginBottom: 4 }}>
+                                            <Text style={styles.bold}>Condições:</Text> {customPaymentConditions ?
+                                                `${customPaymentConditions.paymentCondition}${customPaymentConditions.installments ? ` ${customPaymentConditions.installments}` : ''}` :
+                                                `${headerData.paymentCondition || 'À vista'}${headerData.installments ? ` ${headerData.installments}` : ''}`
+                                            }
+                                        </Text>
+                                        {customPaymentConditions?.discount5Days && (
+                                            <Text style={{ marginBottom: 4 }}>
+                                                <Text style={styles.bold}>Desconto:</Text> 5% para pagamento em 5 dias
+                                            </Text>
+                                        )}
+                                    </View>
                                 )}
-                            </View>
+                            </>
                         )}
 
                         {/* Equipamentos */}
@@ -470,16 +422,6 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                                 </View>
 
                                 {pageItems.map((item, index) => {
-                                    // Se for header de grupo, mostra separador
-                                    if (item.isGroupHeader) {
-                                        return (
-                                            <View key={`group-${item.groupIndex}`} style={[styles.tableRow, { backgroundColor: '#f8fafc', paddingVertical: 4 }]}>
-                                                <View style={[styles.tableCell, { width: '100%' }]}>
-                                                </View>
-                                            </View>
-                                        );
-                                    }
-
                                     const defects = item.defect ? item.defect.split('\n').filter(d => d.trim()) : [];
                                     const solutions = item.solution ? item.solution.split('\n').filter(s => s.trim()) : [];
                                     const observation = item.equipmentObservation || '';
@@ -537,12 +479,10 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                             </View>
                         </View>
 
-                        {/* Espaçamento extra para última página se tiver poucos itens */}
-                        {isLastPage && pageItems.filter(item => !item.isGroupHeader).length <= 8 && (
-                            <View style={styles.singlePageSpacing} />
-                        )}
+                        {/* Espaço flexível para empurrar o rodapé para baixo na última página */}
+                        {isLastPage && <View style={styles.spacer} />}
 
-                        {/* Rodapé (assinaturas + empresa) - APENAS na última página */}
+                        {/* Rodapé com assinaturas - APENAS na última página */}
                         {isLastPage && (
                             <View style={styles.footerArea}>
                                 <View style={styles.signatureArea}>
@@ -560,6 +500,7 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                                         <View style={{ height: 60, marginBottom: 5 }} />
                                         <View style={styles.signatureLine} />
                                         <Text style={styles.signatureText}>Cliente / Recebedor</Text>
+                                        <Text style={{ fontSize: 8, color: '#999' }}>Nome e assinatura</Text>
                                     </View>
                                 </View>
 
@@ -572,9 +513,9 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                         )}
 
                         {/* Contador de páginas - Em todas as páginas */}
-                        <Text style={styles.pageCounter} render={({ pageNumber, totalPages }) => (
-                            `Página ${pageNumber} de ${totalPages}`
-                        )} fixed />
+                        <Text style={styles.pageCounter}>
+                            Página {pageIndex + 1} de {totalPages}
+                        </Text>
                     </Page>
                 );
             })}

@@ -2860,8 +2860,9 @@ export default function MainApp() {
                     )}
                 </nav>
 
-                <div className="flex flex-col border-t border-slate-800">
-                    <div className="flex items-center justify-between p-4">
+                <div className="flex flex-col border-t border-slate-800 mt-auto">
+                    {/* Container dos botões - muda o layout baseado no estado da sidebar */}
+                    <div className={`${isSidebarOpen ? 'flex justify-between items-center p-4' : 'flex flex-col items-center p-2 space-y-2'}`}>
                         <button
                             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
                             className="text-slate-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-slate-800 lg:flex hidden"
@@ -2869,6 +2870,17 @@ export default function MainApp() {
                         >
                             <ChevronRight className={`transition-transform duration-300 ${isSidebarOpen ? 'rotate-180' : ''}`} size={20} />
                         </button>
+
+                        {/* Botão para ocultar/mostrar valores - VISÍVEL APENAS PARA ADMIN */}
+                        {userData?.role !== 'client' && (
+                            <button
+                                onClick={() => setShowValues(!showValues)}
+                                className="text-slate-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-slate-800"
+                                title={!isSidebarOpen ? (showValues ? "Ocultar Valores" : "Mostrar Valores") : ""}
+                            >
+                                {showValues ? <Eye size={20} /> : <EyeOff size={20} />}
+                            </button>
+                        )}
 
                         <button
                             onClick={handleLogout}
