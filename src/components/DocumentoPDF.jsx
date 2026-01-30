@@ -10,7 +10,7 @@ import {
 
 // Importar imagens localmente
 import logo from '../assets/logo.png';
-import assinatura from '../assets/assinatura.jpeg';
+import assinatura from '../assets/assinatura.jpg';
 
 // Não use fontes externas - apenas fontes padrão do PDF
 const styles = StyleSheet.create({
