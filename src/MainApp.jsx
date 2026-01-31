@@ -752,7 +752,7 @@ export default function MainApp() {
 
     // === ESTADO PARA MODAL DE PAGAMENTO ===
     const [paymentModalData, setPaymentModalData] = useState({
-        totalOriginalValue: 0, 
+        totalOriginalValue: 0,
         paymentCondition: 'À vista',
         installments: '',
         discount5Days: false,
@@ -2255,32 +2255,32 @@ export default function MainApp() {
     };
 
     const handleConfirmPrintWithPayment = (paymentData) => {
-    const selectedData = ordersForUser.filter(o => selectedOrders.includes(o.firestoreId));
+        const selectedData = ordersForUser.filter(o => selectedOrders.includes(o.firestoreId));
 
-    const updatePromises = selectedData.map(async (os) => {
-        try {
-            // Manter o chargedAmount original e calcular o finalChargedAmount baseado nas novas condições
-            let finalChargedAmount = parseCurrency(os.chargedAmount);
-            if (paymentData.discount5Days && paymentData.paymentCondition === 'Boleto') {
-                finalChargedAmount = parseCurrency(os.chargedAmount) * 0.95;
+        const updatePromises = selectedData.map(async (os) => {
+            try {
+                // Manter o chargedAmount original e calcular o finalChargedAmount baseado nas novas condições
+                let finalChargedAmount = parseCurrency(os.chargedAmount);
+                if (paymentData.discount5Days && paymentData.paymentCondition === 'Boleto') {
+                    finalChargedAmount = parseCurrency(os.chargedAmount) * 0.95;
+                }
+
+                await updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', os.firestoreId), {
+                    paymentCondition: paymentData.paymentCondition,
+                    installments: paymentData.installments,
+                    discount5Days: paymentData.discount5Days,
+                    finalChargedAmount: finalChargedAmount
+                });
+            } catch (error) {
+                console.error('Erro ao atualizar condições de pagamento:', error);
             }
+        });
 
-            await updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', os.firestoreId), {
-                paymentCondition: paymentData.paymentCondition,
-                installments: paymentData.installments,
-                discount5Days: paymentData.discount5Days,
-                finalChargedAmount: finalChargedAmount
-            });
-        } catch (error) {
-            console.error('Erro ao atualizar condições de pagamento:', error);
-        }
-    });
-
-    Promise.all(updatePromises).then(() => {
-        setIsPaymentModalOpen(false);
-        handlePrint('client', paymentData);
-    });
-};
+        Promise.all(updatePromises).then(() => {
+            setIsPaymentModalOpen(false);
+            handlePrint('client', paymentData);
+        });
+    };
 
     const handlePrint = async (printType, customPaymentConditions = null) => {
         const selectedData = ordersForUser.filter(o => selectedOrders.includes(o.firestoreId));
@@ -3131,7 +3131,7 @@ export default function MainApp() {
                                     </button>
 
                                     {showRangeInput && (
-                                        <div className="absolute top-full right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-slate-100 p-4 w-80 animate-in slide-in-from-top-2 z-50">
+                                        <div className="fixed inset-x-4 top-20 sm:absolute sm:inset-x-auto sm:top-full sm:right-0 sm:mt-2 bg-white rounded-2xl shadow-2xl border border-slate-100 p-4 w-auto sm:w-80 animate-in slide-in-from-top-2 z-50    max-h-[80vh] overflow-y-auto">
                                             <div className="space-y-3">
                                                 <div className="flex items-center justify-between">
                                                     <h4 className="text-sm font-bold text-slate-700">Seleção por Intervalo</h4>
