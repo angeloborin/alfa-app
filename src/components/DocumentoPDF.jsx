@@ -6,11 +6,27 @@ import {
     Text,
     StyleSheet,
     Image,
+    Font,
 } from '@react-pdf/renderer';
 
 // Importar imagens localmente
 import logo from '../assets/logo.png';
 import assinatura from '../assets/assinatura.jpg';
+
+// Registrar fontes (opcional, mas ajuda a evitar problemas)
+try {
+    Font.register({
+        family: 'Helvetica',
+        fonts: [
+            { src: 'https://cdnjs.cloudflare.com/ajax/libs/ink/3.1.10/fonts/Roboto/roboto-light-webfont.ttf', fontWeight: 300 },
+            { src: 'https://cdnjs.cloudflare.com/ajax/libs/ink/3.1.10/fonts/Roboto/roboto-regular-webfont.ttf', fontWeight: 400 },
+            { src: 'https://cdnjs.cloudflare.com/ajax/libs/ink/3.1.10/fonts/Roboto/roboto-medium-webfont.ttf', fontWeight: 500 },
+            { src: 'https://cdnjs.cloudflare.com/ajax/libs/ink/3.1.10/fonts/Roboto/roboto-bold-webfont.ttf', fontWeight: 700 },
+        ],
+    });
+} catch (e) {
+    console.log('Font registration failed:', e);
+}
 
 const styles = StyleSheet.create({
     page: {
@@ -43,7 +59,7 @@ const styles = StyleSheet.create({
     },
     reportTitle: {
         fontSize: 12,
-        fontFamily: 'Helvetica-Bold',
+        fontWeight: 'bold',
         color: '#333',
         marginBottom: 4,
         textTransform: 'uppercase',
@@ -54,7 +70,7 @@ const styles = StyleSheet.create({
         padding: '2 6',
         fontSize: 8,
         borderRadius: 3,
-        fontFamily: 'Helvetica-Bold',
+        fontWeight: 'bold',
         marginBottom: 5,
     },
     section: {
@@ -64,7 +80,7 @@ const styles = StyleSheet.create({
         backgroundColor: '#f1f5f9',
         padding: '5 10',
         fontSize: 9,
-        fontFamily: 'Helvetica-Bold',
+        fontWeight: 'bold',
         marginBottom: 8,
         color: '#1e40af',
         borderLeftWidth: 4,
@@ -81,7 +97,7 @@ const styles = StyleSheet.create({
         marginBottom: 6,
     },
     clientLabel: {
-        fontFamily: 'Helvetica-Bold',
+        fontWeight: 'bold',
         fontSize: 8,
         color: '#666',
     },
@@ -111,19 +127,17 @@ const styles = StyleSheet.create({
         fontSize: 8,
         verticalAlign: 'top',
     },
-    // Ajustando larguras para acomodar nova coluna de valor
-    cell8: { width: '8%' },    // OS (reduzida)
-    cell22: { width: '22%' },  // Equipamento (reduzida)
-    cell18: { width: '18%' },  // Defeito (reduzida)
-    cell18w: { width: '18%' }, // Solução (reduzida)
-    cell16: { width: '16%' },  // Observações (reduzida)
-    cell18v: { width: '18%' }, // Valor (nova coluna)
+    cell8: { width: '8%' },
+    cell22: { width: '22%' },
+    cell18: { width: '18%' },
+    cell18w: { width: '18%' },
+    cell16: { width: '16%' },
+    cell18v: { width: '18%' },
     osTag: {
-        fontFamily: 'Helvetica-Bold',
+        fontWeight: 'bold',
         color: '#1a56db',
         fontSize: 8,
     },
-    // Área de rodapé
     footerArea: {
         position: 'absolute',
         bottom: 40,
@@ -161,7 +175,7 @@ const styles = StyleSheet.create({
     },
     signatureText: {
         fontSize: 9,
-        fontFamily: 'Helvetica-Bold',
+        fontWeight: 'bold',
         marginTop: 2,
     },
     companyFooter: {
@@ -185,13 +199,13 @@ const styles = StyleSheet.create({
     },
     valorDestaque: {
         fontSize: 14,
-        fontFamily: 'Helvetica-Bold',
+        fontWeight: 'bold',
         color: '#166534',
         textAlign: 'center',
         marginVertical: 8,
     },
     bold: {
-        fontFamily: 'Helvetica-Bold',
+        fontWeight: 'bold',
     },
     observationBox: {
         backgroundColor: '#f8fafc',
@@ -211,13 +225,10 @@ const styles = StyleSheet.create({
         right: 25,
         fontSize: 8,
         color: '#666',
-        fontFamily: 'Helvetica',
     },
-    // Espaçamento flexível
     spacer: {
         flexGrow: 1,
     },
-    // NOVOS ESTILOS PARA ORÇAMENTO
     orcamentoInfo: {
         marginTop: 15,
         padding: 10,
@@ -230,7 +241,7 @@ const styles = StyleSheet.create({
     },
     orcamentoTitulo: {
         fontSize: 9,
-        fontFamily: 'Helvetica-Bold',
+        fontWeight: 'bold',
         color: '#0369a1',
         marginBottom: 6,
     },
@@ -249,7 +260,7 @@ const styles = StyleSheet.create({
         borderTopColor: '#cbd5e1',
         borderTopStyle: 'solid',
         fontSize: 9,
-        fontFamily: 'Helvetica-Bold',
+        fontWeight: 'bold',
         color: '#166534',
     },
     termosSection: {
@@ -264,7 +275,7 @@ const styles = StyleSheet.create({
     },
     termoTitulo: {
         fontSize: 9,
-        fontFamily: 'Helvetica-Bold',
+        fontWeight: 'bold',
         color: '#475569',
         marginBottom: 4,
     },
@@ -276,16 +287,30 @@ const styles = StyleSheet.create({
     },
     valorCell: {
         fontSize: 8,
-        fontFamily: 'Helvetica-Bold',
+        fontWeight: 'bold',
         color: '#166534',
         textAlign: 'right',
     },
     totalOrcamento: {
         fontSize: 10,
-        fontFamily: 'Helvetica-Bold',
+        fontWeight: 'bold',
         color: '#166534',
         marginTop: 5,
         textAlign: 'center',
+    },
+    // Novo estilo para texto em itálico
+    italicText: {
+        fontStyle: 'italic',
+    },
+    // Estilo para o texto de desconto
+    discountText: {
+        fontSize: 6,
+        color: '#059669',
+        fontStyle: 'italic',
+    },
+    boldGreen: {
+        fontWeight: 'bold',
+        color: '#059669',
     },
 });
 
@@ -310,10 +335,12 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
             )
         );
 
-    // Calcular total de orçamentos
-    const calculateTotalBudget = () => {
+    // Calcular totais original e final (COM e SEM desconto)
+    const calculateTotals = () => {
         const groupsArray = Object.values(groups);
-        let total = 0;
+        let totalOriginal = 0;
+        let totalFinal = 0;
+        let hasDiscount = false;
 
         groupsArray.forEach(group => {
             const budgetItems = group.items.filter(item =>
@@ -321,15 +348,24 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
             );
 
             budgetItems.forEach(item => {
-                const valor = item.finalChargedAmount ?
-                    parseCurrency(item.finalChargedAmount) :
-                    parseCurrency(item.chargedAmount);
-                total += valor;
+                const original = parseCurrency(item.chargedAmount);
+                const final = item.finalChargedAmount ? 
+                    parseCurrency(item.finalChargedAmount) : 
+                    original;
+                
+                totalOriginal += original;
+                totalFinal += final;
+                
+                if (item.discount5Days) {
+                    hasDiscount = true;
+                }
             });
         });
 
-        return total;
+        return { totalOriginal, totalFinal, hasDiscount };
     };
+
+    const { totalOriginal, totalFinal, hasDiscount } = calculateTotals();
 
     // Preparar todos os itens
     const prepareAllItems = () => {
@@ -337,7 +373,6 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
         let allItems = [];
 
         groupsArray.forEach((group, groupIndex) => {
-            // Adiciona os itens do grupo
             group.items.forEach(item => {
                 allItems.push({
                     ...item,
@@ -379,25 +414,19 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
     };
 
     const allItems = prepareAllItems();
-    const totalBudgetValue = calculateTotalBudget();
     const pages = distributeItems(allItems);
     const totalPages = pages.length;
-
-    // Contar itens orçados
-    const budgetItemsCount = allItems.filter(item =>
-        item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento'
-    ).length;
 
     // Pegar o primeiro grupo para dados do cliente
     const firstGroup = Object.values(groups)[0];
     const headerData = firstGroup?.header || {};
 
-    // Pegar informações do primeiro item em orçamento para prazo de entrega
+    // Pegar informações do primeiro item em orçamento
     const primeiroItemOrcamento = allItems.find(item =>
         item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento'
     );
 
-    // Determinar condições de pagamento
+    // Determinar condições de pagamento do modal OU do primeiro item
     const paymentCondition = customPaymentConditions?.paymentCondition ||
         primeiroItemOrcamento?.paymentCondition ||
         'À vista';
@@ -405,10 +434,6 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
     const installments = customPaymentConditions?.installments ||
         primeiroItemOrcamento?.installments ||
         '';
-
-    const discount5Days = customPaymentConditions?.discount5Days ||
-        primeiroItemOrcamento?.discount5Days ||
-        false;
 
     return (
         <Document>
@@ -507,10 +532,10 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                                     const solutions = item.solution ? item.solution.split('\n').filter(s => s.trim()) : [];
                                     const observation = item.equipmentObservation || '';
 
-                                    // Calcular valor para este item (apenas para orçamentos)
-                                    const valorItem = (isOrcamento && printType === 'client') ?
-                                        (item.finalChargedAmount ? parseCurrency(item.finalChargedAmount) : parseCurrency(item.chargedAmount)) :
-                                        0;
+                                    // Usar o finalChargedAmount (já com desconto) se existir
+                                    const valorItem = item.finalChargedAmount ? 
+                                        parseCurrency(item.finalChargedAmount) : 
+                                        parseCurrency(item.chargedAmount);
 
                                     const isBudgetItem = item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento';
 
@@ -568,9 +593,14 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                                                     {isBudgetItem ? (
                                                         <Text style={styles.valorCell}>
                                                             {formatMoney(valorItem)}
+                                                            {item.discount5Days && (
+                                                                <Text style={styles.discountText}>
+                                                                    {' '}(com 5% desc.)
+                                                                </Text>
+                                                            )}
                                                         </Text>
                                                     ) : (
-                                                        <Text style={{ fontSize: 7, color: '#999', fontStyle: 'italic' }}>
+                                                        <Text style={[styles.italicText, { fontSize: 7, color: '#999' }]}>
                                                             Não orçado
                                                         </Text>
                                                     )}
@@ -585,7 +615,6 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                         {/* Seção de termos e condições (APENAS na última página para orçamentos) */}
                         {isLastPage && isOrcamento && printType === 'client' && (
                             <View style={styles.termosSection}>
-
                                 <Text style={styles.termoTitulo}>Garantia:</Text>
                                 <Text style={styles.termoTexto}>
                                     3 meses. Não está coberto por garantia os danos causados por uso inadequado, queda ou choque mecânico, acondicionamento inadequado e/ou acondicionamento fora dos padrões recomendados pelo fabricante.
@@ -601,14 +630,59 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
 
                                 <Text style={styles.termoTitulo}>Condições de pagamento:</Text>
                                 <Text style={styles.termoTexto}>
-                                    {paymentCondition === 'À vista' ? 'Pagamento à vista.' : ''}
-                                    {paymentCondition === 'Boleto' ? `Pagamento via boleto bancário${installments ? ` em ${installments}` : ''}.` : ''}
-                                    {paymentCondition === 'Cartão' ? `Pagamento via cartão de crédito em ${installments || '1x'}.` : ''}
-                                    {discount5Days ? ' Desconto de 5% para pagamento em até 5 dias úteis.' : ''}
+                                    {/* À vista */}
+                                    {paymentCondition === 'À vista' && 
+                                        `Pagamento à vista = ${formatMoney(totalFinal)}.`
+                                    }
+
+                                    {/* Boleto */}
+                                    {paymentCondition === 'Boleto' && (
+                                        <>
+                                            {installments === "5 dias (5% de desconto)" ? (
+                                                <Text>
+                                                    Boleto bancário em 5 dias = {formatMoney(totalFinal)}{' '}
+                                            
+                                                    {hasDiscount && (
+                                                        <Text>
+                                                            {'\n'}Valor original: {formatMoney(totalOriginal)}
+                                                        </Text>
+                                                    )}
+                                                </Text>
+                                            ) : installments === "30 / 60 dias" ? (
+                                                <Text>
+                                                    Boleto bancário em 30/60 dias = {formatMoney(totalFinal)}.
+                                                    {'\n'}
+                                                    Boleto bancário em 5 dias = {formatMoney(totalOriginal * 0.95)}{' '}
+                                                    <Text style={styles.boldGreen}>
+                                                        (com 5% de desconto)
+                                                    </Text>
+                                                </Text>
+                                            ) : installments ? (
+                                                <Text>
+                                                    Pagamento via boleto bancário em {installments} = {formatMoney(totalFinal)}.
+                                                    
+                                                </Text>
+                                            ) : (
+                                                <Text>
+                                                    Pagamento via boleto bancário = {formatMoney(totalFinal)}.
+                                                    
+                                                </Text>
+                                            )}
+                                        </>
+                                    )}
+
+                                    {/* Cartão */}
+                                    {paymentCondition === 'Cartão' && (
+                                        <Text>
+                                            Pagamento via cartão de crédito em {installments || '1x (30 Dias)'} = {formatMoney(totalFinal)}.
+                                            
+                                        </Text>
+                                    )}
                                 </Text>
 
                                 <Text style={styles.totalOrcamento}>
-                                    VALOR TOTAL: {formatMoney(totalBudgetValue)}
+                                    VALOR TOTAL: {formatMoney(totalFinal)}
+                                    
                                 </Text>
                             </View>
                         )}
