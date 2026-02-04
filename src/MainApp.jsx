@@ -11,7 +11,7 @@ import {
     ArrowUpRight, ArrowDownRight, Percent, FileSignature,
     CheckSquare, CalendarDays, Receipt, Eye, EyeOff, Shield, LogOut,
     ArrowDownWideNarrow, ArrowUpNarrowWide, Check, ArrowRight,
-    FileText, Upload, Image as ImageIcon, Camera
+    FileText, Upload, Image as ImageIcon, Camera, MoreVertical
 } from 'lucide-react';
 import {
     collection, addDoc, updateDoc, deleteDoc,
@@ -608,24 +608,24 @@ const PaymentConditionsModal = ({
 
                 <div className="space-y-4">
                     <div className="space-y-2">
-    <label className="text-xs font-bold text-slate-400 uppercase">Valor Original</label>
-    <div className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-2xl text-slate-800 text-center">
-        R$ {paymentData.originalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-    </div>
-    
-    {/* ADICIONE ESTE BLOCO PARA MOSTRAR O VALOR COM DESCONTO */}
-    {paymentData.finalChargedAmount !== paymentData.originalValue && (
-        <div className="mt-4 space-y-2 animate-in fade-in">
-            <label className="text-xs font-bold text-green-600 uppercase">Valor com Desconto (5%)</label>
-            <div className="w-full p-4 bg-green-50 border-2 border-green-200 rounded-2xl font-black text-2xl text-green-800 text-center">
-                R$ {paymentData.finalChargedAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                <div className="text-sm text-green-600 font-bold mt-2">
-                    ✓ Desconto de 5% aplicado
-                </div>
-            </div>
-        </div>
-    )}
-</div>
+                        <label className="text-xs font-bold text-slate-400 uppercase">Valor Original</label>
+                        <div className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-2xl text-slate-800 text-center">
+                            R$ {paymentData.originalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </div>
+
+                        {/* ADICIONE ESTE BLOCO PARA MOSTRAR O VALOR COM DESCONTO */}
+                        {paymentData.finalChargedAmount !== paymentData.originalValue && (
+                            <div className="mt-4 space-y-2 animate-in fade-in">
+                                <label className="text-xs font-bold text-green-600 uppercase">Valor com Desconto (5%)</label>
+                                <div className="w-full p-4 bg-green-50 border-2 border-green-200 rounded-2xl font-black text-2xl text-green-800 text-center">
+                                    R$ {paymentData.finalChargedAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    <div className="text-sm text-green-600 font-bold mt-2">
+                                        ✓ Desconto de 5% aplicado
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
 
                     <div className="space-y-2">
                         <label className="text-xs font-bold text-slate-400 uppercase">Condição de Pagamento</label>
@@ -702,6 +702,82 @@ const PaymentConditionsModal = ({
     );
 };
 
+// Adicione este componente antes da função MainApp
+const OrderActionsDropdown = ({ order, openModal, openViewModal, confirmDelete, userData, hasPermission, isOpen, onOpenChange }) => {
+    const dropdownRef = useRef(null);
+
+    useOutsideClick(dropdownRef, () => {
+        if (isOpen) {
+            onOpenChange(null);
+        }
+    });
+
+    return (
+        <div className="relative" ref={dropdownRef}>
+            <button
+                onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenChange(isOpen ? null : order.firestoreId);
+                }}
+                className="p-2.5 bg-white border shadow-sm hover:bg-slate-50 rounded-xl transition-all"
+                title="Ações"
+            >
+                <MoreVertical size={18} />
+            </button>
+
+            {isOpen && (
+                <div className="absolute right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-50 min-w-[140px] animate-in fade-in slide-in-from-top-2">
+                    {/* Item: Exibir */}
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenChange(null);
+                            openViewModal(order);
+                        }}
+                        className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors text-sm font-medium"
+                    >
+                        <Eye size={18} />
+                        Exibir
+                    </button>
+
+                    {/* Itens apenas para ADMIN */}
+                    {userData?.role !== 'client' && (
+                        <>
+                            {/* Item: Editar OS */}
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onOpenChange(null);
+                                    openModal(order);
+                                }}
+                                className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors text-sm font-medium"
+                            >
+                                <Edit2 size={18} />
+                                Editar
+                            </button>
+
+                            {/* Item: Excluir (apenas para quem tem permissão) */}
+                            {hasPermission('canDeleteOS') && (
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onOpenChange(null);
+                                        confirmDelete(order);
+                                    }}
+                                    className="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 transition-colors text-sm font-medium"
+                                >
+                                    <Trash2 size={18} />
+                                    Excluir
+                                </button>
+                            )}
+                        </>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
+
 export default function MainApp() {
     // === AUTENTICAÇÃO ===
     const { user, userData, loading: authLoading, hasPermission, logout } = useAuth();
@@ -712,6 +788,8 @@ export default function MainApp() {
     const moveModalRef = useRef(null);
     const searchDropdownRef = useRef(null);
     const statusSearchDropdownRef = useRef(null);
+    const [dropdownOpen, setDropdownOpen] = useState(null);
+    const [isViewMode, setIsViewMode] = useState(false);
 
     const [selectedMonth, setSelectedMonth] = useState('');
     const [selectedYear, setSelectedYear] = useState('');
@@ -1650,8 +1728,6 @@ export default function MainApp() {
         }
     };
 
-
-
     const openModal = (order = null) => {
         setTempSolution('');
         setTempCost('');
@@ -1659,6 +1735,7 @@ export default function MainApp() {
         setTempManualSolution('');
         setTempBenchRepair('');
         setIsFinancialOpen(false);
+        setIsViewMode(false);
 
         setShowClientSuggestions(false);
         setShowDefectSuggestions(false);
@@ -1734,6 +1811,44 @@ export default function MainApp() {
             });
         }
         setIsModalOpen(true);
+    };
+
+    const openViewModal = (order) => {
+        setTempSolution('');
+        setTempCost('');
+        setTempDefect('');
+        setTempManualSolution('');
+        setTempBenchRepair('');
+        setIsFinancialOpen(false);
+
+        let deliveryDeadlineValue = '';
+        if (order.deliveryDeadline) {
+            const match = order.deliveryDeadline.match(/^(\d+)/);
+            if (match) {
+                deliveryDeadlineValue = match[1];
+            }
+        }
+
+        setFormData({
+            ...order,
+            equipmentObservation: order.equipmentObservation || '',
+            quantity: order.quantity || '1',
+            solutionsList: order.solutionsList || [],
+            defectsList: order.defectsList || (order.defect ? [order.defect] : []),
+            manualSolutionsList: order.manualSolutionsList || [],
+            benchRepairList: order.benchRepairList || [],
+            statusDate: order.statusDate || new Date().toISOString().split('T')[0],
+            statusHistory: order.statusHistory || [],
+            deliveryDeadline: deliveryDeadlineValue,
+            discount5Days: order.discount5Days || false,
+            discountAmount: order.discountAmount || 0,
+            finalChargedAmount: order.finalChargedAmount || parseCurrency(order.chargedAmount),
+            photos: order.photos || []
+        });
+
+        setEditingOrder(order);
+        setIsModalOpen(true);
+        setIsViewMode(true);
     };
 
     const handleClientSelect = (clientData) => {
@@ -2589,6 +2704,24 @@ export default function MainApp() {
         }
     };
 
+    const getFieldClasses = (isViewMode, hasError = false) => {
+        const base = "w-full p-4 rounded-2xl outline-none font-bold";
+        const viewModeClass = isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-white';
+        const borderClass = hasError ? 'border-red-500' : 'border-slate-200';
+        const focusClass = isViewMode ? '' : 'focus:ring-4 focus:ring-blue-500/10';
+
+        return `${base} ${viewModeClass} border ${borderClass} ${focusClass} transition-all`;
+    };
+
+    // Adicione após as outras funções auxiliares
+    const getInputClasses = (fieldName) => {
+        const baseClass = "w-full p-4 bg-white border rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-bold";
+        const errorClass = fieldErrors[fieldName] ? 'border-red-500' : 'border-slate-200';
+        const viewModeClass = isViewMode ? 'bg-slate-50 cursor-not-allowed' : '';
+
+        return `${baseClass} ${errorClass} ${viewModeClass}`;
+    };
+
     const handleModalPrint = async (printType) => {
         const printData = prepareDataForSave();
         const isBudgetStage = printData.status === 'Em orçamento' ||
@@ -3439,25 +3572,17 @@ export default function MainApp() {
                                                         </div>
                                                     </td>
                                                     <td className="px-8 py-6 text-right">
-                                                        <div className="flex justify-end gap-2">
-                                                            {userData?.role !== 'client' && (
-                                                                <button
-                                                                    onClick={() => openModal(o)}
-                                                                    className="p-3 bg-white border shadow-sm hover:bg-blue-600 hover:text-white rounded-xl transition-all"
-                                                                    title="Editar OS"
-                                                                >
-                                                                    <Edit2 size={18} />
-                                                                </button>
-                                                            )}
-                                                            {userData?.role !== 'client' && hasPermission('canDeleteOS') && (
-                                                                <button
-                                                                    onClick={() => confirmDelete(o)}
-                                                                    className="p-3 bg-white border shadow-sm hover:bg-red-600 hover:text-white rounded-xl transition-all"
-                                                                    title="Excluir OS"
-                                                                >
-                                                                    <Trash2 size={18} />
-                                                                </button>
-                                                            )}
+                                                        <div className="flex justify-end">
+                                                            <OrderActionsDropdown
+                                                                order={o}
+                                                                openModal={openModal}
+                                                                openViewModal={openViewModal}
+                                                                confirmDelete={confirmDelete}
+                                                                userData={userData}
+                                                                hasPermission={hasPermission}
+                                                                isOpen={dropdownOpen === o.firestoreId}
+                                                                onOpenChange={(id) => setDropdownOpen(id)}
+                                                            />
                                                         </div>
                                                     </td>
                                                 </tr>
@@ -3848,13 +3973,15 @@ export default function MainApp() {
                                                                 {formattedDate}
                                                             </div>
                                                         </div>
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); openModal(o); }}
-                                                            className="p-2 -mr-1 mt-0.5 text-slate-400 hover:text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
-                                                            title="Abrir Detalhes da OS"
-                                                        >
-                                                            <ExternalLink size={18} />
-                                                        </button>
+                                                        {userData?.role !== 'client' && (
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); openModal(o); }}
+                                                                className="p-2 -mr-1 mt-0.5 text-slate-400 hover:text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
+                                                                title="Abrir Detalhes da OS"
+                                                            >
+                                                                <ExternalLink size={18} />
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 </div>
                                             );
@@ -4155,29 +4282,47 @@ export default function MainApp() {
             {isModalOpen && (
                 <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
                     <div className="bg-white rounded-[2.5rem] w-full max-w-5xl my-auto shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-200">
-                        <form onSubmit={handleSubmit} className="p-6 md:p-10 space-y-10">
+                        <form onSubmit={isViewMode ? (e) => { e.preventDefault(); } : handleSubmit} className="p-6 md:p-10 space-y-10">
                             <div className="flex justify-between items-center border-b pb-6">
-                                <div><h2 className="text-3xl font-black text-slate-900 tracking-tight">OS {formData.osNumber}</h2><p className="text-slate-500 text-sm font-medium">Relatório de Atendimento Técnico</p></div>
-                                <button type="button" onClick={() => setIsModalOpen(false)} className="p-3 hover:bg-slate-100 rounded-full text-slate-400 transition-colors"><X /></button>
+                                <div>
+                                    <h2 className="text-3xl font-black text-slate-900 tracking-tight">
+                                        {isViewMode ? 'Visualizar OS' : editingOrder ? 'Editar OS' : 'Nova OS'} {formData.osNumber}
+                                    </h2>
+                                    <p className="text-slate-500 text-sm font-medium">
+                                        {isViewMode ? 'Apenas visualização - Dados não editáveis' : 'Relatório de Atendimento Técnico'}
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsModalOpen(false)}
+                                    className="p-3 hover:bg-slate-100 rounded-full text-slate-400 transition-colors"
+                                >
+                                    <X size={24} />
+                                </button>
                             </div>
+
                             <div className="space-y-10">
+                                {/* SEÇÃO CLIENTE */}
                                 <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-8">
                                     <div className="space-y-4">
-                                        <div className="flex items-center gap-2 text-blue-600 font-bold uppercase text-xs tracking-widest"><User size={16} /> Cliente</div>
+                                        <div className="flex items-center gap-2 text-blue-600 font-bold uppercase text-xs tracking-widest">
+                                            <User size={16} /> Cliente
+                                        </div>
                                         <div className="relative">
                                             <input
                                                 placeholder="Nome da Empresa"
-                                                className={`w-full p-4 bg-white border ${fieldErrors.client ? 'border-red-500' : 'border-slate-200'} rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-bold`}
+                                                className={`w-full p-4 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-white'} border ${fieldErrors.client ? 'border-red-500' : 'border-slate-200'} rounded-2xl outline-none ${isViewMode ? '' : 'focus:ring-4 focus:ring-blue-500/10'} transition-all font-bold`}
                                                 value={formData.client}
-                                                onChange={e => {
+                                                onChange={isViewMode ? undefined : (e => {
                                                     setFormData({ ...formData, client: e.target.value });
                                                     setShowClientSuggestions(true);
                                                     if (fieldErrors.client) setFieldErrors(prev => ({ ...prev, client: false }));
-                                                }}
-                                                onFocus={() => setShowClientSuggestions(true)}
-                                                onBlur={() => setTimeout(() => setShowClientSuggestions(false), 200)}
+                                                })}
+                                                onFocus={isViewMode ? undefined : () => setShowClientSuggestions(true)}
+                                                onBlur={isViewMode ? undefined : () => setTimeout(() => setShowClientSuggestions(false), 200)}
+                                                readOnly={isViewMode}
                                             />
-                                            {showClientSuggestions && formData.client && (
+                                            {showClientSuggestions && formData.client && !isViewMode && (
                                                 <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-60 overflow-y-auto animate-in slide-in-from-top-2">
                                                     {uniqueClients.filter(c => c.client.toLowerCase().includes(formData.client.toLowerCase())).slice(0, 5).map((c, idx) => (
                                                         <div key={idx} className="p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 flex flex-col" onMouseDown={(e) => { e.preventDefault(); handleClientSelect(c); }}>
@@ -4187,216 +4332,142 @@ export default function MainApp() {
                                                     ))}
                                                 </div>
                                             )}
-                                            {fieldErrors.client && <p className="text-red-500 text-xs mt-1 ml-4">Cliente é obrigatório</p>}
+                                            {fieldErrors.client && !isViewMode && <p className="text-red-500 text-xs mt-1 ml-4">Cliente é obrigatório</p>}
                                         </div>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             <input
                                                 placeholder="CNPJ"
-                                                className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-bold"
+                                                className={`w-full p-4 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-white'} border border-slate-200 rounded-2xl outline-none ${isViewMode ? '' : 'focus:ring-4 focus:ring-blue-500/10'} transition-all font-bold`}
                                                 value={formData.cnpj}
-                                                onChange={e => setFormData({ ...formData, cnpj: e.target.value })}
+                                                onChange={isViewMode ? undefined : (e => setFormData({ ...formData, cnpj: e.target.value }))}
+                                                readOnly={isViewMode}
                                             />
                                             <input
                                                 placeholder="Responsável"
-                                                className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-bold"
+                                                className={`w-full p-4 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-white'} border border-slate-200 rounded-2xl outline-none ${isViewMode ? '' : 'focus:ring-4 focus:ring-blue-500/10'} transition-all font-bold`}
                                                 value={formData.contactPerson}
-                                                onChange={e => setFormData({ ...formData, contactPerson: e.target.value })}
+                                                onChange={isViewMode ? undefined : (e => setFormData({ ...formData, contactPerson: e.target.value }))}
+                                                readOnly={isViewMode}
                                             />
                                         </div>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             <input
                                                 placeholder="E-mail"
-                                                className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-bold"
+                                                className={`w-full p-4 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-white'} border border-slate-200 rounded-2xl outline-none ${isViewMode ? '' : 'focus:ring-4 focus:ring-blue-500/10'} transition-all font-bold`}
                                                 value={formData.email}
-                                                onChange={e => setFormData({ ...formData, email: e.target.value })}
+                                                onChange={isViewMode ? undefined : (e => setFormData({ ...formData, email: e.target.value }))}
+                                                readOnly={isViewMode}
                                             />
                                             <div className="space-y-1">
                                                 <label className="text-[10px] font-black text-slate-400 uppercase ml-2 flex justify-between">
                                                     Endereço
-                                                    {formData.address && (<a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formData.address)}`} target="_blank" className="text-blue-600 hover:underline flex items-center gap-1"><ExternalLink size={10} /> Ver no Maps</a>)}
+                                                    {formData.address && !isViewMode && (<a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formData.address)}`} target="_blank" className="text-blue-600 hover:underline flex items-center gap-1"><ExternalLink size={10} /> Ver no Maps</a>)}
                                                 </label>
                                                 <input
                                                     placeholder="Endereço Completo"
-                                                    className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-bold"
+                                                    className={`w-full p-4 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-white'} border border-slate-200 rounded-2xl outline-none ${isViewMode ? '' : 'focus:ring-4 focus:ring-blue-500/10'} transition-all font-bold`}
                                                     value={formData.address}
-                                                    onChange={e => setFormData({ ...formData, address: e.target.value })}
+                                                    onChange={isViewMode ? undefined : (e => setFormData({ ...formData, address: e.target.value }))}
+                                                    readOnly={isViewMode}
                                                 />
                                             </div>
                                         </div>
                                     </div>
                                     <hr className="border-slate-200/50" />
                                     <div className="space-y-4">
-                                        <div className="flex items-center gap-2 text-indigo-600 font-bold uppercase text-xs tracking-widest"><CalendarCheck size={16} /> Atendimento</div>
+                                        <div className="flex items-center gap-2 text-indigo-600 font-bold uppercase text-xs tracking-widest">
+                                            <CalendarCheck size={16} /> Atendimento
+                                        </div>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <AccessibleSelect
-                                                value={formData.billingType}
-                                                onChange={(e) => setFormData({ ...formData, billingType: e.target.value, maintenanceVisit: '' })}
-                                                options={billingOptions}
-                                                variant="default"
-                                                label="Tipo de atendimento"
-                                            />
-
-                                            <MaintenanceVisitSelect
-                                                value={formData.maintenanceVisit}
-                                                onChange={(e) => setFormData({ ...formData, maintenanceVisit: e.target.value })}
-                                                billingType={formData.billingType}
-                                            />
+                                            <div className={`w-full p-4 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-white'} border border-slate-200 rounded-2xl outline-none font-bold`}>
+                                                {formData.billingType}
+                                            </div>
+                                            {formData.billingType === "Contrato de manutenção" && formData.maintenanceVisit && (
+                                                <div className={`w-full p-4 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-white'} border border-slate-200 rounded-2xl outline-none font-bold`}>
+                                                    {formData.maintenanceVisit}
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
+
+                                {/* SEÇÃO EQUIPAMENTO */}
                                 <div className="space-y-6">
-                                    <div className="flex items-center gap-2 text-orange-600 font-bold uppercase text-xs tracking-widest"><Package size={16} /> Equipamento</div>
+                                    <div className="flex items-center gap-2 text-orange-600 font-bold uppercase text-xs tracking-widest">
+                                        <Package size={16} /> Equipamento
+                                    </div>
                                     <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                                        {/* NÚMERO DE SÉRIE - AGORA É O PRIMEIRO CAMPO */}
+                                        {/* NÚMERO DE SÉRIE */}
                                         <div className="relative">
                                             <input
                                                 placeholder="Número de Série"
-                                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold font-mono"
+                                                className={`w-full p-4 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-slate-50'} border border-slate-200 rounded-2xl outline-none font-bold font-mono`}
                                                 value={formData.serial}
-                                                onChange={e => {
+                                                onChange={isViewMode ? undefined : (e => {
                                                     const serial = e.target.value;
                                                     setFormData({ ...formData, serial });
-
-                                                    // Buscar equipamento pelo número de série
-                                                    if (serial && serial.trim() !== '') {
-                                                        const foundOrder = orders.find(o =>
-                                                            o.serial && o.serial.toLowerCase() === serial.toLowerCase().trim()
-                                                        );
-                                                        if (foundOrder) {
-                                                            setFormData(prev => ({
-                                                                ...prev,
-                                                                item: foundOrder.item || prev.item,
-                                                                manufacturer: foundOrder.manufacturer || prev.manufacturer,
-                                                                model: foundOrder.model || prev.model
-                                                            }));
-                                                        }
-                                                    }
                                                     setShowSerialSuggestions(true);
-                                                }}
-                                                onFocus={() => setShowSerialSuggestions(true)}
-                                                onBlur={() => setTimeout(() => setShowSerialSuggestions(false), 200)}
+                                                })}
+                                                readOnly={isViewMode}
                                             />
-                                            {showSerialSuggestions && uniqueSerials.length > 0 && (
-                                                <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
-                                                    <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400">Sugestões de NS</div>
-                                                    {uniqueSerials.filter(s => s.toLowerCase().includes(formData.serial.toLowerCase())).slice(0, 5).map((s, idx) => {
-                                                        // Encontrar o equipamento completo pelo serial
-                                                        const orderWithSerial = orders.find(o => o.serial === s);
-                                                        return (
-                                                            <div
-                                                                key={idx}
-                                                                className="p-3 hover:bg-orange-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700 font-mono font-bold"
-                                                                onMouseDown={(e) => {
-                                                                    e.preventDefault();
-                                                                    if (orderWithSerial) {
-                                                                        setFormData({
-                                                                            ...formData,
-                                                                            serial: s,
-                                                                            item: orderWithSerial.item || formData.item,
-                                                                            manufacturer: orderWithSerial.manufacturer || formData.manufacturer,
-                                                                            model: orderWithSerial.model || formData.model
-                                                                        });
-                                                                    } else {
-                                                                        setFormData({ ...formData, serial: s });
-                                                                    }
-                                                                    setShowSerialSuggestions(false);
-                                                                }}
-                                                            >
-                                                                {s}
-                                                                {orderWithSerial && (
-                                                                    <div className="text-xs text-slate-400 font-normal mt-1">
-                                                                        {orderWithSerial.item} - {orderWithSerial.manufacturer} {orderWithSerial.model}
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            )}
                                         </div>
 
                                         {/* ITEM / NOME */}
                                         <div className="relative">
                                             <input
                                                 placeholder="Item / Nome"
-                                                className={`w-full p-4 bg-slate-50 border ${fieldErrors.item ? 'border-red-500' : 'border-slate-200'} rounded-2xl outline-none font-bold`}
+                                                className={`w-full p-4 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-slate-50'} border ${fieldErrors.item ? 'border-red-500' : 'border-slate-200'} rounded-2xl outline-none font-bold`}
                                                 value={formData.item}
-                                                onChange={e => {
+                                                onChange={isViewMode ? undefined : (e => {
                                                     setFormData({ ...formData, item: e.target.value });
                                                     setShowItemSuggestions(true);
                                                     if (fieldErrors.item) setFieldErrors(prev => ({ ...prev, item: false }));
-                                                }}
-                                                onFocus={() => setShowItemSuggestions(true)}
-                                                onBlur={() => setTimeout(() => setShowItemSuggestions(false), 200)}
+                                                })}
+                                                readOnly={isViewMode}
                                             />
-                                            {showItemSuggestions && uniqueItems.length > 0 && (
-                                                <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
-                                                    <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400">Sugestões de Itens</div>
-                                                    {uniqueItems.filter(i => i.toLowerCase().includes(formData.item.toLowerCase())).slice(0, 5).map((i, idx) => (
-                                                        <div key={idx} className="p-3 hover:bg-orange-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700 font-bold" onMouseDown={(e) => { e.preventDefault(); setFormData({ ...formData, item: i }); setShowItemSuggestions(false); }}>{i}</div>
-                                                    ))}
-                                                </div>
-                                            )}
-                                            {fieldErrors.item && <p className="text-red-500 text-xs mt-1 ml-4">Item/Equipamento é obrigatório</p>}
+                                            {fieldErrors.item && !isViewMode && <p className="text-red-500 text-xs mt-1 ml-4">Item/Equipamento é obrigatório</p>}
                                         </div>
 
                                         {/* MARCA */}
                                         <div className="relative">
                                             <input
                                                 placeholder="Marca"
-                                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
+                                                className={`w-full p-4 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-slate-50'} border border-slate-200 rounded-2xl outline-none font-bold`}
                                                 value={formData.manufacturer}
-                                                onChange={e => {
+                                                onChange={isViewMode ? undefined : (e => {
                                                     setFormData({ ...formData, manufacturer: e.target.value });
                                                     setShowManufacturerSuggestions(true);
-                                                }}
-                                                onFocus={() => setShowManufacturerSuggestions(true)}
-                                                onBlur={() => setTimeout(() => setShowManufacturerSuggestions(false), 200)}
+                                                })}
+                                                readOnly={isViewMode}
                                             />
-                                            {showManufacturerSuggestions && uniqueManufacturers.length > 0 && (
-                                                <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
-                                                    <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400">Sugestões de Marcas</div>
-                                                    {uniqueManufacturers.filter(m => m.toLowerCase().includes(formData.manufacturer.toLowerCase())).slice(0, 5).map((m, idx) => (
-                                                        <div key={idx} className="p-3 hover:bg-orange-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700 font-bold" onMouseDown={(e) => { e.preventDefault(); setFormData({ ...formData, manufacturer: m }); setShowManufacturerSuggestions(false); }}>{m}</div>
-                                                    ))}
-                                                </div>
-                                            )}
                                         </div>
 
                                         {/* MODELO */}
                                         <div className="relative">
                                             <input
                                                 placeholder="Modelo"
-                                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold"
+                                                className={`w-full p-4 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-slate-50'} border border-slate-200 rounded-2xl outline-none font-bold`}
                                                 value={formData.model}
-                                                onChange={e => {
+                                                onChange={isViewMode ? undefined : (e => {
                                                     setFormData({ ...formData, model: e.target.value });
                                                     setShowModelSuggestions(true);
-                                                }}
-                                                onFocus={() => setShowModelSuggestions(true)}
-                                                onBlur={() => setTimeout(() => setShowModelSuggestions(false), 200)}
+                                                })}
+                                                readOnly={isViewMode}
                                             />
-                                            {showModelSuggestions && uniqueModels.length > 0 && (
-                                                <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
-                                                    <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400">Sugestões de Modelos</div>
-                                                    {uniqueModels.filter(m => m.toLowerCase().includes(formData.model.toLowerCase())).slice(0, 5).map((m, idx) => (
-                                                        <div key={idx} className="p-3 hover:bg-orange-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700 font-bold" onMouseDown={(e) => { e.preventDefault(); setFormData({ ...formData, model: m }); setShowModelSuggestions(false); }}>{m}</div>
-                                                    ))}
-                                                </div>
-                                            )}
                                         </div>
                                     </div>
 
-                                    {/* OBSERVAÇÕES E QUANTIDADE - MANTIDAS NO MESMO LUGAR */}
+                                    {/* OBSERVAÇÕES E QUANTIDADE */}
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         <div className="space-y-2">
                                             <label className="text-xs font-bold text-slate-500 uppercase">Observações (opcional)</label>
                                             <textarea
                                                 placeholder="Observações adicionais sobre o equipamento, como estado de conservação, acessórios, etc..."
-                                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold resize-none"
+                                                className={`w-full p-4 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-slate-50'} border border-slate-200 rounded-2xl outline-none font-bold resize-none`}
                                                 value={formData.equipmentObservation || ''}
-                                                onChange={e => setFormData({ ...formData, equipmentObservation: e.target.value })}
+                                                onChange={isViewMode ? undefined : (e => setFormData({ ...formData, equipmentObservation: e.target.value }))}
                                                 rows={3}
+                                                readOnly={isViewMode}
                                             />
                                         </div>
                                         <div className="space-y-2">
@@ -4406,346 +4477,345 @@ export default function MainApp() {
                                                     type="number"
                                                     min="1"
                                                     placeholder="1"
-                                                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-center"
+                                                    className={`w-full p-4 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-slate-50'} border border-slate-200 rounded-2xl outline-none font-bold text-center`}
                                                     value={formData.quantity || '1'}
-                                                    onChange={e => setFormData({ ...formData, quantity: e.target.value })}
+                                                    onChange={isViewMode ? undefined : (e => setFormData({ ...formData, quantity: e.target.value }))}
+                                                    readOnly={isViewMode}
                                                 />
                                             </div>
                                             <p className="text-[10px] text-slate-400 mt-1 ml-2">Quantidade do item/equipamento</p>
                                         </div>
                                     </div>
                                 </div>
+
+                                {/* SEÇÃO LAUDO TÉCNICO */}
                                 <div className="space-y-6">
-                                    <div className="flex items-center gap-2 text-emerald-600 font-bold uppercase text-xs tracking-widest"><Wrench size={16} /> Laudo Técnico</div>
+                                    <div className="flex items-center gap-2 text-emerald-600 font-bold uppercase text-xs tracking-widest">
+                                        <Wrench size={16} /> Laudo Técnico
+                                    </div>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                         {/* LISTA DE DEFEITOS */}
                                         <div className="space-y-4">
                                             <label className="text-xs font-bold text-slate-500 uppercase">Defeitos Encontrados</label>
                                             <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-3">
-                                                <div className="relative flex gap-2">
-                                                    <input
-                                                        placeholder="Descreva um defeito..."
-                                                        className="flex-1 p-3 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500/20"
-                                                        value={tempDefect}
-                                                        onChange={e => { setTempDefect(e.target.value); setShowDefectSuggestions(true); }}
-                                                        onFocus={() => setShowDefectSuggestions(true)}
-                                                        onBlur={() => setTimeout(() => setShowDefectSuggestions(false), 200)}
-                                                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addDefectItem(); } }}
-                                                    />
-                                                    <button type="button" onClick={addDefectItem} className="bg-emerald-600 text-white p-3 rounded-xl shadow-lg shadow-emerald-200 hover:bg-emerald-700 transition-colors"><Plus size={20} /></button>
+                                                {!isViewMode ? (
+                                                    <div className="relative flex gap-2">
+                                                        <input
+                                                            placeholder="Descreva um defeito..."
+                                                            className="flex-1 p-3 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500/20"
+                                                            value={tempDefect}
+                                                            onChange={e => { setTempDefect(e.target.value); setShowDefectSuggestions(true); }}
+                                                            onFocus={() => setShowDefectSuggestions(true)}
+                                                            onBlur={() => setTimeout(() => setShowDefectSuggestions(false), 200)}
+                                                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addDefectItem(); } }}
+                                                        />
+                                                        <button type="button" onClick={addDefectItem} className="bg-emerald-600 text-white p-3 rounded-xl shadow-lg shadow-emerald-200 hover:bg-emerald-700 transition-colors">
+                                                            <Plus size={20} />
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-sm text-slate-500 italic">
+                                                        {formData.defectsList?.length || 0} defeito(s) listado(s)
+                                                    </div>
+                                                )}
 
-                                                    {showDefectSuggestions && uniqueDefects.length > 0 && (
-                                                        <div className="absolute top-full left-0 right-14 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
-                                                            <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400">Sugestões</div>
-                                                            {uniqueDefects.filter(d => d.toLowerCase().includes(tempDefect.toLowerCase())).slice(0, 5).map((d, idx) => (
-                                                                <div key={idx} className="p-3 hover:bg-emerald-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700" onMouseDown={(e) => { e.preventDefault(); setTempDefect(d); setShowDefectSuggestions(false); }}>
-                                                                    {d.length > 50 ? d.substring(0, 50) + '...' : d}
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                </div>
                                                 <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                                                     {formData.defectsList && formData.defectsList.map((d, i) => (
-                                                        <div key={i} className="flex justify-between items-start p-3 bg-white border rounded-xl shadow-sm animate-in slide-in-from-left-2">
+                                                        <div key={i} className="flex justify-between items-start p-3 bg-white border rounded-xl shadow-sm">
                                                             <div className="text-sm font-medium text-slate-700 leading-snug">{d}</div>
-                                                            <button type="button" onClick={() => removeDefectItem(i)} className="text-slate-300 hover:text-red-500 transition-colors p-1"><X size={16} /></button>
+                                                            {!isViewMode && (
+                                                                <button type="button" onClick={() => removeDefectItem(i)} className="text-slate-300 hover:text-red-500 transition-colors p-1">
+                                                                    <X size={16} />
+                                                                </button>
+                                                            )}
                                                         </div>
                                                     ))}
-                                                    {(!formData.defectsList || formData.defectsList.length === 0) && <div className="text-center text-xs text-slate-400 italic py-2">Nenhum defeito listado.</div>}
+                                                    {(!formData.defectsList || formData.defectsList.length === 0) && (
+                                                        <div className="text-center text-xs text-slate-400 italic py-2">Nenhum defeito listado.</div>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
 
+                                        {/* TIPO DE SOLUÇÃO E CONTEÚDO */}
                                         <div className="space-y-4">
-                                            <AccessibleSelect
-                                                value={formData.solutionType}
-                                                onChange={(e) => setFormData({ ...formData, solutionType: e.target.value })}
-                                                options={solutionOptions}
-                                                variant="light"
-                                                label="Tipo de solução"
-                                            />
+                                            <div className={`w-full p-4 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-slate-100'} border border-slate-200 rounded-2xl outline-none font-bold`}>
+                                                {formData.solutionType}
+                                            </div>
 
+                                            {/* SOLUÇÃO: Preenchimento manual */}
                                             {formData.solutionType === "Preenchimento manual" && (
-                                                <div className="space-y-4 animate-in fade-in">
-                                                    <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100 space-y-3">
-                                                        <div className="relative flex gap-2">
-                                                            <input
-                                                                placeholder="Descreva uma etapa da solução..."
-                                                                className="flex-1 p-3 bg-white border border-indigo-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20"
-                                                                value={tempManualSolution}
-                                                                onChange={e => {
-                                                                    setTempManualSolution(e.target.value);
-                                                                    setShowSolutionSuggestions(true);
-                                                                }}
-                                                                onFocus={() => setShowSolutionSuggestions(true)}
-                                                                onBlur={() => setTimeout(() => setShowSolutionSuggestions(false), 200)}
-                                                                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addManualSolutionItem(); } }}
-                                                            />
-                                                            <button type="button" onClick={addManualSolutionItem} className="bg-indigo-600 text-white p-3 rounded-xl shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-colors"><Plus size={20} /></button>
-
-                                                            {showSolutionSuggestions && uniqueSolutions.length > 0 && (
-                                                                <div className="absolute top-full left-0 right-14 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
-                                                                    <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400">Sugestões</div>
-                                                                    {uniqueSolutions
-                                                                        .filter(s => s.toLowerCase().includes(tempManualSolution.toLowerCase()))
-                                                                        .slice(0, 5)
-                                                                        .map((s, idx) => (
-                                                                            <div
-                                                                                key={idx}
-                                                                                className="p-3 hover:bg-indigo-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700"
-                                                                                onMouseDown={(e) => {
-                                                                                    e.preventDefault();
-                                                                                    setTempManualSolution(s);
-                                                                                    setShowSolutionSuggestions(false);
-                                                                                }}
-                                                                            >
-                                                                                {s.length > 50 ? s.substring(0, 50) + '...' : s}
-                                                                            </div>
-                                                                        ))
-                                                                    }
-                                                                </div>
-                                                            )}
+                                                <div className="space-y-4">
+                                                    {!isViewMode && (
+                                                        <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100 space-y-3">
+                                                            <div className="relative flex gap-2">
+                                                                <input
+                                                                    placeholder="Descreva uma etapa da solução..."
+                                                                    className="flex-1 p-3 bg-white border border-indigo-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                                                    value={tempManualSolution}
+                                                                    onChange={e => {
+                                                                        setTempManualSolution(e.target.value);
+                                                                        setShowSolutionSuggestions(true);
+                                                                    }}
+                                                                    onFocus={() => setShowSolutionSuggestions(true)}
+                                                                    onBlur={() => setTimeout(() => setShowSolutionSuggestions(false), 200)}
+                                                                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addManualSolutionItem(); } }}
+                                                                />
+                                                                <button type="button" onClick={addManualSolutionItem} className="bg-indigo-600 text-white p-3 rounded-xl shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-colors">
+                                                                    <Plus size={20} />
+                                                                </button>
+                                                            </div>
                                                         </div>
-                                                    </div>
+                                                    )}
 
-                                                    {/* LISTA DE SOLUÇÕES MANUAIS ADICIONADAS - MANTENHA ESTA SEÇÃO */}
+                                                    {/* LISTA DE SOLUÇÕES MANUAIS */}
                                                     <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                                                         {formData.manualSolutionsList && formData.manualSolutionsList.map((s, i) => (
-                                                            <div key={i} className="flex justify-between items-start p-3 bg-white border rounded-xl shadow-sm animate-in slide-in-from-left-2">
+                                                            <div key={i} className="flex justify-between items-start p-3 bg-white border rounded-xl shadow-sm">
                                                                 <div className="text-sm font-medium text-slate-700 leading-snug">{s}</div>
-                                                                <button type="button" onClick={() => removeManualSolutionItem(i)} className="text-slate-300 hover:text-red-500 transition-colors p-1"><X size={16} /></button>
+                                                                {!isViewMode && (
+                                                                    <button type="button" onClick={() => removeManualSolutionItem(i)} className="text-slate-300 hover:text-red-500 transition-colors p-1">
+                                                                        <X size={16} />
+                                                                    </button>
+                                                                )}
                                                             </div>
                                                         ))}
-                                                        {(!formData.manualSolutionsList || formData.manualSolutionsList.length === 0) && <div className="text-center text-xs text-slate-400 italic py-2">Nenhuma solução listada.</div>}
+                                                        {(!formData.manualSolutionsList || formData.manualSolutionsList.length === 0) && (
+                                                            <div className="text-center text-xs text-slate-400 italic py-2">Nenhuma solução listada.</div>
+                                                        )}
                                                     </div>
                                                 </div>
                                             )}
 
                                             {/* SOLUÇÃO: Manual com custos detalhados */}
                                             {formData.solutionType === "Manual com custos detalhados" && (
-                                                <div className="space-y-4 animate-in fade-in">
-                                                    <div className="bg-green-50 p-4 rounded-2xl border border-green-100 space-y-3">
-                                                        // Na seção "Manual com custos detalhados" (por volta da linha 2120), substitua o input:
-                                                        <div className="relative">
-                                                            <input
-                                                                placeholder="Item, Peça ou Serviço"
-                                                                className="w-full p-2 bg-white border border-green-200 rounded-lg text-sm"
-                                                                value={tempSolution}
-                                                                onChange={e => {
-                                                                    setTempSolution(e.target.value);
-                                                                    setShowSolutionSuggestions(true);
-                                                                }}
-                                                                onFocus={() => setShowSolutionSuggestions(true)}
-                                                                onBlur={() => setTimeout(() => setShowSolutionSuggestions(false), 200)}
-                                                            />
-                                                            {showSolutionSuggestions && uniqueSolutionsList.length > 0 && (
-                                                                <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
-                                                                    <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400">Sugestões</div>
-                                                                    {uniqueSolutionsList
-                                                                        .filter(s => s.toLowerCase().includes(tempSolution.toLowerCase()))
-                                                                        .slice(0, 5)
-                                                                        .map((s, idx) => (
-                                                                            <div
-                                                                                key={idx}
-                                                                                className="p-3 hover:bg-green-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700"
-                                                                                onMouseDown={(e) => {
-                                                                                    e.preventDefault();
-                                                                                    setTempSolution(s);
-                                                                                    setShowSolutionSuggestions(false);
-                                                                                }}
-                                                                            >
-                                                                                {s}
-                                                                            </div>
-                                                                        ))
-                                                                    }
-                                                                </div>
-                                                            )}
+                                                <div className="space-y-4">
+                                                    {!isViewMode && (
+                                                        <div className="bg-green-50 p-4 rounded-2xl border border-green-100 space-y-3">
+                                                            <div className="relative">
+                                                                <input
+                                                                    placeholder="Item, Peça ou Serviço"
+                                                                    className="w-full p-2 bg-white border border-green-200 rounded-lg text-sm"
+                                                                    value={tempSolution}
+                                                                    onChange={e => {
+                                                                        setTempSolution(e.target.value);
+                                                                        setShowSolutionSuggestions(true);
+                                                                    }}
+                                                                    onFocus={() => setShowSolutionSuggestions(true)}
+                                                                    onBlur={() => setTimeout(() => setShowSolutionSuggestions(false), 200)}
+                                                                />
+                                                            </div>
+                                                            <div className="flex gap-2">
+                                                                <input
+                                                                    placeholder="Valor R$ 0,00"
+                                                                    className="flex-1 p-2 bg-white border border-green-200 rounded-lg text-sm"
+                                                                    value={tempCost}
+                                                                    onChange={e => setTempCost(e.target.value)}
+                                                                />
+                                                                <button type="button" onClick={addSolutionItem} className="bg-green-600 text-white p-2.5 rounded-lg shadow-lg shadow-green-200">
+                                                                    <Plus size={20} />
+                                                                </button>
+                                                            </div>
                                                         </div>
-                                                        <div className="flex gap-2">
-                                                            <input placeholder="Valor R$ 0,00" className="flex-1 p-2 bg-white border border-green-200 rounded-lg text-sm" value={tempCost} onChange={e => setTempCost(e.target.value)} />
-                                                            <button type="button" onClick={addSolutionItem} className="bg-green-600 text-white p-2.5 rounded-lg shadow-lg shadow-green-200"><Plus size={20} /></button>
-                                                        </div>
-                                                    </div>
+                                                    )}
+
                                                     <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
                                                         {formData.solutionsList.map(s => (
-                                                            <div key={s.id} className="flex justify-between items-center p-3 bg-white border rounded-xl shadow-sm animate-in slide-in-from-right-2">
-                                                                <div><div className="text-xs font-bold text-slate-800">{s.text}</div><div className="text-[10px] text-green-600 font-black">R$ {s.cost}</div></div>
-                                                                <button type="button" onClick={() => removeSolutionItem(s.id)}><X size={16} className="text-red-300 hover:text-red-500" /></button>
+                                                            <div key={s.id} className="flex justify-between items-center p-3 bg-white border rounded-xl shadow-sm">
+                                                                <div>
+                                                                    <div className="text-xs font-bold text-slate-800">{s.text}</div>
+                                                                    <div className="text-[10px] text-green-600 font-black">R$ {s.cost}</div>
+                                                                </div>
+                                                                {!isViewMode && (
+                                                                    <button type="button" onClick={() => removeSolutionItem(s.id)}>
+                                                                        <X size={16} className="text-red-300 hover:text-red-500" />
+                                                                    </button>
+                                                                )}
                                                             </div>
                                                         ))}
                                                     </div>
-                                                    {fieldErrors.solutionsList && formData.solutionsList.length === 0 && (
-                                                        <p className="text-red-500 text-xs mt-1 ml-4">Adicione pelo menos um item na lista de soluções</p>
-                                                    )}
                                                 </div>
                                             )}
 
                                             {/* SOLUÇÃO: Conserto em bancada */}
                                             {formData.solutionType === "Conserto em bancada" && (
-                                                <div className="space-y-4 animate-in fade-in">
-                                                    <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100 space-y-3">
-                                                        <div className="relative flex gap-2">
-                                                            <input
-                                                                placeholder="Descreva uma etapa do conserto em bancada..."
-                                                                className="flex-1 p-3 bg-white border border-amber-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-amber-500/20"
-                                                                value={tempBenchRepair}
-                                                                onChange={e => setTempBenchRepair(e.target.value)}
-                                                                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addBenchRepairItem(); } }}
-                                                            />
-                                                            <button type="button" onClick={addBenchRepairItem} className="bg-amber-600 text-white p-3 rounded-xl shadow-lg shadow-amber-200 hover:bg-amber-700 transition-colors"><Plus size={20} /></button>
+                                                <div className="space-y-4">
+                                                    {!isViewMode && (
+                                                        <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100 space-y-3">
+                                                            <div className="relative flex gap-2">
+                                                                <input
+                                                                    placeholder="Descreva uma etapa do conserto em bancada..."
+                                                                    className="flex-1 p-3 bg-white border border-amber-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-amber-500/20"
+                                                                    value={tempBenchRepair}
+                                                                    onChange={e => setTempBenchRepair(e.target.value)}
+                                                                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addBenchRepairItem(); } }}
+                                                                />
+                                                                <button type="button" onClick={addBenchRepairItem} className="bg-amber-600 text-white p-3 rounded-xl shadow-lg shadow-amber-200 hover:bg-amber-700 transition-colors">
+                                                                    <Plus size={20} />
+                                                                </button>
+                                                            </div>
                                                         </div>
-                                                    </div>
+                                                    )}
+
                                                     <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                                                         {formData.benchRepairList && formData.benchRepairList.map((item, i) => (
-                                                            <div key={i} className="flex justify-between items-start p-3 bg-white border rounded-xl shadow-sm animate-in slide-in-from-left-2">
+                                                            <div key={i} className="flex justify-between items-start p-3 bg-white border rounded-xl shadow-sm">
                                                                 <div className="text-sm font-medium text-slate-700 leading-snug">{item}</div>
-                                                                <button type="button" onClick={() => removeBenchRepairItem(i)} className="text-slate-300 hover:text-red-500 transition-colors p-1"><X size={16} /></button>
+                                                                {!isViewMode && (
+                                                                    <button type="button" onClick={() => removeBenchRepairItem(i)} className="text-slate-300 hover:text-red-500 transition-colors p-1">
+                                                                        <X size={16} />
+                                                                    </button>
+                                                                )}
                                                             </div>
                                                         ))}
-                                                        {(!formData.benchRepairList || formData.benchRepairList.length === 0) && <div className="text-center text-xs text-slate-400 italic py-2">Nenhuma etapa de conserto listada.</div>}
+                                                        {(!formData.benchRepairList || formData.benchRepairList.length === 0) && (
+                                                            <div className="text-center text-xs text-slate-400 italic py-2">Nenhuma etapa de conserto listada.</div>
+                                                        )}
                                                     </div>
-                                                    {fieldErrors.benchRepairList && (!formData.benchRepairList || formData.benchRepairList.length === 0) && (
-                                                        <p className="text-red-500 text-xs mt-1 ml-4">Descreva as etapas do conserto em bancada</p>
-                                                    )}
                                                 </div>
                                             )}
 
                                             {/* SOLUÇÃO: Não passível de conserto */}
                                             {formData.solutionType === "Não passível de conserto, substituir por novo equipamento / material" && (
                                                 <div>
-                                                    <textarea
-                                                        placeholder="Detalhe a substituição por novo equipamento / material..."
-                                                        className={`w-full p-4 ${fieldErrors.notRepairableDetail ? 'bg-red-50 border-red-500' : 'bg-red-50 border-red-100'} text-red-900 border rounded-2xl outline-none font-bold`}
-                                                        value={formData.notRepairableDetail}
-                                                        onChange={e => {
-                                                            setFormData({ ...formData, notRepairableDetail: e.target.value });
-                                                            if (fieldErrors.notRepairableDetail) setFieldErrors(prev => ({ ...prev, notRepairableDetail: false }));
-                                                        }}
-                                                        onBlur={() => handleBlur('notRepairableDetail')}
-                                                        rows={3}
-                                                    />
-                                                    {fieldErrors.notRepairableDetail && <p className="text-red-500 text-xs mt-1 ml-4">Detalhe a substituição por novo equipamento/material</p>}
+                                                    <div className={`w-full p-4 ${isViewMode ? 'bg-red-50 cursor-not-allowed' : 'bg-red-50'} border border-red-100 text-red-900 border rounded-2xl outline-none font-bold`}>
+                                                        {formData.notRepairableDetail || 'Não especificado'}
+                                                    </div>
                                                 </div>
                                             )}
                                         </div>
                                     </div>
                                 </div>
-                                <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-6 transition-all duration-300">
-                                    <div className="flex items-center justify-between cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setIsFinancialOpen(!isFinancialOpen)}>
-                                        <div className="flex items-center gap-2 text-red-600 font-bold uppercase text-xs tracking-widest"><DollarSign size={16} /> Financeiro & Custos (Controle Interno)</div>
-                                        {isFinancialOpen ? <ChevronUp size={20} className="text-slate-400" /> : <ChevronDown size={20} className="text-slate-400" />}
-                                    </div>
-                                    {isFinancialOpen && (
-                                        <div className="space-y-6 animate-in slide-in-from-top-4 fade-in duration-300">
-                                            <div className="space-y-2">
-                                                <label className="text-[10px] font-bold text-slate-500 uppercase">Nome do Terceiro / Transportadora</label>
-                                                <input placeholder="Ex: JadLog / Lab Especializado" className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none font-bold" value={formData.costThirdPartyName} onChange={e => setFormData({ ...formData, costThirdPartyName: e.target.value })} />
-                                            </div>
-                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                                <div className="space-y-2"><label className="text-[10px] font-bold text-slate-500 uppercase">Frete Terceiro (R$)</label><input placeholder="0,00" className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none font-bold" value={formData.costThirdPartyShipping} onChange={e => setFormData({ ...formData, costThirdPartyShipping: e.target.value })} /></div>
-                                                <div className="space-y-2"><label className="text-[10px] font-bold text-slate-500 uppercase">Peças/Serviços (R$)</label><input placeholder="0,00" className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none font-bold" value={formData.costParts} onChange={e => setFormData({ ...formData, costParts: e.target.value })} /></div>
-                                                <div className="space-y-2"><label className="text-[10px] font-bold text-slate-500 uppercase">Frete Cliente (R$)</label><input placeholder="0,00" className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none font-bold" value={formData.costClientShipping} onChange={e => setFormData({ ...formData, costClientShipping: e.target.value })} /></div>
-                                            </div>
-                                            <hr className="border-slate-200/50" />
-                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 items-start">
-                                                <div className="space-y-2"><label className="text-[10px] font-bold text-blue-500 uppercase">Valor Sugerido (+60%)</label><div className="w-full p-4 bg-blue-50/50 border border-blue-100 rounded-2xl font-black text-blue-600 cursor-not-allowed text-sm">R$ {formatMoney(suggestedValue)}</div></div>
-                                                <div className="space-y-2"><label className="text-[10px] font-bold text-purple-600 uppercase">Soma Itens Laudo</label><div className="w-full p-4 bg-purple-50/50 border border-purple-100 rounded-2xl font-black text-purple-700 cursor-not-allowed text-sm">R$ {formatMoney(solutionsTotal)}</div></div>
-                                                <div className="space-y-2">
-                                                    <label className="text-[10px] font-bold text-green-600 uppercase">Valor Cobrado (R$)</label>
-                                                    <div className="relative">
-                                                        <input
-                                                            placeholder="0,00"
-                                                            className="w-full p-4 bg-green-50 border border-green-100 rounded-2xl outline-none font-black text-green-700 text-sm"
-                                                            value={formData.chargedAmount}
-                                                            onChange={e => setFormData({ ...formData, chargedAmount: e.target.value })}
-                                                        />
-                                                        {formData.discount5Days && (
-                                                            <div className="absolute -right-2 -top-2 bg-red-500 text-white text-[10px] font-black px-2 py-1 rounded-full animate-pulse">
-                                                                5% OFF
-                                                            </div>
-                                                        )}
-                                                    </div>
 
-                                                    {formData.discount5Days && formData.finalChargedAmount > 0 && (
-                                                        <div className="bg-green-100 p-3 rounded-xl border border-green-200">
-                                                            <div className="flex justify-between items-center">
-                                                                <span className="text-[10px] font-bold text-green-800 uppercase">Valor Final com Desconto</span>
-                                                                <span className="text-lg font-black text-green-900">
-                                                                    R$ {formatMoney(formData.finalChargedAmount)}
-                                                                </span>
-                                                            </div>
-                                                            <div className="text-[9px] text-green-600 mt-1">
-                                                                Desconto de 5% aplicado para pagamento em 5 dias
-                                                            </div>
+                                {/* SEÇÃO FINANCEIRA - SOMENTE EM MODO EDIÇÃO */}
+                                {!isViewMode && (
+                                    <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-6 transition-all duration-300">
+                                        <div className="flex items-center justify-between cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setIsFinancialOpen(!isFinancialOpen)}>
+                                            <div className="flex items-center gap-2 text-red-600 font-bold uppercase text-xs tracking-widest">
+                                                <DollarSign size={16} /> Financeiro & Custos (Controle Interno)
+                                            </div>
+                                            {isFinancialOpen ? <ChevronUp size={20} className="text-slate-400" /> : <ChevronDown size={20} className="text-slate-400" />}
+                                        </div>
+                                        {isFinancialOpen && (
+                                            <div className="space-y-6 animate-in slide-in-from-top-4 fade-in duration-300">
+                                                <div className="space-y-2">
+                                                    <label className="text-[10px] font-bold text-slate-500 uppercase">Nome do Terceiro / Transportadora</label>
+                                                    <input placeholder="Ex: JadLog / Lab Especializado" className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none font-bold" value={formData.costThirdPartyName} onChange={e => setFormData({ ...formData, costThirdPartyName: e.target.value })} />
+                                                </div>
+                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                                    <div className="space-y-2">
+                                                        <label className="text-[10px] font-bold text-slate-500 uppercase">Frete Terceiro (R$)</label>
+                                                        <input placeholder="0,00" className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none font-bold" value={formData.costThirdPartyShipping} onChange={e => setFormData({ ...formData, costThirdPartyShipping: e.target.value })} />
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <label className="text-[10px] font-bold text-slate-500 uppercase">Peças/Serviços (R$)</label>
+                                                        <input placeholder="0,00" className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none font-bold" value={formData.costParts} onChange={e => setFormData({ ...formData, costParts: e.target.value })} />
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <label className="text-[10px] font-bold text-slate-500 uppercase">Frete Cliente (R$)</label>
+                                                        <input placeholder="0,00" className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none font-bold" value={formData.costClientShipping} onChange={e => setFormData({ ...formData, costClientShipping: e.target.value })} />
+                                                    </div>
+                                                </div>
+                                                <hr className="border-slate-200/50" />
+                                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 items-start">
+                                                    <div className="space-y-2">
+                                                        <label className="text-[10px] font-bold text-blue-500 uppercase">Valor Sugerido (+60%)</label>
+                                                        <div className="w-full p-4 bg-blue-50/50 border border-blue-100 rounded-2xl font-black text-blue-600 cursor-not-allowed text-sm">R$ {formatMoney(suggestedValue)}</div>
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <label className="text-[10px] font-bold text-purple-600 uppercase">Soma Itens Laudo</label>
+                                                        <div className="w-full p-4 bg-purple-50/50 border border-purple-100 rounded-2xl font-black text-purple-700 cursor-not-allowed text-sm">R$ {formatMoney(solutionsTotal)}</div>
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <label className="text-[10px] font-bold text-green-600 uppercase">Valor Cobrado (R$)</label>
+                                                        <div className="relative">
+                                                            <input
+                                                                placeholder="0,00"
+                                                                className="w-full p-4 bg-green-50 border border-green-100 rounded-2xl outline-none font-black text-green-700 text-sm"
+                                                                value={formData.chargedAmount}
+                                                                onChange={e => setFormData({ ...formData, chargedAmount: e.target.value })}
+                                                            />
+                                                            {formData.discount5Days && (
+                                                                <div className="absolute -right-2 -top-2 bg-red-500 text-white text-[10px] font-black px-2 py-1 rounded-full animate-pulse">
+                                                                    5% OFF
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <label className="text-[10px] font-bold text-slate-500 uppercase">Condição Pagamento</label>
+                                                        <AccessibleSelect
+                                                            value={formData.paymentCondition}
+                                                            onChange={(e) => setFormData({ ...formData, paymentCondition: e.target.value, installments: '' })}
+                                                            options={['À vista', 'Boleto', 'Cartão']}
+                                                            label="Condição de pagamento"
+                                                        />
+                                                    </div>
+                                                    {(formData.paymentCondition === 'Boleto' || formData.paymentCondition === 'Cartão') && (
+                                                        <div className="space-y-2 animate-in fade-in">
+                                                            <label className="text-[10px] font-bold text-slate-400 uppercase">Parcelas</label>
+                                                            {formData.paymentCondition === 'Boleto' ? (
+                                                                <InstallmentSelect
+                                                                    value={formData.installments}
+                                                                    onChange={(e) => {
+                                                                        const is5Days = e.target.value === "5 dias (5% de desconto)";
+                                                                        setFormData({
+                                                                            ...formData,
+                                                                            installments: e.target.value,
+                                                                            discount5Days: is5Days
+                                                                        });
+                                                                    }}
+                                                                    paymentCondition={formData.paymentCondition}
+                                                                    discount5Days={formData.discount5Days}
+                                                                    showAddOption={true}
+                                                                />
+                                                            ) : (
+                                                                <InstallmentSelect
+                                                                    value={formData.installments}
+                                                                    onChange={(e) => setFormData({ ...formData, installments: e.target.value })}
+                                                                    paymentCondition={formData.paymentCondition}
+                                                                    discount5Days={false}
+                                                                    showAddOption={false}
+                                                                />
+                                                            )}
                                                         </div>
                                                     )}
                                                 </div>
-                                                <div className="space-y-2">
-                                                    <label className="text-[10px] font-bold text-slate-500 uppercase">Condição Pagamento</label>
-                                                    <AccessibleSelect
-                                                        value={formData.paymentCondition}
-                                                        onChange={(e) => setFormData({ ...formData, paymentCondition: e.target.value, installments: '' })}
-                                                        options={['À vista', 'Boleto', 'Cartão']}
-                                                        label="Condição de pagamento"
-                                                    />
-                                                </div>
-                                                {(formData.paymentCondition === 'Boleto' || formData.paymentCondition === 'Cartão') && (
-                                                    <div className="space-y-2 animate-in fade-in">
-                                                        <label className="text-[10px] font-bold text-slate-400 uppercase">Parcelas</label>
-
-                                                        {formData.paymentCondition === 'Boleto' ? (
-                                                            <InstallmentSelect
-                                                                value={formData.installments}
-                                                                onChange={(e) => {
-                                                                    const is5Days = e.target.value === "5 dias (5% de desconto)";
-                                                                    setFormData({
-                                                                        ...formData,
-                                                                        installments: e.target.value,
-                                                                        discount5Days: is5Days
-                                                                    });
-                                                                }}
-                                                                paymentCondition={formData.paymentCondition}
-                                                                discount5Days={formData.discount5Days}
-                                                                onDiscountChange={(e) => {
-                                                                    const isChecked = e.target.checked;
-                                                                    const charged = parseCurrency(formData.chargedAmount);
-                                                                    const discount = isChecked ? charged * 0.05 : 0;
-                                                                    const final = isChecked ? charged - discount : charged;
-
-                                                                    setFormData({
-                                                                        ...formData,
-                                                                        discount5Days: isChecked,
-                                                                        discountAmount: discount,
-                                                                        finalChargedAmount: final
-                                                                    });
-                                                                }}
-                                                                showAddOption={true}
-                                                                onAddOption={(newOption) => {
-                                                                    console.log('Nova opção adicionada:', newOption);
-                                                                }}
-                                                            />
-                                                        ) : (
-                                                            <InstallmentSelect
-                                                                value={formData.installments}
-                                                                onChange={(e) => setFormData({ ...formData, installments: e.target.value })}
-                                                                paymentCondition={formData.paymentCondition}
-                                                                discount5Days={false}
-                                                                showAddOption={false}
-                                                            />
-                                                        )}
+                                                <div className={`p-6 rounded-2xl flex flex-col md:flex-row justify-between items-center gap-4 transition-colors ${profit >= 0 ? 'bg-green-100/50 border border-green-200' : 'bg-red-100/50 border border-red-200'}`}>
+                                                    <div className="flex items-center gap-3">
+                                                        <div className={`p-3 rounded-full ${profit >= 0 ? 'bg-green-200 text-green-700' : 'bg-red-200 text-red-700'}`}>
+                                                            <Calculator size={24} />
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-[10px] font-black uppercase text-slate-500">Resultado Operacional</div>
+                                                            <div className={`text-2xl font-black ${profit >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                                                                {profit >= 0 ? 'LUCRO' : 'PREJUÍZO'}
+                                                            </div>
+                                                        </div>
                                                     </div>
-                                                )}
+                                                    <div className="flex gap-8 text-right">
+                                                        <div>
+                                                            <div className="text-[10px] font-bold text-slate-400 uppercase">Custo Total</div>
+                                                            <div className="font-bold text-slate-700">R$ {formatMoney(totalCost)}</div>
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-[10px] font-bold text-slate-400 uppercase">Resultado</div>
+                                                            <div className={`text-xl font-black ${profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                                                R$ {formatMoney(profit)}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
                                             </div>
-                                            <div className={`p-6 rounded-2xl flex flex-col md:flex-row justify-between items-center gap-4 transition-colors ${profit >= 0 ? 'bg-green-100/50 border border-green-200' : 'bg-red-100/50 border border-red-200'}`}>
-                                                <div className="flex items-center gap-3"><div className={`p-3 rounded-full ${profit >= 0 ? 'bg-green-200 text-green-700' : 'bg-red-200 text-red-700'}`}><Calculator size={24} /></div><div><div className="text-[10px] font-black uppercase text-slate-500">Resultado Operacional</div><div className={`text-2xl font-black ${profit >= 0 ? 'text-green-700' : 'text-red-700'}`}>{profit >= 0 ? 'LUCRO' : 'PREJUÍZO'}</div></div></div>
-                                                <div className="flex gap-8 text-right"><div><div className="text-[10px] font-bold text-slate-400 uppercase">Custo Total</div><div className="font-bold text-slate-700">R$ {formatMoney(totalCost)}</div></div><div><div className="text-[10px] font-bold text-slate-400 uppercase">Resultado</div><div className={`text-xl font-black ${profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>R$ {formatMoney(profit)}</div></div></div>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* SEÇÃO LOGÍSTICA E STATUS FINAL */}
                                 <div className="space-y-6 pt-6 border-t">
-                                    <div className="flex items-center gap-2 text-slate-900 font-bold uppercase text-xs tracking-widest"><Truck size={16} /> Logística e Status Final</div>
+                                    <div className="flex items-center gap-2 text-slate-900 font-bold uppercase text-xs tracking-widest">
+                                        <Truck size={16} /> Logística e Status Final
+                                    </div>
 
                                     {/* TIMELINE HORIZONTAL */}
                                     <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-6">
@@ -4765,14 +4835,15 @@ export default function MainApp() {
                                                     return (
                                                         <div
                                                             key={index}
-                                                            className="relative z-10 flex flex-col items-center gap-3 cursor-pointer group min-w-[80px]"
-                                                            onClick={() => setFormData({ ...formData, status: step.value, statusDate: new Date().toISOString().split('T')[0] })}
+                                                            className="relative z-10 flex flex-col items-center gap-3 min-w-[80px]"
                                                         >
-                                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 transition-all duration-300 shadow-sm ${isCompleted ? 'bg-blue-600 border-blue-600 text-white scale-110' : 'bg-white border-slate-300 text-slate-300 group-hover:border-blue-300'}`}>
+                                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 transition-all duration-300 shadow-sm ${isCompleted ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-slate-300 text-slate-300'}`}>
                                                                 {isCompleted ? <Check size={14} strokeWidth={4} /> : <div className="w-2 h-2 rounded-full bg-slate-200" />}
                                                             </div>
                                                             <div className="text-center flex flex-col items-center">
-                                                                <span className={`text-[10px] font-bold uppercase tracking-wide transition-colors ${isCurrent ? 'text-blue-700' : 'text-slate-400'}`}>{step.label}</span>
+                                                                <span className={`text-[10px] font-bold uppercase tracking-wide ${isCurrent ? 'text-blue-700' : 'text-slate-400'}`}>
+                                                                    {step.label}
+                                                                </span>
                                                                 <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded mt-1 whitespace-nowrap ${stepDate ? 'bg-white text-slate-600 shadow-sm border border-slate-200' : 'text-slate-300'}`}>
                                                                     {stepDate || '---'}
                                                                 </span>
@@ -4785,94 +4856,113 @@ export default function MainApp() {
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start pt-4 border-t border-slate-200/50">
                                             <div className="space-y-1">
-                                                <label className="text-[10px] font-black text-slate-400 uppercase">Status Geral (Seleção Manual)</label>
-                                                <AccessibleSelect
-                                                    value={formData.status}
-                                                    onChange={(e) => {
-                                                        setFormData({
-                                                            ...formData,
-                                                            status: e.target.value,
-                                                            statusDate: new Date().toISOString().split('T')[0]
-                                                        })
-                                                    }}
-                                                    options={statusOptions}
-                                                    label="Status geral"
-                                                />
+                                                <label className="text-[10px] font-black text-slate-400 uppercase">Status Geral</label>
+                                                <div className={`w-full p-4 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-white'} border border-slate-200 rounded-2xl font-bold`}>
+                                                    {formData.status}
+                                                </div>
                                             </div>
                                             <div className="space-y-1">
                                                 <label className="text-[10px] font-black text-slate-400 uppercase">Data do Status Atual</label>
-                                                <input
-                                                    type="date"
-                                                    className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none font-bold"
-                                                    value={formData.statusDate}
-                                                    onChange={e => setFormData({ ...formData, statusDate: e.target.value })}
-                                                />
+                                                <div className={`w-full p-4 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-white'} border border-slate-200 rounded-2xl font-bold`}>
+                                                    {formData.statusDate}
+                                                </div>
                                             </div>
                                         </div>
 
-                                        {(formData.status === "Em orçamento" || formData.status === "Aguardando aprovação do orçamento") && (
+                                        {/* PRAZO DE ENTREGA - APENAS EXIBIÇÃO */}
+                                        {(formData.status === "Em orçamento" || formData.status === "Aguardando aprovação do orçamento") && formData.deliveryDeadline && (
                                             <div className="space-y-1 animate-in fade-in">
                                                 <label className="text-[10px] font-black text-slate-400 uppercase">Prazo de Entrega</label>
                                                 <div className="flex items-center">
-                                                    <input
-                                                        type="number"
-                                                        placeholder="Ex: 7"
-                                                        className="w-20 p-4 border border-slate-200 rounded-l-2xl outline-none font-bold text-center"
-                                                        value={formData.deliveryDeadline}
-                                                        onChange={e => setFormData({ ...formData, deliveryDeadline: e.target.value })}
-                                                    />
-                                                    <div className="p-4 bg-slate-100 border border-slate-200 rounded-r-2xl font-bold text-slate-600">dias úteis</div>
+                                                    <div className={`w-20 p-4 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-white'} border border-slate-200 rounded-l-2xl font-bold text-center`}>
+                                                        {formData.deliveryDeadline}
+                                                    </div>
+                                                    <div className="p-4 bg-slate-100 border border-slate-200 rounded-r-2xl font-bold text-slate-600">
+                                                        dias úteis
+                                                    </div>
                                                 </div>
-                                                <p className="text-[10px] text-slate-400 mt-1 ml-4">Esta informação será exibida na proposta de orçamento</p>
                                             </div>
                                         )}
                                     </div>
 
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        {formData.status !== 'Recebido' && (
-                                            <div className="space-y-1 animate-in fade-in">
-                                                <label className="text-[10px] font-black text-slate-400 uppercase">Enviado para Terceiro?</label>
-                                                <AccessibleSelect
-                                                    value={formData.sentToThirdParty}
-                                                    onChange={(e) => setFormData({ ...formData, sentToThirdParty: e.target.value })}
-                                                    options={['Não', 'Sim']}
-                                                    className="bg-slate-100 border-none"
-                                                    label="Enviado para terceiro"
-                                                />
+                                    {/* RASTREAMENTO - APENAS EXIBIÇÃO NO VIEW MODE */}
+                                    {formData.status === "Em rota de entrega" && formData.trackingCode && (
+                                        <div className="space-y-1 animate-in zoom-in-95">
+                                            <label className="text-[10px] font-black text-blue-600 uppercase">Rastreamento</label>
+                                            <div className="w-full p-4 bg-blue-50 border border-blue-100 rounded-2xl font-bold">
+                                                {formData.trackingCode}
                                             </div>
-                                        )}
-                                        {formData.status === "Em rota de entrega" && (
-                                            <div className="space-y-1 animate-in zoom-in-95">
-                                                <label className="text-[10px] font-black text-blue-600 uppercase">Rastreamento</label>
-                                                <input placeholder="Código de Rastreio" className="w-full p-4 bg-blue-50 border border-blue-100 rounded-2xl outline-none font-bold" value={formData.trackingCode} onChange={e => setFormData({ ...formData, trackingCode: e.target.value })} />
-                                            </div>
-                                        )}
-                                    </div>
-                                    {formData.sentToThirdParty === "Sim" && formData.status !== 'Recebido' && (
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-6 bg-slate-100 rounded-3xl border border-slate-200 animate-in slide-in-from-top-4">
-                                            <input placeholder="Empresa Terceira" className="w-full p-3 bg-white border rounded-xl text-sm" value={formData.thirdPartyInfo} onChange={e => setFormData({ ...formData, thirdPartyInfo: e.target.value })} />
-                                            <input placeholder="Rastreio Terceiro" className="w-full p-3 bg-white border rounded-xl text-sm" value={formData.thirdPartyTracking} onChange={e => setFormData({ ...formData, thirdPartyTracking: e.target.value })} />
-                                            <input type="date" className="w-full p-3 bg-white border rounded-xl text-sm" value={formData.thirdPartyDate} onChange={e => setFormData({ ...formData, thirdPartyDate: e.target.value })} />
                                         </div>
                                     )}
                                 </div>
                             </div>
+
+                            {/* BOTÕES DO MODAL */}
                             <div className="flex flex-col md:flex-row gap-4 pt-10 border-t">
-                                <div className="flex gap-2">
-                                    <button type="button" onClick={() => setIsModalOpen(false)} className="px-6 py-5 bg-slate-100 text-slate-600 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-200 transition-colors">Cancelar</button>
-                                    {editingOrder && (
-                                        <>
-                                            <button type="button" onClick={() => handleModalPrint('client')} className="p-5 bg-blue-50 text-blue-600 rounded-2xl hover:bg-blue-100 transition-colors border border-blue-100" title="Imprimir Relatório do Cliente"><Printer size={20} /></button>
-                                            {userData?.role !== 'client' && (
-                                                <button type="button" onClick={() => handleModalPrint('internal')} className="p-5 bg-slate-50 text-slate-600 rounded-2xl hover:bg-slate-100 transition-colors border border-slate-200" title="Imprimir Relatório Interno"><ShieldAlert size={20} /></button>
+                                {isViewMode ? (
+                                    // APENAS NO VIEW MODE: Botão único para fechar
+                                    <div className="w-full flex justify-center">
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsModalOpen(false)}
+                                            className="px-8 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black hover:bg-slate-200 transition-colors w-full max-w-xs"
+                                        >
+                                            Fechar
+                                        </button>
+                                    </div>
+                                ) : (
+                                    // MODO EDIÇÃO/NOVA: Todos os botões normais
+                                    <>
+                                        <div className="flex gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsModalOpen(false)}
+                                                className="px-6 py-5 bg-slate-100 text-slate-600 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-200 transition-colors"
+                                            >
+                                                Cancelar
+                                            </button>
+                                            {editingOrder && (
+                                                <>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleModalPrint('client')}
+                                                        className="p-5 bg-blue-50 text-blue-600 rounded-2xl hover:bg-blue-100 transition-colors border border-blue-100"
+                                                        title="Imprimir Relatório do Cliente"
+                                                    >
+                                                        <Printer size={20} />
+                                                    </button>
+                                                    {userData?.role !== 'client' && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleModalPrint('internal')}
+                                                            className="p-5 bg-slate-50 text-slate-600 rounded-2xl hover:bg-slate-100 transition-colors border border-slate-200"
+                                                            title="Imprimir Relatório Interno"
+                                                        >
+                                                            <ShieldAlert size={20} />
+                                                        </button>
+                                                    )}
+                                                </>
                                             )}
-                                        </>
-                                    )}
-                                </div>
-                                <div className="flex-1 flex flex-col md:flex-row gap-4">
-                                    <button type="button" onClick={handleSaveAndNewWithSameClient} disabled={isSaving} className="flex-1 bg-indigo-50 text-indigo-700 border-2 border-indigo-100 p-5 rounded-2xl font-black text-xs hover:bg-indigo-100 transition-all flex items-center justify-center gap-3">{isSaving ? <Loader2 className="animate-spin" size={18} /> : <RefreshCw size={18} />} NOVA OS COM MESMO CLIENTE</button>
-                                    <button type="submit" disabled={isSaving} className="flex-1 bg-blue-600 text-white p-5 rounded-2xl font-black text-lg hover:bg-blue-700 shadow-xl shadow-blue-200 transition-all flex items-center justify-center gap-3">{isSaving ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />} SALVAR OS</button>
-                                </div>
+                                        </div>
+                                        <div className="flex-1 flex flex-col md:flex-row gap-4">
+                                            <button
+                                                type="button"
+                                                onClick={handleSaveAndNewWithSameClient}
+                                                disabled={isSaving}
+                                                className="flex-1 bg-indigo-50 text-indigo-700 border-2 border-indigo-100 p-5 rounded-2xl font-black text-xs hover:bg-indigo-100 transition-all flex items-center justify-center gap-3"
+                                            >
+                                                {isSaving ? <Loader2 className="animate-spin" size={18} /> : <RefreshCw size={18} />} NOVA OS COM MESMO CLIENTE
+                                            </button>
+                                            <button
+                                                type="submit"
+                                                disabled={isSaving}
+                                                className="flex-1 bg-blue-600 text-white p-5 rounded-2xl font-black text-lg hover:bg-blue-700 shadow-xl shadow-blue-200 transition-all flex items-center justify-center gap-3"
+                                            >
+                                                {isSaving ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />} SALVAR OS
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
                             </div>
                         </form>
                     </div>
