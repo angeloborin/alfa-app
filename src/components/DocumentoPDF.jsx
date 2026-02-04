@@ -39,8 +39,8 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 20,
-        paddingBottom: 12,
+        marginBottom: 15,
+        paddingBottom: 10,
         borderBottomWidth: 2,
         borderBottomColor: '#1a56db',
         borderBottomStyle: 'solid',
@@ -49,8 +49,8 @@ const styles = StyleSheet.create({
         width: '40%',
     },
     logo: {
-        width: 100,
-        height: 45,
+        width: 90,
+        height: 40,
         objectFit: 'contain',
     },
     reportInfo: {
@@ -58,55 +58,55 @@ const styles = StyleSheet.create({
         textAlign: 'right',
     },
     reportTitle: {
-        fontSize: 12,
+        fontSize: 11,
         fontWeight: 'bold',
         color: '#333',
-        marginBottom: 4,
+        marginBottom: 3,
         textTransform: 'uppercase',
     },
     internalBadge: {
         backgroundColor: '#b91c1c',
         color: 'white',
-        padding: '2 6',
-        fontSize: 8,
-        borderRadius: 3,
+        padding: '2 4',
+        fontSize: 7,
+        borderRadius: 2,
         fontWeight: 'bold',
-        marginBottom: 5,
+        marginBottom: 3,
     },
     section: {
-        marginBottom: 12,
+        marginBottom: 8,
     },
     sectionTitle: {
         backgroundColor: '#f1f5f9',
-        padding: '5 10',
-        fontSize: 9,
+        padding: '4 8',
+        fontSize: 8,
         fontWeight: 'bold',
-        marginBottom: 8,
+        marginBottom: 6,
         color: '#1e40af',
-        borderLeftWidth: 4,
+        borderLeftWidth: 3,
         borderLeftColor: '#1a56db',
         borderLeftStyle: 'solid',
     },
     clientGrid: {
         flexDirection: 'row',
         flexWrap: 'wrap',
-        marginBottom: 10,
+        marginBottom: 8,
     },
     clientItem: {
         width: '33%',
-        marginBottom: 6,
+        marginBottom: 4,
     },
     clientLabel: {
         fontWeight: 'bold',
-        fontSize: 8,
+        fontSize: 7,
         color: '#666',
     },
     clientValue: {
-        fontSize: 8,
+        fontSize: 7,
     },
     itemsTable: {
         width: '100%',
-        marginTop: 10,
+        marginTop: 8,
         marginBottom: 0,
     },
     tableHeader: {
@@ -114,44 +114,51 @@ const styles = StyleSheet.create({
         backgroundColor: '#f8fafc',
         borderBottomWidth: 1,
         borderBottomColor: '#e2e8f0',
-        paddingVertical: 5,
+        paddingVertical: 4,
     },
     tableRow: {
         flexDirection: 'row',
         borderBottomWidth: 1,
         borderBottomColor: '#f1f5f9',
-        paddingVertical: 6,
+        paddingVertical: 4,
+        minHeight: 40, // Aumentado de 35 para 40
+        alignItems: 'stretch',
     },
     tableCell: {
-        paddingHorizontal: 4,
-        fontSize: 8,
+        paddingHorizontal: 3,
+        fontSize: 7,
         verticalAlign: 'top',
     },
-    cell8: { width: '8%' },
-    cell22: { width: '22%' },
+    // Larguras padrão COM valor (orçamento + cliente)
+    cell7: { width: '7%' },
     cell18: { width: '18%' },
-    cell18w: { width: '18%' },
-    cell16: { width: '16%' },
-    cell18v: { width: '18%' },
+    cell17: { width: '17%' },
+    cell30: { width: '30%' },
+    cell13: { width: '13%' },
+    cell15: { width: '15%' },
+    // Larguras SEM valor (quando não é orçamento ou é impressão interna)
+    cell7_noValor: { width: '7%' },
+    cell18_noValor: { width: '18%' },
+    cell17_noValor: { width: '17%' },
+    cell30_noValor: { width: '30%' },
+    cell28_noValor: { width: '28%' }, // Observações ocupa o espaço do valor também (13% + 15%)
     osTag: {
         fontWeight: 'bold',
         color: '#1a56db',
-        fontSize: 8,
+        fontSize: 7,
     },
     footerArea: {
-        position: 'absolute',
-        bottom: 40,
-        left: 25,
-        right: 25,
-        paddingTop: 20,
+        marginTop: 20,
+        paddingTop: 15,
         borderTopWidth: 1,
         borderTopColor: '#eee',
         borderTopStyle: 'solid',
+        height: 140,
     },
     signatureArea: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        marginTop: 10,
+        marginTop: 8,
         alignItems: 'flex-end',
     },
     signatureBox: {
@@ -159,152 +166,102 @@ const styles = StyleSheet.create({
         textAlign: 'center',
     },
     signatureImage: {
-        width: 120,
-        height: 60,
+        width: 110,
+        height: 50,
         objectFit: 'contain',
-        marginBottom: 5,
+        marginBottom: 4,
         alignSelf: 'center',
     },
     signatureLine: {
         borderTopWidth: 1,
         borderTopColor: '#333',
         borderTopStyle: 'solid',
-        marginTop: 10,
-        paddingTop: 8,
+        marginTop: 8,
+        paddingTop: 6,
         width: '100%',
     },
     signatureText: {
-        fontSize: 9,
+        fontSize: 8,
         fontWeight: 'bold',
         marginTop: 2,
     },
     companyFooter: {
-        marginTop: 15,
-        fontSize: 8,
+        marginTop: 12,
+        fontSize: 7,
         color: '#666',
         textAlign: 'center',
-        paddingTop: 8,
-        lineHeight: 1.2,
+        paddingTop: 6,
+        lineHeight: 1.1,
     },
-    valorSection: {
+    termosSection: {
         marginTop: 10,
-        padding: 10,
-        backgroundColor: '#f0fdf4',
-        borderLeftWidth: 3,
-        borderLeftColor: '#10b981',
-        borderLeftStyle: 'solid',
-        borderRadius: 4,
-        fontSize: 8,
-        lineHeight: 1.3,
+        padding: 8,
+        backgroundColor: '#f8fafc',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        borderRadius: 3,
+        fontSize: 7,
+        lineHeight: 1.2,
+        marginBottom: 15,
     },
-    valorDestaque: {
-        fontSize: 14,
+    termoTitulo: {
+        fontSize: 8,
+        fontWeight: 'bold',
+        color: '#475569',
+        marginBottom: 3,
+    },
+    termoTexto: {
+        fontSize: 7,
+        color: '#475569',
+        marginBottom: 4,
+        textAlign: 'justify',
+    },
+    totalOrcamento: {
+        fontSize: 9,
         fontWeight: 'bold',
         color: '#166534',
+        marginTop: 4,
         textAlign: 'center',
-        marginVertical: 8,
+    },
+    valorCell: {
+        fontSize: 7,
+        fontWeight: 'bold',
+        color: '#166534',
+        textAlign: 'right',
     },
     bold: {
         fontWeight: 'bold',
     },
     observationBox: {
         backgroundColor: '#f8fafc',
-        padding: 4,
+        paddingVertical: 3, // Aumentado de 1 para 3
+        paddingHorizontal: 3, // Aumentado de 2 para 3
         borderRadius: 2,
-        fontSize: 7,
-        lineHeight: 1.2,
+        fontSize: 6.5, // Aumentado de 6 para 6.5
+        lineHeight: 1.2, // Aumentado de 1.0 para 1.2
+        minHeight: 30, // Altura mínima para ocupar mais espaço
+        flex: 1,
     },
     defectSolutionItem: {
         marginBottom: 1,
-        fontSize: 7,
+        fontSize: 6.5, // Aumentado de 6 para 6.5
         lineHeight: 1.1,
     },
     pageCounter: {
         position: 'absolute',
-        bottom: 15,
+        bottom: 12,
         right: 25,
-        fontSize: 8,
+        fontSize: 7,
         color: '#666',
     },
     spacer: {
         flexGrow: 1,
     },
-    orcamentoInfo: {
-        marginTop: 15,
-        padding: 10,
-        backgroundColor: '#f0f9ff',
-        borderWidth: 1,
-        borderColor: '#bae6fd',
-        borderRadius: 4,
-        fontSize: 8,
-        lineHeight: 1.3,
-    },
-    orcamentoTitulo: {
-        fontSize: 9,
-        fontWeight: 'bold',
-        color: '#0369a1',
-        marginBottom: 6,
-    },
-    orcamentoValorItem: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginBottom: 3,
-        fontSize: 8,
-    },
-    orcamentoTotal: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginTop: 5,
-        paddingTop: 5,
-        borderTopWidth: 1,
-        borderTopColor: '#cbd5e1',
-        borderTopStyle: 'solid',
-        fontSize: 9,
-        fontWeight: 'bold',
-        color: '#166534',
-    },
-    termosSection: {
-        marginTop: 10,
-        padding: 10,
-        backgroundColor: '#f8fafc',
-        borderWidth: 1,
-        borderColor: '#e2e8f0',
-        borderRadius: 4,
-        fontSize: 8,
-        lineHeight: 1.3,
-    },
-    termoTitulo: {
-        fontSize: 9,
-        fontWeight: 'bold',
-        color: '#475569',
-        marginBottom: 4,
-    },
-    termoTexto: {
-        fontSize: 8,
-        color: '#475569',
-        marginBottom: 5,
-        textAlign: 'justify',
-    },
-    valorCell: {
-        fontSize: 8,
-        fontWeight: 'bold',
-        color: '#166534',
-        textAlign: 'right',
-    },
-    totalOrcamento: {
-        fontSize: 10,
-        fontWeight: 'bold',
-        color: '#166534',
-        marginTop: 5,
-        textAlign: 'center',
-    },
-    // Novo estilo para texto em itálico
     italicText: {
         fontStyle: 'italic',
     },
-    // Estilo para o texto de desconto
     discountText: {
-        fontSize: 6,
+        fontSize: 5,
         color: '#059669',
         fontStyle: 'italic',
     },
@@ -349,13 +306,13 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
 
             budgetItems.forEach(item => {
                 const original = parseCurrency(item.chargedAmount);
-                const final = item.finalChargedAmount ? 
-                    parseCurrency(item.finalChargedAmount) : 
+                const final = item.finalChargedAmount ?
+                    parseCurrency(item.finalChargedAmount) :
                     original;
-                
+
                 totalOriginal += original;
                 totalFinal += final;
-                
+
                 if (item.discount5Days) {
                     hasDiscount = true;
                 }
@@ -385,29 +342,19 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
         return allItems;
     };
 
-    // Função de distribuição SIMPLES
+    // FUNÇÃO SIMPLIFICADA DE DISTRIBUIÇÃO
     const distributeItems = (items) => {
         const totalItems = items.length;
 
-        if (totalItems <= 8) {
+        if (totalItems <= 12) { // Reduzido de 15 para 12 devido ao aumento da altura
             return [items];
         }
 
         const pages = [];
+        const itemsPerPage = 12;
 
-        // Primeira página: 8 itens (com cabeçalho)
-        const firstPageItems = Math.min(8, totalItems);
-        pages.push(items.slice(0, firstPageItems));
-
-        let remainingItems = items.slice(firstPageItems);
-
-        // Demais páginas: 12 itens cada (mais espaço)
-        const itemsPerOtherPage = 12;
-
-        while (remainingItems.length > 0) {
-            const pageItems = remainingItems.slice(0, itemsPerOtherPage);
-            pages.push(pageItems);
-            remainingItems = remainingItems.slice(itemsPerOtherPage);
+        for (let i = 0; i < totalItems; i += itemsPerPage) {
+            pages.push(items.slice(i, i + itemsPerPage));
         }
 
         return pages;
@@ -435,6 +382,9 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
         primeiroItemOrcamento?.installments ||
         '';
 
+    // Determinar se deve mostrar a coluna de valor
+    const mostrarValor = isOrcamento && printType === 'client';
+
     return (
         <Document>
             {pages.map((pageItems, pageIndex) => {
@@ -458,7 +408,7 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                                             <Text style={styles.internalBadge}>USO INTERNO - CONFIDENCIAL</Text>
                                         )}
                                         <Text style={styles.reportTitle}>{title}</Text>
-                                        <Text style={{ fontSize: 8, color: '#666' }}>
+                                        <Text style={{ fontSize: 7, color: '#666' }}>
                                             Data: {new Date().toLocaleDateString('pt-BR')}
                                         </Text>
                                     </View>
@@ -504,24 +454,24 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                             <Text style={styles.sectionTitle}>Equipamentos</Text>
                             <View style={styles.itemsTable}>
                                 <View style={styles.tableHeader}>
-                                    <View style={[styles.tableCell, styles.cell8]}>
+                                    <View style={[styles.tableCell, mostrarValor ? styles.cell7 : styles.cell7_noValor]}>
                                         <Text style={styles.bold}>OS</Text>
                                     </View>
-                                    <View style={[styles.tableCell, styles.cell22]}>
+                                    <View style={[styles.tableCell, mostrarValor ? styles.cell18 : styles.cell18_noValor]}>
                                         <Text style={styles.bold}>Equipamento</Text>
                                     </View>
-                                    <View style={[styles.tableCell, styles.cell18]}>
+                                    <View style={[styles.tableCell, mostrarValor ? styles.cell17 : styles.cell17_noValor]}>
                                         <Text style={styles.bold}>Defeito</Text>
                                     </View>
-                                    <View style={[styles.tableCell, styles.cell18w]}>
+                                    <View style={[styles.tableCell, mostrarValor ? styles.cell30 : styles.cell30_noValor]}>
                                         <Text style={styles.bold}>Solução</Text>
                                     </View>
-                                    <View style={[styles.tableCell, styles.cell16]}>
+                                    <View style={[styles.tableCell, mostrarValor ? styles.cell13 : styles.cell28_noValor]}>
                                         <Text style={styles.bold}>Observações</Text>
                                     </View>
                                     {/* Nova coluna para valor - APENAS em orçamentos */}
-                                    {isOrcamento && printType === 'client' && (
-                                        <View style={[styles.tableCell, styles.cell18v]}>
+                                    {mostrarValor && (
+                                        <View style={[styles.tableCell, styles.cell15]}>
                                             <Text style={styles.bold}>Valor (R$)</Text>
                                         </View>
                                     )}
@@ -533,63 +483,59 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                                     const observation = item.equipmentObservation || '';
 
                                     // Usar o finalChargedAmount (já com desconto) se existir
-                                    const valorItem = item.finalChargedAmount ? 
-                                        parseCurrency(item.finalChargedAmount) : 
+                                    const valorItem = item.finalChargedAmount ?
+                                        parseCurrency(item.finalChargedAmount) :
                                         parseCurrency(item.chargedAmount);
 
                                     const isBudgetItem = item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento';
 
                                     return (
                                         <View key={`${item.groupIndex}-${index}`} style={styles.tableRow}>
-                                            <View style={[styles.tableCell, styles.cell8]}>
+                                            <View style={[styles.tableCell, mostrarValor ? styles.cell7 : styles.cell7_noValor]}>
                                                 <Text style={styles.osTag}>{item.osNumber || '---'}</Text>
-                                                <Text style={{ fontSize: 7 }}>{item.status || '---'}</Text>
+                                                <Text style={{ fontSize: 6.5 }}>{item.status || '---'}</Text>
                                             </View>
 
-                                            <View style={[styles.tableCell, styles.cell22]}>
+                                            <View style={[styles.tableCell, mostrarValor ? styles.cell18 : styles.cell18_noValor]}>
                                                 <Text style={styles.bold}>{item.item || '---'}</Text>
-                                                <Text style={{ fontSize: 7, color: '#666' }}>
+                                                <Text style={{ fontSize: 6.5, color: '#666' }}>
                                                     {item.manufacturer || ''} {item.model || ''}
                                                 </Text>
-                                                <Text style={{ fontSize: 7, color: '#999' }}>NS: {item.serial || 'N/D'}</Text>
+                                                <Text style={{ fontSize: 6.5, color: '#999' }}>NS: {item.serial || 'N/D'}</Text>
                                                 {item.quantity && parseInt(item.quantity) > 1 && (
-                                                    <Text style={{ fontSize: 7, color: '#666' }}>Qtd: {item.quantity}</Text>
+                                                    <Text style={{ fontSize: 6.5, color: '#666' }}>Qtd: {item.quantity}</Text>
                                                 )}
                                             </View>
 
-                                            <View style={[styles.tableCell, styles.cell18]}>
+                                            <View style={[styles.tableCell, mostrarValor ? styles.cell17 : styles.cell17_noValor]}>
                                                 {defects.length > 0 ? (
                                                     defects.map((d, i) => (
                                                         <Text key={i} style={styles.defectSolutionItem}>• {d}</Text>
                                                     ))
                                                 ) : (
-                                                    <Text style={{ fontSize: 7, color: '#999' }}>Sem defeitos</Text>
+                                                    <Text style={{ fontSize: 6.5, color: '#999' }}>Sem defeitos</Text>
                                                 )}
                                             </View>
 
-                                            <View style={[styles.tableCell, styles.cell18w]}>
+                                            <View style={[styles.tableCell, mostrarValor ? styles.cell30 : styles.cell30_noValor]}>
                                                 {solutions.length > 0 ? (
                                                     solutions.map((s, i) => (
                                                         <Text key={i} style={styles.defectSolutionItem}>• {s}</Text>
                                                     ))
                                                 ) : (
-                                                    <Text style={{ fontSize: 7, color: '#999' }}>Solução em análise</Text>
+                                                    <Text style={{ fontSize: 6.5, color: '#999' }}>Solução em análise</Text>
                                                 )}
                                             </View>
 
-                                            <View style={[styles.tableCell, styles.cell16]}>
-                                                {observation ? (
-                                                    <View style={styles.observationBox}>
-                                                        <Text style={{ fontSize: 7 }}>{observation}</Text>
-                                                    </View>
-                                                ) : (
-                                                    <Text style={{ fontSize: 7, color: '#999' }}>Sem observações</Text>
-                                                )}
+                                            <View style={[styles.tableCell, mostrarValor ? styles.cell13 : styles.cell28_noValor]}>
+                                                <Text style={styles.observationBox}>
+                                                    {observation || 'Sem observações'}
+                                                </Text>
                                             </View>
 
                                             {/* Nova célula para valor - APENAS em orçamentos */}
-                                            {isOrcamento && printType === 'client' && (
-                                                <View style={[styles.tableCell, styles.cell18v]}>
+                                            {mostrarValor && (
+                                                <View style={[styles.tableCell, styles.cell15]}>
                                                     {isBudgetItem ? (
                                                         <Text style={styles.valorCell}>
                                                             {formatMoney(valorItem)}
@@ -600,7 +546,7 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                                                             )}
                                                         </Text>
                                                     ) : (
-                                                        <Text style={[styles.italicText, { fontSize: 7, color: '#999' }]}>
+                                                        <Text style={[styles.italicText, { fontSize: 6.5, color: '#999' }]}>
                                                             Não orçado
                                                         </Text>
                                                     )}
@@ -611,6 +557,9 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                                 })}
                             </View>
                         </View>
+
+                        {/* Espaço flexível para empurrar o rodapé para baixo na última página */}
+                        {isLastPage ? <View style={styles.spacer} /> : null}
 
                         {/* Seção de termos e condições (APENAS na última página para orçamentos) */}
                         {isLastPage && isOrcamento && printType === 'client' && (
@@ -631,7 +580,7 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                                 <Text style={styles.termoTitulo}>Condições de pagamento:</Text>
                                 <Text style={styles.termoTexto}>
                                     {/* À vista */}
-                                    {paymentCondition === 'À vista' && 
+                                    {paymentCondition === 'À vista' &&
                                         `Pagamento à vista = ${formatMoney(totalFinal)}.`
                                     }
 
@@ -641,7 +590,7 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                                             {installments === "5 dias (5% de desconto)" ? (
                                                 <Text>
                                                     Boleto bancário em 5 dias = {formatMoney(totalFinal)}{' '}
-                                            
+
                                                     {hasDiscount && (
                                                         <Text>
                                                             {'\n'}Valor original: {formatMoney(totalOriginal)}
@@ -660,12 +609,12 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                                             ) : installments ? (
                                                 <Text>
                                                     Pagamento via boleto bancário em {installments} = {formatMoney(totalFinal)}.
-                                                    
+
                                                 </Text>
                                             ) : (
                                                 <Text>
                                                     Pagamento via boleto bancário = {formatMoney(totalFinal)}.
-                                                    
+
                                                 </Text>
                                             )}
                                         </>
@@ -675,20 +624,17 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                                     {paymentCondition === 'Cartão' && (
                                         <Text>
                                             Pagamento via cartão de crédito em {installments || '1x (30 Dias)'} = {formatMoney(totalFinal)}.
-                                            
+
                                         </Text>
                                     )}
                                 </Text>
 
                                 <Text style={styles.totalOrcamento}>
                                     VALOR TOTAL: {formatMoney(totalFinal)}
-                                    
+
                                 </Text>
                             </View>
                         )}
-
-                        {/* Espaço flexível para empurrar o rodapé para baixo na última página */}
-                        {isLastPage && <View style={styles.spacer} />}
 
                         {/* Rodapé com assinaturas - APENAS na última página */}
                         {isLastPage && (
@@ -701,14 +647,14 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                                         />
                                         <View style={styles.signatureLine} />
                                         <Text style={styles.signatureText}>Consultor Técnico</Text>
-                                        <Text style={{ fontSize: 8 }}>Angelo Borin</Text>
+                                        <Text style={{ fontSize: 7 }}>Angelo Borin</Text>
                                     </View>
 
                                     <View style={styles.signatureBox}>
-                                        <View style={{ height: 60, marginBottom: 5 }} />
+                                        <View style={{ height: 50, marginBottom: 4 }} />
                                         <View style={styles.signatureLine} />
                                         <Text style={styles.signatureText}>Cliente / Recebedor</Text>
-                                        <Text style={{ fontSize: 8, color: '#999' }}>Nome e assinatura</Text>
+                                        <Text style={{ fontSize: 7, color: '#999' }}>Nome e assinatura</Text>
                                     </View>
                                 </View>
 
