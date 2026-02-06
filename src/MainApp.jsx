@@ -732,7 +732,7 @@ const OrderActionsDropdown = ({ order, openModal, openViewModal, confirmDelete, 
                         onClick={(e) => {
                             e.stopPropagation();
                             onOpenChange(null);
-                            openViewModal(order);
+                            openViewModal(order); // Modo visualização
                         }}
                         className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors text-sm font-medium"
                     >
@@ -748,7 +748,7 @@ const OrderActionsDropdown = ({ order, openModal, openViewModal, confirmDelete, 
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     onOpenChange(null);
-                                    openModal(order);
+                                    openModal(order, false); // Modo edição
                                 }}
                                 className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors text-sm font-medium"
                             >
@@ -1523,6 +1523,12 @@ export default function MainApp() {
     }, [user, authLoading]);
 
     useEffect(() => {
+        if (!isModalOpen) {
+            setIsViewMode(false);
+        }
+    }, [isModalOpen]);
+
+    useEffect(() => {
         if (formData.discount5Days && formData.chargedAmount) {
             const charged = parseCurrency(formData.chargedAmount);
             const discount = charged * 0.05;
@@ -1728,22 +1734,14 @@ export default function MainApp() {
         }
     };
 
-    const openModal = (order = null) => {
+    const openModal = (order = null, viewMode = false) => {
         setTempSolution('');
         setTempCost('');
         setTempDefect('');
         setTempManualSolution('');
         setTempBenchRepair('');
         setIsFinancialOpen(false);
-        setIsViewMode(false);
-
-        setShowClientSuggestions(false);
-        setShowDefectSuggestions(false);
-        setShowSolutionSuggestions(false);
-        setShowItemSuggestions(false);
-        setShowManufacturerSuggestions(false);
-        setShowModelSuggestions(false);
-        setShowSerialSuggestions(false);
+        setIsViewMode(viewMode);  // Definir o modo baseado no parâmetro
 
         setFieldErrors({
             client: false,
@@ -1780,7 +1778,7 @@ export default function MainApp() {
                 discount5Days: order.discount5Days || false,
                 discountAmount: order.discountAmount || 0,
                 finalChargedAmount: order.finalChargedAmount || parseCurrency(order.chargedAmount),
-                photos: order.photos || [] // Carregar fotos existentes
+                photos: order.photos || []
             });
         } else {
             setEditingOrder(null);
@@ -1807,11 +1805,12 @@ export default function MainApp() {
                 discount5Days: false,
                 discountAmount: 0,
                 finalChargedAmount: 0,
-                photos: [] // Inicializar array de fotos vazio
+                photos: []
             });
         }
         setIsModalOpen(true);
     };
+
 
     const openViewModal = (order) => {
         setTempSolution('');
@@ -1820,6 +1819,7 @@ export default function MainApp() {
         setTempManualSolution('');
         setTempBenchRepair('');
         setIsFinancialOpen(false);
+        openModal(order, true);
 
         let deliveryDeadlineValue = '';
         if (order.deliveryDeadline) {
@@ -2154,6 +2154,35 @@ export default function MainApp() {
         return cleanData;
     };
 
+    const handleShowSuggestions = (field) => {
+        if (isViewMode) return false; // Nunca mostrar sugestões em modo visualização
+
+        switch (field) {
+            case 'client': return showClientSuggestions;
+            case 'defect': return showDefectSuggestions;
+            case 'solution': return showSolutionSuggestions;
+            case 'item': return showItemSuggestions;
+            case 'manufacturer': return showManufacturerSuggestions;
+            case 'model': return showModelSuggestions;
+            case 'serial': return showSerialSuggestions;
+            default: return false;
+        }
+    };
+
+    const handleSetSuggestions = (field, value) => {
+        if (isViewMode) return; // Não fazer nada em modo visualização
+
+        switch (field) {
+            case 'client': setShowClientSuggestions(value); break;
+            case 'defect': setShowDefectSuggestions(value); break;
+            case 'solution': setShowSolutionSuggestions(value); break;
+            case 'item': setShowItemSuggestions(value); break;
+            case 'manufacturer': setShowManufacturerSuggestions(value); break;
+            case 'model': setShowModelSuggestions(value); break;
+            case 'serial': setShowSerialSuggestions(value); break;
+        }
+    };
+
     const handleSubmit = async (e) => {
         if (e) e.preventDefault();
 
@@ -2424,6 +2453,10 @@ export default function MainApp() {
         } finally {
             setIsSaving(false);
         }
+    };
+
+    const handleOpenNewOS = () => {
+        openModal(null, false); // Abre nova OS em modo de edição
     };
 
     const handleOpenPaymentModal = (printType) => {
@@ -3450,7 +3483,7 @@ export default function MainApp() {
 
                                 {selectedOrders.length === 0 && hasPermission('canEditOS') && (
                                     <button
-                                        onClick={() => openModal()}
+                                        onClick={handleOpenNewOS}
                                         className="bg-blue-600 text-white px-8 py-5 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-2xl shadow-blue-200 hover:bg-blue-700 transition-colors min-w-[200px]"
                                     >
                                         <Plus size={24} /> Abrir Nova OS
@@ -4322,7 +4355,7 @@ export default function MainApp() {
                                                 onBlur={isViewMode ? undefined : () => setTimeout(() => setShowClientSuggestions(false), 200)}
                                                 readOnly={isViewMode}
                                             />
-                                            {showClientSuggestions && formData.client && !isViewMode && (
+                                            {!isViewMode && showClientSuggestions && formData.client && (
                                                 <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-60 overflow-y-auto animate-in slide-in-from-top-2">
                                                     {uniqueClients.filter(c => c.client.toLowerCase().includes(formData.client.toLowerCase())).slice(0, 5).map((c, idx) => (
                                                         <div key={idx} className="p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 flex flex-col" onMouseDown={(e) => { e.preventDefault(); handleClientSelect(c); }}>
@@ -4361,7 +4394,11 @@ export default function MainApp() {
                                             <div className="space-y-1">
                                                 <label className="text-[10px] font-black text-slate-400 uppercase ml-2 flex justify-between">
                                                     Endereço
-                                                    {formData.address && !isViewMode && (<a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formData.address)}`} target="_blank" className="text-blue-600 hover:underline flex items-center gap-1"><ExternalLink size={10} /> Ver no Maps</a>)}
+                                                    {formData.address && !isViewMode && (
+                                                        <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formData.address)}`} target="_blank" className="text-blue-600 hover:underline flex items-center gap-1">
+                                                            <ExternalLink size={10} /> Ver no Maps
+                                                        </a>
+                                                    )}
                                                 </label>
                                                 <input
                                                     placeholder="Endereço Completo"
@@ -4379,13 +4416,34 @@ export default function MainApp() {
                                             <CalendarCheck size={16} /> Atendimento
                                         </div>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <div className={`w-full p-4 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-white'} border border-slate-200 rounded-2xl outline-none font-bold`}>
-                                                {formData.billingType}
-                                            </div>
-                                            {formData.billingType === "Contrato de manutenção" && formData.maintenanceVisit && (
-                                                <div className={`w-full p-4 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-white'} border border-slate-200 rounded-2xl outline-none font-bold`}>
-                                                    {formData.maintenanceVisit}
+                                            {isViewMode ? (
+                                                <div className={`w-full p-4 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-white'} border border-slate-200 rounded-2xl font-bold`}>
+                                                    {formData.billingType}
                                                 </div>
+                                            ) : (
+                                                <AccessibleSelect
+                                                    value={formData.billingType}
+                                                    onChange={(e) => setFormData({ ...formData, billingType: e.target.value, maintenanceVisit: '' })}
+                                                    options={billingOptions}
+                                                    variant="default"
+                                                    label="Tipo de atendimento"
+                                                />
+                                            )}
+
+                                            {formData.billingType === "Contrato de manutenção" && (
+                                                isViewMode ? (
+                                                    formData.maintenanceVisit && (
+                                                        <div className={`w-full p-4 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-white'} border border-slate-200 rounded-2xl font-bold`}>
+                                                            {formData.maintenanceVisit}
+                                                        </div>
+                                                    )
+                                                ) : (
+                                                    <MaintenanceVisitSelect
+                                                        value={formData.maintenanceVisit}
+                                                        onChange={(e) => setFormData({ ...formData, maintenanceVisit: e.target.value })}
+                                                        billingType={formData.billingType}
+                                                    />
+                                                )
                                             )}
                                         </div>
                                     </div>
@@ -4397,7 +4455,7 @@ export default function MainApp() {
                                         <Package size={16} /> Equipamento
                                     </div>
                                     <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                                        {/* NÚMERO DE SÉRIE */}
+                                        {/* NÚMERO DE SÉRIE - COM PREENCHIMENTO AUTOMÁTICO */}
                                         <div className="relative">
                                             <input
                                                 placeholder="Número de Série"
@@ -4406,10 +4464,101 @@ export default function MainApp() {
                                                 onChange={isViewMode ? undefined : (e => {
                                                     const serial = e.target.value;
                                                     setFormData({ ...formData, serial });
+
+                                                    // Buscar equipamento pelo número de série EM TODAS AS ORDENS
+                                                    if (serial && serial.trim() !== '') {
+                                                        const foundOrder = orders.find(o =>
+                                                            o.serial && o.serial.toLowerCase() === serial.toLowerCase().trim()
+                                                        );
+                                                        if (foundOrder) {
+                                                            setFormData(prev => ({
+                                                                ...prev,
+                                                                item: foundOrder.item || prev.item,
+                                                                manufacturer: foundOrder.manufacturer || prev.manufacturer,
+                                                                model: foundOrder.model || prev.model,
+                                                                equipmentObservation: foundOrder.equipmentObservation || prev.equipmentObservation,
+                                                                quantity: foundOrder.quantity || prev.quantity
+                                                            }));
+                                                            showNotification(`Equipamento preenchido: ${foundOrder.item}`, 'success');
+                                                        }
+                                                    }
                                                     setShowSerialSuggestions(true);
                                                 })}
+                                                onFocus={isViewMode ? undefined : () => setShowSerialSuggestions(true)}
+                                                onBlur={isViewMode ? undefined : () => setTimeout(() => setShowSerialSuggestions(false), 200)}
                                                 readOnly={isViewMode}
                                             />
+
+                                            {/* Botão para forçar preenchimento - APENAS NÃO VIEW MODE */}
+                                            {!isViewMode && formData.serial && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const foundOrder = orders.find(o =>
+                                                            o.serial && o.serial.toLowerCase() === formData.serial.toLowerCase().trim()
+                                                        );
+
+                                                        if (foundOrder) {
+                                                            setFormData(prev => ({
+                                                                ...prev,
+                                                                item: foundOrder.item || prev.item,
+                                                                manufacturer: foundOrder.manufacturer || prev.manufacturer,
+                                                                model: foundOrder.model || prev.model,
+                                                                equipmentObservation: foundOrder.equipmentObservation || prev.equipmentObservation,
+                                                                quantity: foundOrder.quantity || prev.quantity
+                                                            }));
+                                                            showNotification(`Equipamento preenchido: ${foundOrder.item}`, 'success');
+                                                        } else {
+                                                            showNotification('Nenhum equipamento encontrado com este número de série', 'warning');
+                                                        }
+                                                    }}
+                                                    className="absolute right-4 top-1/2 transform -translate-y-1/2 text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded hover:bg-blue-200 transition-colors"
+                                                    title="Preencher equipamento pelo NS"
+                                                >
+                                                    <RefreshCw size={12} />
+                                                </button>
+                                            )}
+
+                                            {/* Sugestões de NS - APENAS NÃO VIEW MODE */}
+                                            {!isViewMode && showSerialSuggestions && uniqueSerials.length > 0 && (
+                                                <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
+                                                    <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400">Sugestões de NS</div>
+                                                    {uniqueSerials.filter(s => s.toLowerCase().includes(formData.serial.toLowerCase())).slice(0, 5).map((s, idx) => {
+                                                        // Encontrar o equipamento completo pelo serial
+                                                        const orderWithSerial = orders.find(o => o.serial === s);
+                                                        return (
+                                                            <div
+                                                                key={idx}
+                                                                className="p-3 hover:bg-orange-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700 font-mono font-bold"
+                                                                onMouseDown={(e) => {
+                                                                    e.preventDefault();
+                                                                    if (orderWithSerial) {
+                                                                        setFormData({
+                                                                            ...formData,
+                                                                            serial: s,
+                                                                            item: orderWithSerial.item || formData.item,
+                                                                            manufacturer: orderWithSerial.manufacturer || formData.manufacturer,
+                                                                            model: orderWithSerial.model || formData.model,
+                                                                            equipmentObservation: orderWithSerial.equipmentObservation || formData.equipmentObservation,
+                                                                            quantity: orderWithSerial.quantity || formData.quantity
+                                                                        });
+                                                                    } else {
+                                                                        setFormData({ ...formData, serial: s });
+                                                                    }
+                                                                    setShowSerialSuggestions(false);
+                                                                }}
+                                                            >
+                                                                {s}
+                                                                {orderWithSerial && (
+                                                                    <div className="text-xs text-slate-400 font-normal mt-1">
+                                                                        {orderWithSerial.item} - {orderWithSerial.manufacturer} {orderWithSerial.model}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
                                         </div>
 
                                         {/* ITEM / NOME */}
@@ -4423,8 +4572,18 @@ export default function MainApp() {
                                                     setShowItemSuggestions(true);
                                                     if (fieldErrors.item) setFieldErrors(prev => ({ ...prev, item: false }));
                                                 })}
+                                                onFocus={isViewMode ? undefined : () => setShowItemSuggestions(true)}
+                                                onBlur={isViewMode ? undefined : () => setTimeout(() => setShowItemSuggestions(false), 200)}
                                                 readOnly={isViewMode}
                                             />
+                                            {!isViewMode && showItemSuggestions && uniqueItems.length > 0 && (
+                                                <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
+                                                    <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400">Sugestões de Itens</div>
+                                                    {uniqueItems.filter(i => i.toLowerCase().includes(formData.item.toLowerCase())).slice(0, 5).map((i, idx) => (
+                                                        <div key={idx} className="p-3 hover:bg-orange-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700 font-bold" onMouseDown={(e) => { e.preventDefault(); setFormData({ ...formData, item: i }); setShowItemSuggestions(false); }}>{i}</div>
+                                                    ))}
+                                                </div>
+                                            )}
                                             {fieldErrors.item && !isViewMode && <p className="text-red-500 text-xs mt-1 ml-4">Item/Equipamento é obrigatório</p>}
                                         </div>
 
@@ -4438,8 +4597,18 @@ export default function MainApp() {
                                                     setFormData({ ...formData, manufacturer: e.target.value });
                                                     setShowManufacturerSuggestions(true);
                                                 })}
+                                                onFocus={isViewMode ? undefined : () => setShowManufacturerSuggestions(true)}
+                                                onBlur={isViewMode ? undefined : () => setTimeout(() => setShowManufacturerSuggestions(false), 200)}
                                                 readOnly={isViewMode}
                                             />
+                                            {!isViewMode && showManufacturerSuggestions && uniqueManufacturers.length > 0 && (
+                                                <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
+                                                    <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400">Sugestões de Marcas</div>
+                                                    {uniqueManufacturers.filter(m => m.toLowerCase().includes(formData.manufacturer.toLowerCase())).slice(0, 5).map((m, idx) => (
+                                                        <div key={idx} className="p-3 hover:bg-orange-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700 font-bold" onMouseDown={(e) => { e.preventDefault(); setFormData({ ...formData, manufacturer: m }); setShowManufacturerSuggestions(false); }}>{m}</div>
+                                                    ))}
+                                                </div>
+                                            )}
                                         </div>
 
                                         {/* MODELO */}
@@ -4452,8 +4621,18 @@ export default function MainApp() {
                                                     setFormData({ ...formData, model: e.target.value });
                                                     setShowModelSuggestions(true);
                                                 })}
+                                                onFocus={isViewMode ? undefined : () => setShowModelSuggestions(true)}
+                                                onBlur={isViewMode ? undefined : () => setTimeout(() => setShowModelSuggestions(false), 200)}
                                                 readOnly={isViewMode}
                                             />
+                                            {!isViewMode && showModelSuggestions && uniqueModels.length > 0 && (
+                                                <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
+                                                    <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400">Sugestões de Modelos</div>
+                                                    {uniqueModels.filter(m => m.toLowerCase().includes(formData.model.toLowerCase())).slice(0, 5).map((m, idx) => (
+                                                        <div key={idx} className="p-3 hover:bg-orange-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700 font-bold" onMouseDown={(e) => { e.preventDefault(); setFormData({ ...formData, model: m }); setShowModelSuggestions(false); }}>{m}</div>
+                                                    ))}
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
 
@@ -4512,6 +4691,17 @@ export default function MainApp() {
                                                         <button type="button" onClick={addDefectItem} className="bg-emerald-600 text-white p-3 rounded-xl shadow-lg shadow-emerald-200 hover:bg-emerald-700 transition-colors">
                                                             <Plus size={20} />
                                                         </button>
+
+                                                        {showDefectSuggestions && uniqueDefects.length > 0 && (
+                                                            <div className="absolute top-full left-0 right-14 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
+                                                                <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400">Sugestões</div>
+                                                                {uniqueDefects.filter(d => d.toLowerCase().includes(tempDefect.toLowerCase())).slice(0, 5).map((d, idx) => (
+                                                                    <div key={idx} className="p-3 hover:bg-emerald-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700" onMouseDown={(e) => { e.preventDefault(); setTempDefect(d); setShowDefectSuggestions(false); }}>
+                                                                        {d.length > 50 ? d.substring(0, 50) + '...' : d}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 ) : (
                                                     <div className="text-sm text-slate-500 italic">
@@ -4521,7 +4711,7 @@ export default function MainApp() {
 
                                                 <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                                                     {formData.defectsList && formData.defectsList.map((d, i) => (
-                                                        <div key={i} className="flex justify-between items-start p-3 bg-white border rounded-xl shadow-sm">
+                                                        <div key={i} className="flex justify-between items-start p-3 bg-white border rounded-xl shadow-sm animate-in slide-in-from-left-2">
                                                             <div className="text-sm font-medium text-slate-700 leading-snug">{d}</div>
                                                             {!isViewMode && (
                                                                 <button type="button" onClick={() => removeDefectItem(i)} className="text-slate-300 hover:text-red-500 transition-colors p-1">
@@ -4539,9 +4729,19 @@ export default function MainApp() {
 
                                         {/* TIPO DE SOLUÇÃO E CONTEÚDO */}
                                         <div className="space-y-4">
-                                            <div className={`w-full p-4 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-slate-100'} border border-slate-200 rounded-2xl outline-none font-bold`}>
-                                                {formData.solutionType}
-                                            </div>
+                                            {isViewMode ? (
+                                                <div className={`w-full p-4 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-white'} border border-slate-200 rounded-2xl font-bold`}>
+                                                    {formData.solutionType}
+                                                </div>
+                                            ) : (
+                                                <AccessibleSelect
+                                                    value={formData.solutionType}
+                                                    onChange={(e) => setFormData({ ...formData, solutionType: e.target.value })}
+                                                    options={solutionOptions}
+                                                    variant="light"
+                                                    label="Tipo de solução"
+                                                />
+                                            )}
 
                                             {/* SOLUÇÃO: Preenchimento manual */}
                                             {formData.solutionType === "Preenchimento manual" && (
@@ -4564,14 +4764,37 @@ export default function MainApp() {
                                                                 <button type="button" onClick={addManualSolutionItem} className="bg-indigo-600 text-white p-3 rounded-xl shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-colors">
                                                                     <Plus size={20} />
                                                                 </button>
+
+                                                                {showSolutionSuggestions && uniqueSolutions.length > 0 && (
+                                                                    <div className="absolute top-full left-0 right-14 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
+                                                                        <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400">Sugestões</div>
+                                                                        {uniqueSolutions
+                                                                            .filter(s => s.toLowerCase().includes(tempManualSolution.toLowerCase()))
+                                                                            .slice(0, 5)
+                                                                            .map((s, idx) => (
+                                                                                <div
+                                                                                    key={idx}
+                                                                                    className="p-3 hover:bg-indigo-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700"
+                                                                                    onMouseDown={(e) => {
+                                                                                        e.preventDefault();
+                                                                                        setTempManualSolution(s);
+                                                                                        setShowSolutionSuggestions(false);
+                                                                                    }}
+                                                                                >
+                                                                                    {s.length > 50 ? s.substring(0, 50) + '...' : s}
+                                                                                </div>
+                                                                            ))
+                                                                        }
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                         </div>
                                                     )}
 
-                                                    {/* LISTA DE SOLUÇÕES MANUAIS */}
+                                                    {/* LISTA DE SOLUÇÕES MANUAIS ADICIONADAS */}
                                                     <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                                                         {formData.manualSolutionsList && formData.manualSolutionsList.map((s, i) => (
-                                                            <div key={i} className="flex justify-between items-start p-3 bg-white border rounded-xl shadow-sm">
+                                                            <div key={i} className="flex justify-between items-start p-3 bg-white border rounded-xl shadow-sm animate-in slide-in-from-left-2">
                                                                 <div className="text-sm font-medium text-slate-700 leading-snug">{s}</div>
                                                                 {!isViewMode && (
                                                                     <button type="button" onClick={() => removeManualSolutionItem(i)} className="text-slate-300 hover:text-red-500 transition-colors p-1">
@@ -4589,7 +4812,7 @@ export default function MainApp() {
 
                                             {/* SOLUÇÃO: Manual com custos detalhados */}
                                             {formData.solutionType === "Manual com custos detalhados" && (
-                                                <div className="space-y-4">
+                                                <div className="space-y-4 animate-in fade-in">
                                                     {!isViewMode && (
                                                         <div className="bg-green-50 p-4 rounded-2xl border border-green-100 space-y-3">
                                                             <div className="relative">
@@ -4604,14 +4827,31 @@ export default function MainApp() {
                                                                     onFocus={() => setShowSolutionSuggestions(true)}
                                                                     onBlur={() => setTimeout(() => setShowSolutionSuggestions(false), 200)}
                                                                 />
+                                                                {showSolutionSuggestions && uniqueSolutionsList.length > 0 && (
+                                                                    <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
+                                                                        <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400">Sugestões</div>
+                                                                        {uniqueSolutionsList
+                                                                            .filter(s => s.toLowerCase().includes(tempSolution.toLowerCase()))
+                                                                            .slice(0, 5)
+                                                                            .map((s, idx) => (
+                                                                                <div
+                                                                                    key={idx}
+                                                                                    className="p-3 hover:bg-green-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700"
+                                                                                    onMouseDown={(e) => {
+                                                                                        e.preventDefault();
+                                                                                        setTempSolution(s);
+                                                                                        setShowSolutionSuggestions(false);
+                                                                                    }}
+                                                                                >
+                                                                                    {s}
+                                                                                </div>
+                                                                            ))
+                                                                        }
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                             <div className="flex gap-2">
-                                                                <input
-                                                                    placeholder="Valor R$ 0,00"
-                                                                    className="flex-1 p-2 bg-white border border-green-200 rounded-lg text-sm"
-                                                                    value={tempCost}
-                                                                    onChange={e => setTempCost(e.target.value)}
-                                                                />
+                                                                <input placeholder="Valor R$ 0,00" className="flex-1 p-2 bg-white border border-green-200 rounded-lg text-sm" value={tempCost} onChange={e => setTempCost(e.target.value)} />
                                                                 <button type="button" onClick={addSolutionItem} className="bg-green-600 text-white p-2.5 rounded-lg shadow-lg shadow-green-200">
                                                                     <Plus size={20} />
                                                                 </button>
@@ -4621,7 +4861,7 @@ export default function MainApp() {
 
                                                     <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
                                                         {formData.solutionsList.map(s => (
-                                                            <div key={s.id} className="flex justify-between items-center p-3 bg-white border rounded-xl shadow-sm">
+                                                            <div key={s.id} className="flex justify-between items-center p-3 bg-white border rounded-xl shadow-sm animate-in slide-in-from-right-2">
                                                                 <div>
                                                                     <div className="text-xs font-bold text-slate-800">{s.text}</div>
                                                                     <div className="text-[10px] text-green-600 font-black">R$ {s.cost}</div>
@@ -4634,12 +4874,15 @@ export default function MainApp() {
                                                             </div>
                                                         ))}
                                                     </div>
+                                                    {fieldErrors.solutionsList && formData.solutionsList.length === 0 && !isViewMode && (
+                                                        <p className="text-red-500 text-xs mt-1 ml-4">Adicione pelo menos um item na lista de soluções</p>
+                                                    )}
                                                 </div>
                                             )}
 
                                             {/* SOLUÇÃO: Conserto em bancada */}
                                             {formData.solutionType === "Conserto em bancada" && (
-                                                <div className="space-y-4">
+                                                <div className="space-y-4 animate-in fade-in">
                                                     {!isViewMode && (
                                                         <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100 space-y-3">
                                                             <div className="relative flex gap-2">
@@ -4659,7 +4902,7 @@ export default function MainApp() {
 
                                                     <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                                                         {formData.benchRepairList && formData.benchRepairList.map((item, i) => (
-                                                            <div key={i} className="flex justify-between items-start p-3 bg-white border rounded-xl shadow-sm">
+                                                            <div key={i} className="flex justify-between items-start p-3 bg-white border rounded-xl shadow-sm animate-in slide-in-from-left-2">
                                                                 <div className="text-sm font-medium text-slate-700 leading-snug">{item}</div>
                                                                 {!isViewMode && (
                                                                     <button type="button" onClick={() => removeBenchRepairItem(i)} className="text-slate-300 hover:text-red-500 transition-colors p-1">
@@ -4672,15 +4915,30 @@ export default function MainApp() {
                                                             <div className="text-center text-xs text-slate-400 italic py-2">Nenhuma etapa de conserto listada.</div>
                                                         )}
                                                     </div>
+                                                    {fieldErrors.benchRepairList && (!formData.benchRepairList || formData.benchRepairList.length === 0) && !isViewMode && (
+                                                        <p className="text-red-500 text-xs mt-1 ml-4">Descreva as etapas do conserto em bancada</p>
+                                                    )}
                                                 </div>
                                             )}
 
                                             {/* SOLUÇÃO: Não passível de conserto */}
                                             {formData.solutionType === "Não passível de conserto, substituir por novo equipamento / material" && (
                                                 <div>
-                                                    <div className={`w-full p-4 ${isViewMode ? 'bg-red-50 cursor-not-allowed' : 'bg-red-50'} border border-red-100 text-red-900 border rounded-2xl outline-none font-bold`}>
-                                                        {formData.notRepairableDetail || 'Não especificado'}
-                                                    </div>
+                                                    <textarea
+                                                        placeholder="Detalhe a substituição por novo equipamento / material..."
+                                                        className={`w-full p-4 ${fieldErrors.notRepairableDetail ? 'bg-red-50 border-red-500' : 'bg-red-50 border-red-100'} text-red-900 border rounded-2xl outline-none font-bold`}
+                                                        value={formData.notRepairableDetail}
+                                                        onChange={isViewMode ? undefined : (e => {
+                                                            setFormData({ ...formData, notRepairableDetail: e.target.value });
+                                                            if (fieldErrors.notRepairableDetail) setFieldErrors(prev => ({ ...prev, notRepairableDetail: false }));
+                                                        })}
+                                                        onBlur={isViewMode ? undefined : () => handleBlur('notRepairableDetail')}
+                                                        rows={3}
+                                                        readOnly={isViewMode}
+                                                    />
+                                                    {fieldErrors.notRepairableDetail && !isViewMode && (
+                                                        <p className="text-red-500 text-xs mt-1 ml-4">Detalhe a substituição por novo equipamento/material</p>
+                                                    )}
                                                 </div>
                                             )}
                                         </div>
@@ -4755,27 +5013,27 @@ export default function MainApp() {
                                                         <div className="space-y-2 animate-in fade-in">
                                                             <label className="text-[10px] font-bold text-slate-400 uppercase">Parcelas</label>
                                                             {formData.paymentCondition === 'Boleto' ? (
-                                                                <InstallmentSelect
-                                                                    value={formData.installments}
-                                                                    onChange={(e) => {
-                                                                        const is5Days = e.target.value === "5 dias (5% de desconto)";
-                                                                        setFormData({
-                                                                            ...formData,
-                                                                            installments: e.target.value,
-                                                                            discount5Days: is5Days
-                                                                        });
-                                                                    }}
-                                                                    paymentCondition={formData.paymentCondition}
-                                                                    discount5Days={formData.discount5Days}
-                                                                    showAddOption={true}
-                                                                />
+                                                                <div className="space-y-3">
+                                                                    <AccessibleSelect
+                                                                        value={formData.installments}
+                                                                        onChange={(e) => {
+                                                                            const is5Days = e.target.value === "5 dias (5% de desconto)";
+                                                                            setFormData({
+                                                                                ...formData,
+                                                                                installments: e.target.value,
+                                                                                discount5Days: is5Days
+                                                                            });
+                                                                        }}
+                                                                        options={installmentOptions['Boleto']}
+                                                                        label="Parcelas boleto"
+                                                                    />
+                                                                </div>
                                                             ) : (
-                                                                <InstallmentSelect
+                                                                <AccessibleSelect
                                                                     value={formData.installments}
                                                                     onChange={(e) => setFormData({ ...formData, installments: e.target.value })}
-                                                                    paymentCondition={formData.paymentCondition}
-                                                                    discount5Days={false}
-                                                                    showAddOption={false}
+                                                                    options={installmentOptions['Cartão']}
+                                                                    label="Parcelas cartão"
                                                                 />
                                                             )}
                                                         </div>
@@ -4835,13 +5093,14 @@ export default function MainApp() {
                                                     return (
                                                         <div
                                                             key={index}
-                                                            className="relative z-10 flex flex-col items-center gap-3 min-w-[80px]"
+                                                            className="relative z-10 flex flex-col items-center gap-3 cursor-pointer group min-w-[80px]"
+                                                            onClick={isViewMode ? undefined : () => setFormData({ ...formData, status: step.value, statusDate: new Date().toISOString().split('T')[0] })}
                                                         >
-                                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 transition-all duration-300 shadow-sm ${isCompleted ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-slate-300 text-slate-300'}`}>
+                                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 transition-all duration-300 shadow-sm ${isCompleted ? 'bg-blue-600 border-blue-600 text-white scale-110' : 'bg-white border-slate-300 text-slate-300 group-hover:border-blue-300'}`}>
                                                                 {isCompleted ? <Check size={14} strokeWidth={4} /> : <div className="w-2 h-2 rounded-full bg-slate-200" />}
                                                             </div>
                                                             <div className="text-center flex flex-col items-center">
-                                                                <span className={`text-[10px] font-bold uppercase tracking-wide ${isCurrent ? 'text-blue-700' : 'text-slate-400'}`}>
+                                                                <span className={`text-[10px] font-bold uppercase tracking-wide transition-colors ${isCurrent ? 'text-blue-700' : 'text-slate-400'}`}>
                                                                     {step.label}
                                                                 </span>
                                                                 <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded mt-1 whitespace-nowrap ${stepDate ? 'bg-white text-slate-600 shadow-sm border border-slate-200' : 'text-slate-300'}`}>
@@ -4857,15 +5116,34 @@ export default function MainApp() {
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start pt-4 border-t border-slate-200/50">
                                             <div className="space-y-1">
                                                 <label className="text-[10px] font-black text-slate-400 uppercase">Status Geral</label>
-                                                <div className={`w-full p-4 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-white'} border border-slate-200 rounded-2xl font-bold`}>
-                                                    {formData.status}
-                                                </div>
+                                                {isViewMode ? (
+                                                    <div className={`w-full p-4 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-white'} border border-slate-200 rounded-2xl font-bold`}>
+                                                        {formData.status}
+                                                    </div>
+                                                ) : (
+                                                    <AccessibleSelect
+                                                        value={formData.status}
+                                                        onChange={(e) => {
+                                                            setFormData({
+                                                                ...formData,
+                                                                status: e.target.value,
+                                                                statusDate: new Date().toISOString().split('T')[0]
+                                                            })
+                                                        }}
+                                                        options={statusOptions}
+                                                        label="Status geral"
+                                                    />
+                                                )}
                                             </div>
                                             <div className="space-y-1">
                                                 <label className="text-[10px] font-black text-slate-400 uppercase">Data do Status Atual</label>
-                                                <div className={`w-full p-4 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-white'} border border-slate-200 rounded-2xl font-bold`}>
-                                                    {formData.statusDate}
-                                                </div>
+                                                <input
+                                                    type="date"
+                                                    className={`w-full p-4 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-white'} border border-slate-200 rounded-2xl outline-none font-bold`}
+                                                    value={formData.statusDate}
+                                                    onChange={isViewMode ? undefined : (e => setFormData({ ...formData, statusDate: e.target.value }))}
+                                                    readOnly={isViewMode}
+                                                />
                                             </div>
                                         </div>
 
@@ -4885,13 +5163,61 @@ export default function MainApp() {
                                         )}
                                     </div>
 
-                                    {/* RASTREAMENTO - APENAS EXIBIÇÃO NO VIEW MODE */}
-                                    {formData.status === "Em rota de entrega" && formData.trackingCode && (
-                                        <div className="space-y-1 animate-in zoom-in-95">
-                                            <label className="text-[10px] font-black text-blue-600 uppercase">Rastreamento</label>
-                                            <div className="w-full p-4 bg-blue-50 border border-blue-100 rounded-2xl font-bold">
-                                                {formData.trackingCode}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        {formData.status !== 'Recebido' && (
+                                            <div className="space-y-1 animate-in fade-in">
+                                                <label className="text-[10px] font-black text-slate-400 uppercase">Enviado para Terceiro?</label>
+                                                {isViewMode ? (
+                                                    <div className={`w-full p-4 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-white'} border border-slate-200 rounded-2xl font-bold`}>
+                                                        {formData.sentToThirdParty}
+                                                    </div>
+                                                ) : (
+                                                    <AccessibleSelect
+                                                        value={formData.sentToThirdParty}
+                                                        onChange={(e) => setFormData({ ...formData, sentToThirdParty: e.target.value })}
+                                                        options={['Não', 'Sim']}
+                                                        variant="light"
+                                                        label="Enviado para terceiro"
+                                                    />
+                                                )}
                                             </div>
+                                        )}
+                                        {formData.status === "Em rota de entrega" && (
+                                            <div className="space-y-1 animate-in zoom-in-95">
+                                                <label className="text-[10px] font-black text-blue-600 uppercase">Rastreamento</label>
+                                                <input
+                                                    placeholder="Código de Rastreio"
+                                                    className={`w-full p-4 ${isViewMode ? 'bg-blue-50 cursor-not-allowed' : 'bg-blue-50'} border border-blue-100 rounded-2xl outline-none font-bold`}
+                                                    value={formData.trackingCode}
+                                                    onChange={isViewMode ? undefined : (e => setFormData({ ...formData, trackingCode: e.target.value }))}
+                                                    readOnly={isViewMode}
+                                                />
+                                            </div>
+                                        )}
+                                    </div>
+                                    {formData.sentToThirdParty === "Sim" && formData.status !== 'Recebido' && (
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-6 bg-slate-100 rounded-3xl border border-slate-200 animate-in slide-in-from-top-4">
+                                            <input
+                                                placeholder="Empresa Terceira"
+                                                className={`w-full p-3 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-white'} border rounded-xl text-sm`}
+                                                value={formData.thirdPartyInfo}
+                                                onChange={isViewMode ? undefined : (e => setFormData({ ...formData, thirdPartyInfo: e.target.value }))}
+                                                readOnly={isViewMode}
+                                            />
+                                            <input
+                                                placeholder="Rastreio Terceiro"
+                                                className={`w-full p-3 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-white'} border rounded-xl text-sm`}
+                                                value={formData.thirdPartyTracking}
+                                                onChange={isViewMode ? undefined : (e => setFormData({ ...formData, thirdPartyTracking: e.target.value }))}
+                                                readOnly={isViewMode}
+                                            />
+                                            <input
+                                                type="date"
+                                                className={`w-full p-3 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-white'} border rounded-xl text-sm`}
+                                                value={formData.thirdPartyDate}
+                                                onChange={isViewMode ? undefined : (e => setFormData({ ...formData, thirdPartyDate: e.target.value }))}
+                                                readOnly={isViewMode}
+                                            />
                                         </div>
                                     )}
                                 </div>
