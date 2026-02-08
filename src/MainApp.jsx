@@ -479,16 +479,83 @@ const InstallmentSelect = ({
     );
 };
 
-// MODAL DE CONDIÇÕES DE PAGAMENTO PARA MÚLTIPLAS OSs - CORRIGIDO
+// MODAL DE CONFIRMAÇÃO DE RECUSA
+const RejectConfirmModal = ({
+    isOpen,
+    onClose,
+    order,
+    onConfirm
+}) => {
+    if (!isOpen || !order) return null;
+
+    return (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border border-slate-200 space-y-6 animate-in zoom-in-95">
+                <div className="flex items-center gap-3">
+                    <div className="bg-red-100 p-3 rounded-full text-red-600">
+                        <AlertCircle size={24} />
+                    </div>
+                    <div>
+                        <h3 className="text-xl font-black text-slate-900">Recusar Orçamento</h3>
+                        <p className="text-slate-500 text-sm">Confirmação de recusa</p>
+                    </div>
+                </div>
+
+                <div className="space-y-4">
+                    <div className="p-4 bg-red-50 rounded-2xl border border-red-100">
+                        <div className="flex items-center gap-2 text-red-600 mb-2">
+                            <AlertCircle size={16} />
+                            <span className="text-sm font-bold">Atenção!</span>
+                        </div>
+                        <p className="text-sm text-red-700">
+                            Tem certeza que deseja recusar o orçamento da <strong>OS {order.osNumber}</strong>?
+                        </p>
+                        <p className="text-xs text-red-600 mt-2">
+                            Esta ação não poderá ser desfeita. A OS será movida para o status "Orçamento recusado".
+                        </p>
+                    </div>
+
+                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                        <div className="text-xs font-bold text-slate-400 uppercase mb-2">Detalhes da OS</div>
+                        <div className="text-sm text-slate-600">
+                            <div><strong>Cliente:</strong> {order.client}</div>
+                            <div><strong>Equipamento:</strong> {order.item}</div>
+                            <div><strong>Valor:</strong> R$ {parseCurrency(order.chargedAmount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="flex gap-3">
+                    <button
+                        onClick={onClose}
+                        className="flex-1 py-4 rounded-xl font-bold text-slate-600 hover:bg-slate-100 transition-colors border border-slate-200"
+                    >
+                        Cancelar
+                    </button>
+                    <button
+                        onClick={() => {
+                            onConfirm(order);
+                            onClose();
+                        }}
+                        className="flex-1 py-4 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 shadow-xl shadow-red-200 transition-colors flex items-center justify-center gap-2"
+                    >
+                        <X size={20} /> Confirmar Recusa
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const PaymentConditionsModal = ({
     isOpen,
     onClose,
     selectedOrdersCount,
-    totalOriginalValue, // Nome alterado para ficar mais claro
+    totalOriginalValue,
     initialData,
-    onConfirm
+    onConfirm,
+    orderNumber = null
 }) => {
-    // Definir installmentOptions dentro do componente
     const installmentOptions = {
         'Boleto': [
             "30 / 60 dias",
@@ -510,6 +577,15 @@ const PaymentConditionsModal = ({
         finalChargedAmount: totalOriginalValue, // Começa com valor original
         originalValue: totalOriginalValue // Valor base para cálculos
     });
+
+    const { userData } = useAuth();
+
+    useEffect(() => {
+        if (isOpen && userData?.role === 'client') {
+            onClose();
+            showNotification('Este modal é apenas para administradores', 'error');
+        }
+    }, [isOpen, userData, onClose]);
 
     useEffect(() => {
         if (isOpen) {
@@ -602,7 +678,12 @@ const PaymentConditionsModal = ({
                     </div>
                     <div>
                         <h3 className="text-xl font-black text-slate-900">Condições de Pagamento</h3>
-                        <p className="text-slate-500 text-sm">Ajuste as condições para {selectedOrdersCount} OS(s) selecionadas</p>
+                        <p className="text-slate-500 text-sm">
+                            {orderNumber
+                                ? `Configurar pagamento para OS ${orderNumber}`
+                                : `Ajuste as condições para ${selectedOrdersCount} OS(s) selecionadas`
+                            }
+                        </p>
                     </div>
                 </div>
 
@@ -782,6 +863,11 @@ export default function MainApp() {
     // === AUTENTICAÇÃO ===
     const { user, userData, loading: authLoading, hasPermission, logout } = useAuth();
 
+    const [isClientPaymentModalOpen, setIsClientPaymentModalOpen] = useState(false);
+    const [orderForPayment, setOrderForPayment] = useState(null);
+    const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
+    const [orderToReject, setOrderToReject] = useState(null);
+
     const modalRef = useRef(null);
     const contractModalRef = useRef(null);
     const deleteModalRef = useRef(null);
@@ -952,7 +1038,7 @@ export default function MainApp() {
         { value: "Finalizado", label: "Finalizado" }
     ];
 
-    const statusOptions = TIMELINE_STEPS.map(s => s.value);
+    const statusOptions = [...TIMELINE_STEPS.map(s => s.value), "Orçamento recusado"];
     const billingOptions = ["Avulso", "Cortesia (visita sem custo)", "Contrato de manutenção"];
     const currentMonthName = MESES[new Date().getMonth()];
 
@@ -979,6 +1065,130 @@ export default function MainApp() {
     // === FUNÇÕES UTILITÁRIAS ===
 
     // Adicione esta função após as outras funções principais
+
+    // Função para aprovar orçamento
+    const handleApproveBudget = async (order) => {
+        if (!order) return;
+
+        try {
+            // Atualizar status para "Aguardando aprovação do orçamento"
+            await updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', order.firestoreId), {
+                status: 'Aguardando aprovação do orçamento',
+                statusDate: new Date().toISOString().split('T')[0],
+                statusHistory: [...(order.statusHistory || []), {
+                    status: 'Aguardando aprovação do orçamento',
+                    date: new Date().toISOString().split('T')[0],
+                    timestamp: Date.now()
+                }]
+            });
+
+            showNotification('Orçamento aprovado! Agora selecione o método de pagamento.', 'success');
+
+            // Abrir modal ESPECÍFICO para cliente (não o modal de impressão)
+            setTimeout(() => {
+                openClientPaymentModal(order);
+            }, 500);
+
+        } catch (error) {
+            console.error('Erro ao aprovar orçamento:', error);
+            showNotification('Erro ao aprovar orçamento. Tente novamente.', 'error');
+        }
+    };
+
+    const handleRejectBudget = (order) => {
+        if (!order) return;
+
+        setOrderToReject(order);
+        setIsRejectModalOpen(true);
+    };
+
+    // Crie uma função separada para confirmar a recusa
+    const confirmRejectBudget = async (order) => {
+        if (!order) return;
+
+        try {
+            await updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', order.firestoreId), {
+                status: 'Orçamento recusado',
+                statusDate: new Date().toISOString().split('T')[0],
+                statusHistory: [...(order.statusHistory || []), {
+                    status: 'Orçamento recusado',
+                    date: new Date().toISOString().split('T')[0],
+                    timestamp: Date.now()
+                }]
+            });
+
+            showNotification('Orçamento recusado com sucesso!', 'success');
+
+        } catch (error) {
+            console.error('Erro ao recusar orçamento:', error);
+            showNotification('Erro ao recusar orçamento. Tente novamente.', 'error');
+        }
+    };
+
+    // Função para abrir modal de pagamento para uma única OS
+    const openPaymentModalForOrder = (order) => {
+        // Este modal agora é apenas para ADMIN imprimir
+        if (userData?.role === 'client') {
+            // Cliente não deve usar esse modal - redireciona para o modal correto
+            openClientPaymentModal(order);
+            return;
+        }
+
+        if (!order) return;
+
+        const totalOriginalValue = parseCurrency(order.chargedAmount);
+
+        setPaymentModalData({
+            totalOriginalValue,
+            paymentCondition: order.paymentCondition || 'À vista',
+            installments: order.installments || '',
+            discount5Days: order.discount5Days || false,
+            finalChargedAmount: order.finalChargedAmount || totalOriginalValue,
+            selectedOrderId: order.firestoreId,
+            orderNumber: order.osNumber
+        });
+
+        setIsPaymentModalOpen(true);
+    };
+
+    const openClientPaymentModal = (order) => {
+        setOrderForPayment(order);
+        setIsClientPaymentModalOpen(true);
+    };
+
+    const handleConfirmClientPayment = async (paymentData) => {
+        if (!orderForPayment) return;
+
+        try {
+            // Atualizar a OS com as condições de pagamento e mudar status
+            await updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', orderForPayment.firestoreId), {
+                paymentCondition: paymentData.paymentCondition,
+                installments: paymentData.installments,
+                discount5Days: paymentData.paymentCondition === 'Boleto' &&
+                    paymentData.installments === "5 dias (5% de desconto)",
+                finalChargedAmount: paymentData.finalChargedAmount,
+                status: 'Em manutenção',
+                statusDate: new Date().toISOString().split('T')[0],
+                statusHistory: [...(orderForPayment.statusHistory || []), {
+                    status: 'Em manutenção',
+                    date: new Date().toISOString().split('T')[0],
+                    timestamp: Date.now()
+                }]
+            });
+
+            showNotification('Pagamento confirmado! OS agora está em manutenção.', 'success');
+            setIsClientPaymentModalOpen(false);
+            setOrderForPayment(null);
+
+            // Aqui é onde você poderia chamar a função para enviar email ao admin
+            // (vamos implementar isso na Parte 3)
+
+        } catch (error) {
+            console.error('Erro ao confirmar pagamento:', error);
+            showNotification('Erro ao confirmar pagamento. Tente novamente.', 'error');
+        }
+    };
+
     const handleSelectByRange = () => {
         if (!rangeInput.trim()) {
             showNotification('Digite um intervalo válido (ex: 10-20 ou 10,20,30)', 'error');
@@ -1811,6 +2021,193 @@ export default function MainApp() {
         setIsModalOpen(true);
     };
 
+    // MODAL DE PAGAMENTO PARA CLIENTE (SEM IMPRESSÃO)
+    const ClientPaymentModal = ({
+        isOpen,
+        onClose,
+        order,
+        onConfirm
+    }) => {
+        // Definir installmentOptions dentro do componente
+        const installmentOptions = {
+            'Boleto': [
+                "30 / 60 dias",
+                "5 dias (5% de desconto)"
+            ],
+            'Cartão': [
+                "1x (30 Dias)",
+                "2x (30/60 Dias)",
+                "3x (30/60/90 Dias)",
+                "4x (30/60/90/120 Dias)"
+            ]
+        };
+
+        // Estado inicial baseado na OS
+        const [paymentData, setPaymentData] = useState({
+            paymentCondition: order?.paymentCondition || 'À vista',
+            installments: order?.installments || '',
+            discount5Days: order?.discount5Days || false,
+            finalChargedAmount: order?.finalChargedAmount || parseCurrency(order?.chargedAmount),
+            originalValue: parseCurrency(order?.chargedAmount)
+        });
+
+        // Calcular valor final com desconto automático
+        const calculateFinalAmount = (condition, installments, originalValue) => {
+            if (condition === 'Boleto' && installments === "5 dias (5% de desconto)") {
+                return originalValue * 0.95;
+            }
+            return originalValue;
+        };
+
+        const handlePaymentConditionChange = (e) => {
+            const newCondition = e.target.value;
+            let newInstallments = '';
+
+            if (newCondition === 'Boleto') {
+                newInstallments = "30 / 60 dias";
+            } else if (newCondition === 'Cartão') {
+                newInstallments = "1x (30 Dias)";
+            } else if (newCondition === 'À vista') {
+                newInstallments = '';
+            }
+
+            const finalAmount = calculateFinalAmount(
+                newCondition,
+                newInstallments,
+                paymentData.originalValue
+            );
+
+            setPaymentData({
+                ...paymentData,
+                paymentCondition: newCondition,
+                installments: newInstallments,
+                finalChargedAmount: finalAmount
+            });
+        };
+
+        const handleInstallmentsChange = (e) => {
+            const newInstallments = e.target.value;
+            const finalAmount = calculateFinalAmount(
+                paymentData.paymentCondition,
+                newInstallments,
+                paymentData.originalValue
+            );
+
+            setPaymentData({
+                ...paymentData,
+                installments: newInstallments,
+                finalChargedAmount: finalAmount
+            });
+        };
+
+        const handleConfirm = () => {
+            onConfirm(paymentData);
+            onClose();
+        };
+
+        if (!isOpen || !order) return null;
+
+        return (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+                <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border border-slate-200 space-y-6 animate-in zoom-in-95">
+                    <div className="flex items-center gap-3">
+                        <div className="bg-blue-100 p-3 rounded-full text-blue-600">
+                            <CheckCircle2 size={24} />
+                        </div>
+                        <div>
+                            <h3 className="text-xl font-black text-slate-900">Confirmar Pagamento</h3>
+                            <p className="text-slate-500 text-sm">Configure o pagamento para a OS {order.osNumber}</p>
+                        </div>
+                    </div>
+
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold text-slate-400 uppercase">Valor do Orçamento</label>
+                            <div className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-2xl text-slate-800 text-center">
+                                R$ {paymentData.originalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </div>
+
+                            {paymentData.finalChargedAmount !== paymentData.originalValue && (
+                                <div className="mt-4 space-y-2 animate-in fade-in">
+                                    <label className="text-xs font-bold text-green-600 uppercase">Valor com Desconto (5%)</label>
+                                    <div className="w-full p-4 bg-green-50 border-2 border-green-200 rounded-2xl font-black text-2xl text-green-800 text-center">
+                                        R$ {paymentData.finalChargedAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        <div className="text-sm text-green-600 font-bold mt-2">
+                                            ✓ Desconto de 5% aplicado
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold text-slate-400 uppercase">Condição de Pagamento</label>
+                            <select
+                                value={paymentData.paymentCondition}
+                                onChange={handlePaymentConditionChange}
+                                className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-bold"
+                            >
+                                <option value="À vista">À vista</option>
+                                <option value="Boleto">Boleto</option>
+                                <option value="Cartão">Cartão</option>
+                            </select>
+                        </div>
+
+                        {(paymentData.paymentCondition === 'Boleto' || paymentData.paymentCondition === 'Cartão') && (
+                            <div className="space-y-2 animate-in fade-in">
+                                <label className="text-xs font-bold text-slate-400 uppercase">Parcelas</label>
+                                <select
+                                    value={paymentData.installments}
+                                    onChange={handleInstallmentsChange}
+                                    className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-bold"
+                                >
+                                    {paymentData.paymentCondition === 'Boleto' ? (
+                                        <>
+                                            <option value="30 / 60 dias">30 / 60 dias</option>
+                                            <option value="5 dias (5% de desconto)">5 dias (5% de desconto)</option>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <option value="1x (30 Dias)">1x (30 Dias)</option>
+                                            <option value="2x (30/60 Dias)">2x (30/60 Dias)</option>
+                                            <option value="3x (30/60/90 Dias)">3x (30/60/90 Dias)</option>
+                                            <option value="4x (30/60/90/120 Dias)">4x (30/60/90/120 Dias)</option>
+                                        </>
+                                    )}
+                                </select>
+                            </div>
+                        )}
+
+                        <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
+                            <div className="flex items-center gap-2 text-blue-600 mb-2">
+                                <Info size={16} />
+                                <span className="text-xs font-bold uppercase">Informação</span>
+                            </div>
+                            <p className="text-xs text-blue-700">
+                                Ao confirmar, a OS será movida para <strong>"Em manutenção"</strong> e você será notificado sobre os próximos passos.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="flex gap-3">
+                        <button
+                            onClick={onClose}
+                            className="flex-1 py-4 rounded-xl font-bold text-slate-500 hover:bg-slate-100 transition-colors"
+                        >
+                            Cancelar
+                        </button>
+                        <button
+                            onClick={handleConfirm}
+                            className="flex-1 py-4 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 shadow-xl shadow-green-200 transition-colors flex items-center justify-center gap-2"
+                        >
+                            <Check size={20} /> Confirmar Pagamento
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
 
     const openViewModal = (order) => {
         setTempSolution('');
@@ -2512,38 +2909,133 @@ export default function MainApp() {
     };
 
 
+    // Atualize a função handleConfirmPrintWithPayment para lidar com OS única
     const handleConfirmPrintWithPayment = (paymentData) => {
-        const selectedData = ordersForUser.filter(o => selectedOrders.includes(o.firestoreId));
+        const { selectedOrderId } = paymentData;
 
-        const updatePromises = selectedData.map(async (os) => {
-            try {
-                // NÃO reaplica o desconto! Usa o valor FINAL do modal
-                // O valor final já foi calculado no modal
-                const finalChargedAmount = paymentData.finalChargedAmount;
-
-                await updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', os.firestoreId), {
+        // Se houver um ID de OS específico (aprovada individualmente), atualizar apenas ela
+        if (selectedOrderId) {
+            const orderToUpdate = ordersForUser.find(o => o.firestoreId === selectedOrderId);
+            if (orderToUpdate) {
+                // Atualizar a OS específica
+                updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', selectedOrderId), {
                     paymentCondition: paymentData.paymentCondition,
                     installments: paymentData.installments,
-                    // discount5Days é TRUE apenas se for opção de 5 dias
                     discount5Days: paymentData.paymentCondition === 'Boleto' &&
                         paymentData.installments === "5 dias (5% de desconto)",
-                    finalChargedAmount: finalChargedAmount
+                    finalChargedAmount: paymentData.finalChargedAmount,
+                    status: 'Em manutenção', // Atualizar status para em manutenção
+                    statusDate: new Date().toISOString().split('T')[0],
+                    statusHistory: [...(orderToUpdate.statusHistory || []), {
+                        status: 'Em manutenção',
+                        date: new Date().toISOString().split('T')[0],
+                        timestamp: Date.now()
+                    }]
+                }).then(() => {
+                    setIsPaymentModalOpen(false);
+                    showNotification('Orçamento aprovado e pagamento configurado! OS agora está em manutenção.', 'success');
+
+                    // Imprimir relatório para o cliente
+                    const groups = {
+                        [orderToUpdate.client]: {
+                            header: {
+                                client: orderToUpdate.client,
+                                cnpj: orderToUpdate.cnpj,
+                                contactPerson: orderToUpdate.contactPerson,
+                                email: orderToUpdate.email,
+                                address: orderToUpdate.address,
+                                billingType: orderToUpdate.billingType,
+                                maintenanceVisit: orderToUpdate.maintenanceVisit
+                            },
+                            items: [{
+                                ...orderToUpdate,
+                                paymentCondition: paymentData.paymentCondition,
+                                installments: paymentData.installments,
+                                discount5Days: paymentData.paymentCondition === 'Boleto' &&
+                                    paymentData.installments === "5 dias (5% de desconto)",
+                                finalChargedAmount: paymentData.finalChargedAmount
+                            }]
+                        }
+                    };
+
+                    // Chame a função de impressão com os dados atualizados
+                    handlePrintForSingleOrder(groups, paymentData);
+                }).catch(error => {
+                    console.error('Erro ao atualizar condições de pagamento:', error);
+                    showNotification('Erro ao processar aprovação. Tente novamente.', 'error');
                 });
-            } catch (error) {
-                console.error('Erro ao atualizar condições de pagamento:', error);
             }
-        });
+        } else {
+            // Processamento original para múltiplas OSs (mantido para compatibilidade)
+            const selectedData = ordersForUser.filter(o => selectedOrders.includes(o.firestoreId));
 
-        Promise.all(updatePromises).then(() => {
-            setIsPaymentModalOpen(false);
-
-            // Passa os dados do modal DIRETAMENTE para o relatório
-            // O relatório vai usar o finalChargedAmount que já tem o desconto aplicado (se for o caso)
-            handlePrint('client', {
-                ...paymentData,
-                customInstallmentOptions: customInstallmentOptions
+            const updatePromises = selectedData.map(async (os) => {
+                try {
+                    await updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', os.firestoreId), {
+                        paymentCondition: paymentData.paymentCondition,
+                        installments: paymentData.installments,
+                        discount5Days: paymentData.paymentCondition === 'Boleto' &&
+                            paymentData.installments === "5 dias (5% de desconto)",
+                        finalChargedAmount: paymentData.finalChargedAmount
+                    });
+                } catch (error) {
+                    console.error('Erro ao atualizar condições de pagamento:', error);
+                }
             });
-        });
+
+            Promise.all(updatePromises).then(() => {
+                setIsPaymentModalOpen(false);
+                handlePrint('client', {
+                    ...paymentData,
+                    customInstallmentOptions: customInstallmentOptions
+                });
+            });
+        }
+    };
+
+    // Função auxiliar para imprimir OS única
+    const handlePrintForSingleOrder = (groups, paymentConditions = null) => {
+        const title = 'Proposta de orçamento';
+
+        try {
+            showNotification('Gerando PDF...', 'info');
+
+            const pdfDoc = (
+                <DocumentoPDF
+                    groups={groups}
+                    printType='client'
+                    title={title}
+                    customPaymentConditions={paymentConditions}
+                />
+            );
+
+            // Gerar o blob do PDF
+            pdf(pdfDoc).toBlob().then(pdfBlob => {
+                const pdfUrl = URL.createObjectURL(pdfBlob);
+
+                // Abrir em nova janela
+                const printWindow = window.open(pdfUrl, '_blank');
+                if (!printWindow) {
+                    showNotification('Permita pop-ups para visualizar o documento', 'error');
+                    const link = document.createElement('a');
+                    link.href = pdfUrl;
+                    link.download = `${title.toLowerCase().replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                }
+
+                setTimeout(() => {
+                    URL.revokeObjectURL(pdfUrl);
+                }, 30000);
+
+                showNotification('PDF gerado com sucesso!', 'success');
+            });
+
+        } catch (error) {
+            console.error('Erro ao gerar PDF:', error);
+            showNotification('Erro ao gerar PDF: ' + error.message, 'error');
+        }
     };
 
     const handlePrint = async (printType, customPaymentConditions = null) => {
@@ -3597,7 +4089,10 @@ export default function MainApp() {
                                                         <div className="text-xs font-bold text-slate-500 uppercase tracking-tighter">{o.billingType}</div>
                                                     </td>
                                                     <td className="px-8 py-6">
-                                                        <div className="px-4 py-2 rounded-xl text-[10px] font-black uppercase inline-block border bg-slate-100 text-slate-600">
+                                                        <div className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase inline-block border ${o.status === 'Orçamento recusado'
+                                                            ? 'bg-red-100 text-red-600 border-red-200'
+                                                            : 'bg-slate-100 text-slate-600 border-slate-200'
+                                                            }`}>
                                                             {o.status}
                                                         </div>
                                                         <div className="text-[9px] text-slate-400 mt-1 font-medium">
@@ -3605,7 +4100,33 @@ export default function MainApp() {
                                                         </div>
                                                     </td>
                                                     <td className="px-8 py-6 text-right">
-                                                        <div className="flex justify-end">
+                                                        <div className="flex justify-end items-center gap-2">
+                                                            {/* Botões de aprovação/recusa para clientes */}
+                                                            {userData?.role === 'client' &&
+                                                                (o.status === 'Em orçamento' || o.status === 'Aguardando aprovação do orçamento') && (
+                                                                    <>
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                handleApproveBudget(o);
+                                                                            }}
+                                                                            className="px-4 py-2 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 transition-colors text-sm shadow-md"
+                                                                            title="Aprovar orçamento"
+                                                                        >
+                                                                            <Check size={16} className="inline mr-1" /> Aprovar
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                handleRejectBudget(o); // Agora abre o modal customizado
+                                                                            }}
+                                                                            className="px-4 py-2 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-colors text-sm shadow-md"
+                                                                            title="Recusar orçamento"
+                                                                        >
+                                                                            <X size={16} className="inline mr-1" /> Recusar
+                                                                        </button>
+                                                                    </>
+                                                                )}
                                                             <OrderActionsDropdown
                                                                 order={o}
                                                                 openModal={openModal}
@@ -4016,6 +4537,32 @@ export default function MainApp() {
                                                             </button>
                                                         )}
                                                     </div>
+
+                                                    {userData?.role === 'client' &&
+                                                        (o.status === 'Em orçamento' || o.status === 'Aguardando aprovação do orçamento') && (
+                                                            <div className="flex gap-1 mt-2">
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleApproveBudget(o);
+                                                                    }}
+                                                                    className="flex-1 px-3 py-1.5 bg-green-600 text-white rounded-lg font-bold text-xs hover:bg-green-700 transition-colors"
+                                                                    title="Aprovar orçamento"
+                                                                >
+                                                                    ✓ Aprovar
+                                                                </button>
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleRejectBudget(o);
+                                                                    }}
+                                                                    className="flex-1 px-3 py-1.5 bg-red-600 text-white rounded-lg font-bold text-xs hover:bg-red-700 transition-colors"
+                                                                    title="Recusar orçamento"
+                                                                >
+                                                                    ✗ Recusar
+                                                                </button>
+                                                            </div>
+                                                        )}
                                                 </div>
                                             );
                                         })
@@ -5165,20 +5712,30 @@ export default function MainApp() {
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         {formData.status !== 'Recebido' && (
-                                            <div className="space-y-1 animate-in fade-in">
-                                                <label className="text-[10px] font-black text-slate-400 uppercase">Enviado para Terceiro?</label>
-                                                {isViewMode ? (
-                                                    <div className={`w-full p-4 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-white'} border border-slate-200 rounded-2xl font-bold`}>
-                                                        {formData.sentToThirdParty}
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                {!isViewMode && formData.status !== 'Recebido' && (
+                                                    <div className="space-y-1 animate-in fade-in">
+                                                        <label className="text-[10px] font-black text-slate-400 uppercase">Enviado para Terceiro?</label>
+                                                        <AccessibleSelect
+                                                            value={formData.sentToThirdParty}
+                                                            onChange={(e) => setFormData({ ...formData, sentToThirdParty: e.target.value })}
+                                                            options={['Não', 'Sim']}
+                                                            variant="light"
+                                                            label="Enviado para terceiro"
+                                                        />
                                                     </div>
-                                                ) : (
-                                                    <AccessibleSelect
-                                                        value={formData.sentToThirdParty}
-                                                        onChange={(e) => setFormData({ ...formData, sentToThirdParty: e.target.value })}
-                                                        options={['Não', 'Sim']}
-                                                        variant="light"
-                                                        label="Enviado para terceiro"
-                                                    />
+                                                )}
+                                                {formData.status === "Em rota de entrega" && (
+                                                    <div className="space-y-1 animate-in zoom-in-95">
+                                                        <label className="text-[10px] font-black text-blue-600 uppercase">Rastreamento</label>
+                                                        <input
+                                                            placeholder="Código de Rastreio"
+                                                            className={`w-full p-4 ${isViewMode ? 'bg-blue-50 cursor-not-allowed' : 'bg-blue-50'} border border-blue-100 rounded-2xl outline-none font-bold`}
+                                                            value={formData.trackingCode}
+                                                            onChange={isViewMode ? undefined : (e => setFormData({ ...formData, trackingCode: e.target.value }))}
+                                                            readOnly={isViewMode}
+                                                        />
+                                                    </div>
                                                 )}
                                             </div>
                                         )}
@@ -5547,6 +6104,26 @@ export default function MainApp() {
                 totalOriginalValue={paymentModalData.totalOriginalValue}
                 initialData={paymentModalData}
                 onConfirm={handleConfirmPrintWithPayment}
+            />
+
+            <ClientPaymentModal
+                isOpen={isClientPaymentModalOpen}
+                onClose={() => {
+                    setIsClientPaymentModalOpen(false);
+                    setOrderForPayment(null);
+                }}
+                order={orderForPayment}
+                onConfirm={handleConfirmClientPayment}
+            />
+
+            <RejectConfirmModal
+                isOpen={isRejectModalOpen}
+                onClose={() => {
+                    setIsRejectModalOpen(false);
+                    setOrderToReject(null);
+                }}
+                order={orderToReject}
+                onConfirm={confirmRejectBudget}
             />
 
             {/* Toast Notification */}
