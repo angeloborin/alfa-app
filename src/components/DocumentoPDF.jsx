@@ -1,4 +1,3 @@
-
 import React from 'react';
 import {
     Document,
@@ -14,7 +13,7 @@ import {
 import logo from '../assets/logo.png';
 import assinatura from '../assets/assinatura.jpg';
 
-// Registrar fontes (opcional, mas ajuda a evitar problemas)
+// Registrar fontes (opcional)
 try {
     Font.register({
         family: 'Helvetica',
@@ -28,6 +27,13 @@ try {
 } catch (e) {
     console.log('Font registration failed:', e);
 }
+
+// 🔹 FUNÇÃO UTILITÁRIA PARA FORMATAR DATA (YYYY-MM-DD -> DD/MM/YYYY)
+const formatDateBR = (dateString) => {
+    if (!dateString) return '';
+    const [year, month, day] = dateString.split('-');
+    return `${day}/${month}/${year}`;
+};
 
 const styles = StyleSheet.create({
     page: {
@@ -95,7 +101,8 @@ const styles = StyleSheet.create({
     },
     clientItem: {
         width: '33%',
-        marginBottom: 4,
+        marginBottom: 8,        // ↑ aumentado de 4 para 8
+        paddingRight: 8,       // Novo: espaçamento horizontal
     },
     clientLabel: {
         fontWeight: 'bold',
@@ -104,6 +111,8 @@ const styles = StyleSheet.create({
     },
     clientValue: {
         fontSize: 7,
+        lineHeight: 1.4,       // ↑ aumentado para dar mais respiro
+        marginTop: 1,
     },
     itemsTable: {
         width: '100%',
@@ -122,7 +131,7 @@ const styles = StyleSheet.create({
         borderBottomWidth: 1,
         borderBottomColor: '#f1f5f9',
         paddingVertical: 4,
-        minHeight: 40, // Aumentado de 35 para 40
+        minHeight: 45,         // Ajustado para comportar a nova linha de data
         alignItems: 'stretch',
     },
     tableCell: {
@@ -130,19 +139,20 @@ const styles = StyleSheet.create({
         fontSize: 7,
         verticalAlign: 'top',
     },
-    // Larguras padrão COM valor (orçamento + cliente)
-    cell7: { width: '7%' },
+    // 🔹 NOVAS LARGURAS (OS aumentado, Observações reduzido)
+    cellOS: { width: '10%' },
     cell18: { width: '18%' },
     cell17: { width: '17%' },
     cell30: { width: '30%' },
-    cell13: { width: '13%' },
+    cellObs: { width: '10%' },
     cell15: { width: '15%' },
-    // Larguras SEM valor (quando não é orçamento ou é impressão interna)
-    cell7_noValor: { width: '7%' },
+
+    cellOS_noValor: { width: '10%' },
     cell18_noValor: { width: '18%' },
     cell17_noValor: { width: '17%' },
     cell30_noValor: { width: '30%' },
-    cell28_noValor: { width: '28%' }, // Observações ocupa o espaço do valor também (13% + 15%)
+    cellObs_noValor: { width: '25%' },
+
     osTag: {
         fontWeight: 'bold',
         color: '#1a56db',
@@ -235,17 +245,17 @@ const styles = StyleSheet.create({
     },
     observationBox: {
         backgroundColor: '#f8fafc',
-        paddingVertical: 3, // Aumentado de 1 para 3
-        paddingHorizontal: 3, // Aumentado de 2 para 3
+        paddingVertical: 3,
+        paddingHorizontal: 3,
         borderRadius: 2,
-        fontSize: 6.5, // Aumentado de 6 para 6.5
-        lineHeight: 1.2, // Aumentado de 1.0 para 1.2
-        minHeight: 30, // Altura mínima para ocupar mais espaço
+        fontSize: 6.5,
+        lineHeight: 1.2,
+        minHeight: 35,          // Ajustado para manter proporção
         flex: 1,
     },
     defectSolutionItem: {
         marginBottom: 1,
-        fontSize: 6.5, // Aumentado de 6 para 6.5
+        fontSize: 6.5,
         lineHeight: 1.1,
     },
     pageCounter: {
@@ -343,11 +353,11 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
         return allItems;
     };
 
-    // FUNÇÃO SIMPLIFICADA DE DISTRIBUIÇÃO
+    // Distribuição de itens por página
     const distributeItems = (items) => {
         const totalItems = items.length;
 
-        if (totalItems <= 12) { // Reduzido de 15 para 12 devido ao aumento da altura
+        if (totalItems <= 12) {
             return [items];
         }
 
@@ -365,16 +375,13 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
     const pages = distributeItems(allItems);
     const totalPages = pages.length;
 
-    // Pegar o primeiro grupo para dados do cliente
     const firstGroup = Object.values(groups)[0];
     const headerData = firstGroup?.header || {};
 
-    // Pegar informações do primeiro item em orçamento
     const primeiroItemOrcamento = allItems.find(item =>
         item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento'
     );
 
-    // Determinar condições de pagamento do modal OU do primeiro item
     const paymentCondition = customPaymentConditions?.paymentCondition ||
         primeiroItemOrcamento?.paymentCondition ||
         'À vista';
@@ -383,7 +390,6 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
         primeiroItemOrcamento?.installments ||
         '';
 
-    // Determinar se deve mostrar a coluna de valor
     const mostrarValor = isOrcamento && printType === 'client';
 
     return (
@@ -455,7 +461,7 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                             <Text style={styles.sectionTitle}>Equipamentos</Text>
                             <View style={styles.itemsTable}>
                                 <View style={styles.tableHeader}>
-                                    <View style={[styles.tableCell, mostrarValor ? styles.cell7 : styles.cell7_noValor]}>
+                                    <View style={[styles.tableCell, mostrarValor ? styles.cellOS : styles.cellOS_noValor]}>
                                         <Text style={styles.bold}>OS</Text>
                                     </View>
                                     <View style={[styles.tableCell, mostrarValor ? styles.cell18 : styles.cell18_noValor]}>
@@ -467,10 +473,9 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                                     <View style={[styles.tableCell, mostrarValor ? styles.cell30 : styles.cell30_noValor]}>
                                         <Text style={styles.bold}>Solução</Text>
                                     </View>
-                                    <View style={[styles.tableCell, mostrarValor ? styles.cell13 : styles.cell28_noValor]}>
+                                    <View style={[styles.tableCell, mostrarValor ? styles.cellObs : styles.cellObs_noValor]}>
                                         <Text style={styles.bold}>Observações</Text>
                                     </View>
-                                    {/* Nova coluna para valor - APENAS em orçamentos */}
                                     {mostrarValor && (
                                         <View style={[styles.tableCell, styles.cell15]}>
                                             <Text style={styles.bold}>Valor (R$)</Text>
@@ -483,7 +488,6 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                                     const solutions = item.solution ? item.solution.split('\n').filter(s => s.trim()) : [];
                                     const observation = item.equipmentObservation || '';
 
-                                    // Usar o finalChargedAmount (já com desconto) se existir
                                     const valorItem = item.finalChargedAmount ?
                                         parseCurrency(item.finalChargedAmount) :
                                         parseCurrency(item.chargedAmount);
@@ -492,9 +496,15 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
 
                                     return (
                                         <View key={`${item.groupIndex}-${index}`} style={styles.tableRow}>
-                                            <View style={[styles.tableCell, mostrarValor ? styles.cell7 : styles.cell7_noValor]}>
+                                            {/* 🔹 CÉLULA DA OS – AGORA COM DATA DO STATUS */}
+                                            <View style={[styles.tableCell, mostrarValor ? styles.cellOS : styles.cellOS_noValor]}>
                                                 <Text style={styles.osTag}>{item.osNumber || '---'}</Text>
                                                 <Text style={{ fontSize: 6.5 }}>{item.status || '---'}</Text>
+                                                {item.statusDate && (
+                                                    <Text style={{ fontSize: 6, color: '#666', marginTop: 2 }}>
+                                                        {formatDateBR(item.statusDate)}
+                                                    </Text>
+                                                )}
                                             </View>
 
                                             <View style={[styles.tableCell, mostrarValor ? styles.cell18 : styles.cell18_noValor]}>
@@ -528,13 +538,12 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                                                 )}
                                             </View>
 
-                                            <View style={[styles.tableCell, mostrarValor ? styles.cell13 : styles.cell28_noValor]}>
+                                            <View style={[styles.tableCell, mostrarValor ? styles.cellObs : styles.cellObs_noValor]}>
                                                 <Text style={styles.observationBox}>
                                                     {observation || 'Sem observações'}
                                                 </Text>
                                             </View>
 
-                                            {/* Nova célula para valor - APENAS em orçamentos */}
                                             {mostrarValor && (
                                                 <View style={[styles.tableCell, styles.cell15]}>
                                                     {isBudgetItem ? (
@@ -559,10 +568,10 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                             </View>
                         </View>
 
-                        {/* Espaço flexível para empurrar o rodapé para baixo na última página */}
-                        {isLastPage ? <View style={styles.spacer} /> : null}
+                        {/* Espaço flexível para empurrar rodapé na última página */}
+                        {isLastPage && <View style={styles.spacer} />}
 
-                        {/* Seção de termos e condições (APENAS na última página para orçamentos) */}
+                        {/* Termos e condições (apenas última página, orçamento) */}
                         {isLastPage && isOrcamento && printType === 'client' && (
                             <View style={styles.termosSection}>
                                 <Text style={styles.termoTitulo}>Garantia:</Text>
@@ -580,18 +589,14 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
 
                                 <Text style={styles.termoTitulo}>Condições de pagamento:</Text>
                                 <Text style={styles.termoTexto}>
-                                    {/* À vista */}
                                     {paymentCondition === 'À vista' &&
                                         `Pagamento à vista = ${formatMoney(totalFinal)}.`
                                     }
-
-                                    {/* Boleto */}
                                     {paymentCondition === 'Boleto' && (
                                         <>
                                             {installments === "5 dias (5% de desconto)" ? (
                                                 <Text>
                                                     Boleto bancário em 5 dias = {formatMoney(totalFinal)}{' '}
-
                                                     {hasDiscount && (
                                                         <Text>
                                                             {'\n'}Valor original: {formatMoney(totalOriginal)}
@@ -610,34 +615,28 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                                             ) : installments ? (
                                                 <Text>
                                                     Pagamento via boleto bancário em {installments} = {formatMoney(totalFinal)}.
-
                                                 </Text>
                                             ) : (
                                                 <Text>
                                                     Pagamento via boleto bancário = {formatMoney(totalFinal)}.
-
                                                 </Text>
                                             )}
                                         </>
                                     )}
-
-                                    {/* Cartão */}
                                     {paymentCondition === 'Cartão' && (
                                         <Text>
                                             Pagamento via cartão de crédito em {installments || '1x (30 Dias)'} = {formatMoney(totalFinal)}.
-
                                         </Text>
                                     )}
                                 </Text>
 
                                 <Text style={styles.totalOrcamento}>
                                     VALOR TOTAL: {formatMoney(totalFinal)}
-
                                 </Text>
                             </View>
                         )}
 
-                        {/* Rodapé com assinaturas - APENAS na última página */}
+                        {/* Rodapé com assinaturas (apenas última página) */}
                         {isLastPage && (
                             <View style={styles.footerArea}>
                                 <View style={styles.signatureArea}>
@@ -667,7 +666,7 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                             </View>
                         )}
 
-                        {/* Contador de páginas - Em todas as páginas */}
+                        {/* Contador de páginas */}
                         <Text style={styles.pageCounter}>
                             Página {pageIndex + 1} de {totalPages}
                         </Text>

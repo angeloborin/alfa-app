@@ -54,6 +54,33 @@ const useOutsideClick = (ref, callback) => {
     }, [ref, callback]);
 };
 
+const EMPTY_FORM_DATA = {
+    client: '', cnpj: '', contactPerson: '', address: '', email: '',
+    billingType: 'Avulso', maintenanceVisit: '',
+    item: '', manufacturer: '', model: '', serial: '',
+    equipmentObservation: '',
+    quantity: '1',
+    defect: '', defectsList: [],
+    solutionTypeF: 'Preenchimento manual',
+    solution: '', manualSolutionsList: [],
+    benchRepairList: [],
+    solutionsList: [],
+    notRepairableDetail: '',
+    costThirdPartyName: '', costThirdPartyShipping: '', costClientShipping: '', costParts: '',
+    chargedAmount: '', paymentCondition: 'À vista', installments: '',
+    status: 'Recebido',
+    statusDate: new Date().toISOString().split('T')[0],
+    statusHistory: [],
+    trackingCode: '', sentToThirdParty: 'Não',
+    thirdPartyInfo: '', thirdPartyTracking: '', thirdPartyDate: '',
+    osNumber: '',
+    deliveryDeadline: '',
+    discount5Days: false,
+    discountAmount: 0,
+    finalChargedAmount: 0,
+    photos: []
+};
+
 // Componente de Gráfico Donut Simples
 const SimpleDonutChart = ({ data, colors, onClick }) => {
     const total = data.reduce((acc, item) => acc + item.value, 0);
@@ -784,7 +811,7 @@ const PaymentConditionsModal = ({
 };
 
 // Adicione este componente antes da função MainApp
-const OrderActionsDropdown = ({ order, openModal, openViewModal, confirmDelete, userData, hasPermission, isOpen, onOpenChange }) => {
+const OrderActionsDropdown = ({ order, openModal, openViewModal, openNewWithClient, confirmDelete, userData, hasPermission, isOpen, onOpenChange }) => {
     const dropdownRef = useRef(null);
 
     useOutsideClick(dropdownRef, () => {
@@ -824,12 +851,26 @@ const OrderActionsDropdown = ({ order, openModal, openViewModal, confirmDelete, 
                     {/* Itens apenas para ADMIN */}
                     {userData?.role !== 'client' && (
                         <>
-                            {/* Item: Editar OS */}
+
                             <button
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     onOpenChange(null);
-                                    openModal(order, false); // Modo edição
+                                    openNewWithClient(order);
+                                }}
+                                className="w-full flex items-start gap-3 px-4 py-3 text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors text-sm font-medium"
+                            >
+                                <Plus size={18} className="flex-shrink-0 mt-0.5" />
+                                <span className="flex-1 text-left leading-tight">
+                                    OS com mesmo cliente
+                                </span>
+                            </button>
+
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onOpenChange(null);
+                                    openModal(order, false);
                                 }}
                                 className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors text-sm font-medium"
                             >
@@ -1067,6 +1108,13 @@ export default function MainApp() {
     // Adicione esta função após as outras funções principais
 
     // Função para aprovar orçamento
+
+    const formatDateBR = (dateString) => {
+        if (!dateString) return 'Sem data';
+        const [year, month, day] = dateString.split('-');
+        if (!year || !month || !day) return dateString; // fallback
+        return `${day}/${month}/${year}`;
+    };
     const handleApproveBudget = async (order) => {
         if (!order) return;
 
@@ -1160,7 +1208,7 @@ export default function MainApp() {
         if (!orderForPayment) return;
 
         try {
-            // Atualizar a OS com as condições de pagamento e mudar status
+            // Atualizar a OS com as condições de pagamento
             await updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', orderForPayment.firestoreId), {
                 paymentCondition: paymentData.paymentCondition,
                 installments: paymentData.installments,
@@ -1173,15 +1221,15 @@ export default function MainApp() {
                     status: 'Em manutenção',
                     date: new Date().toISOString().split('T')[0],
                     timestamp: Date.now()
-                }]
+                }],
+                clientUid: user?.uid || null,
+                clientEmail: user?.email || null,
+                approvedBy: userData?.displayName || user?.email || 'Cliente'
             });
 
             showNotification('Pagamento confirmado! OS agora está em manutenção.', 'success');
             setIsClientPaymentModalOpen(false);
             setOrderForPayment(null);
-
-            // Aqui é onde você poderia chamar a função para enviar email ao admin
-            // (vamos implementar isso na Parte 3)
 
         } catch (error) {
             console.error('Erro ao confirmar pagamento:', error);
@@ -1963,6 +2011,15 @@ export default function MainApp() {
             benchRepairList: false
         });
 
+
+        if (!order) {
+            setEditingOrder(null);
+            setFormData({
+                ...EMPTY_FORM_DATA,
+                osNumber: generateNextOsNumber(ordersForUser)
+            });
+        }
+
         if (order) {
             setEditingOrder(order);
 
@@ -2019,6 +2076,22 @@ export default function MainApp() {
             });
         }
         setIsModalOpen(true);
+    };
+
+    const handleNewOSWithClient = (order) => {
+        const newOSNumber = generateNextOsNumber(ordersForUser);
+        setFormData({
+            ...EMPTY_FORM_DATA,
+            client: order.client,
+            cnpj: order.cnpj || '',
+            contactPerson: order.contactPerson || '',
+            email: order.email || '',
+            address: order.address || '',
+            osNumber: newOSNumber,
+        });
+        setEditingOrder(null);
+        setIsModalOpen(true);
+        setDropdownOpen(null);
     };
 
     // MODAL DE PAGAMENTO PARA CLIENTE (SEM IMPRESSÃO)
@@ -2420,6 +2493,11 @@ export default function MainApp() {
 
     const prepareDataForSave = () => {
         const { firestoreId, ...cleanData } = formData;
+
+        if (user && userData && userData.role === 'client') {
+            cleanData.clientUid = user.uid;
+            cleanData.clientEmail = user.email;
+        }
 
         if (!cleanData.quantity || isNaN(parseInt(cleanData.quantity))) {
             cleanData.quantity = '1';
@@ -4041,6 +4119,8 @@ export default function MainApp() {
                                         {isLoading ? <tr><td colSpan="6" className="p-20 text-center"><Loader2 className="animate-spin mx-auto text-blue-600" size={32} /></td></tr> :
                                             sortedOrders.filter(o => {
                                                 const normalizedSearchTerm = searchTerm.toLowerCase().trim();
+
+                                                // Campos de texto padrão
                                                 const clientMatch = o.client?.toLowerCase().includes(normalizedSearchTerm);
                                                 const osNumberMatch = o.osNumber?.includes(searchTerm);
                                                 const itemMatch = o.item?.toLowerCase().includes(normalizedSearchTerm);
@@ -4048,7 +4128,17 @@ export default function MainApp() {
                                                 const modelMatch = o.model?.toLowerCase().includes(normalizedSearchTerm);
                                                 const serialMatch = o.serial?.toLowerCase().includes(normalizedSearchTerm);
 
-                                                return clientMatch || osNumberMatch || itemMatch || manufacturerMatch || modelMatch || serialMatch;
+                                                // 🔹 NOVO: Data do status atual (formato DD/MM/YYYY ou YYYY-MM-DD)
+                                                let statusDateMatch = false;
+                                                if (o.statusDate) {
+                                                    const [year, month, day] = o.statusDate.split('-');
+                                                    const formattedDate = `${day}/${month}/${year}`; // DD/MM/YYYY
+                                                    statusDateMatch = formattedDate.includes(normalizedSearchTerm) ||
+                                                        o.statusDate.includes(normalizedSearchTerm); // também busca YYYY-MM-DD
+                                                }
+
+                                                return clientMatch || osNumberMatch || itemMatch ||
+                                                    manufacturerMatch || modelMatch || serialMatch || statusDateMatch;
                                             }).map(o => (
                                                 <tr key={o.firestoreId} className={`hover:bg-blue-50/30 transition-colors group ${selectedOrders.includes(o.firestoreId) ? 'bg-blue-50/50' : ''}`}>
                                                     <td className="px-6 py-4 text-center">
@@ -4096,7 +4186,7 @@ export default function MainApp() {
                                                             {o.status}
                                                         </div>
                                                         <div className="text-[9px] text-slate-400 mt-1 font-medium">
-                                                            {o.statusDate ? new Date(o.statusDate).toLocaleDateString('pt-BR') : 'Sem data'}
+                                                            {formatDateBR(o.statusDate)}
                                                         </div>
                                                     </td>
                                                     <td className="px-8 py-6 text-right">
@@ -4131,6 +4221,7 @@ export default function MainApp() {
                                                                 order={o}
                                                                 openModal={openModal}
                                                                 openViewModal={openViewModal}
+                                                                openNewWithClient={handleNewOSWithClient}
                                                                 confirmDelete={confirmDelete}
                                                                 userData={userData}
                                                                 hasPermission={hasPermission}
@@ -4471,6 +4562,7 @@ export default function MainApp() {
                                             // Aplicar busca
                                             if (searchTerm) {
                                                 const normalizedSearchTerm = searchTerm.toLowerCase().trim();
+
                                                 const clientMatch = o.client?.toLowerCase().includes(normalizedSearchTerm);
                                                 const osNumberMatch = o.osNumber?.includes(searchTerm);
                                                 const itemMatch = o.item?.toLowerCase().includes(normalizedSearchTerm);
@@ -4478,8 +4570,18 @@ export default function MainApp() {
                                                 const modelMatch = o.model?.toLowerCase().includes(normalizedSearchTerm);
                                                 const serialMatch = o.serial?.toLowerCase().includes(normalizedSearchTerm);
 
-                                                // Se não houver correspondência em nenhum campo, filtra fora
-                                                if (!(clientMatch || osNumberMatch || itemMatch || manufacturerMatch || modelMatch || serialMatch)) {
+                                                // 🔹 NOVO: Data do status atual
+                                                let statusDateMatch = false;
+                                                if (o.statusDate) {
+                                                    const [year, month, day] = o.statusDate.split('-');
+                                                    const formattedDate = `${day}/${month}/${year}`;
+                                                    statusDateMatch = formattedDate.includes(normalizedSearchTerm) ||
+                                                        o.statusDate.includes(normalizedSearchTerm);
+                                                }
+
+                                                // Se nenhum campo corresponder, filtra a OS
+                                                if (!(clientMatch || osNumberMatch || itemMatch ||
+                                                    manufacturerMatch || modelMatch || serialMatch || statusDateMatch)) {
                                                     return false;
                                                 }
                                             }
@@ -4524,7 +4626,7 @@ export default function MainApp() {
                                                             <div className="text-[10px] text-slate-400 mt-0.5 truncate">{o.item}</div>
                                                             <div className="text-[9px] text-slate-500 mt-1 font-medium flex items-center gap-1">
                                                                 <CalendarDays size={10} />
-                                                                {formattedDate}
+                                                                {formatDateBR(o.statusDate)}
                                                             </div>
                                                         </div>
                                                         {userData?.role !== 'client' && (
