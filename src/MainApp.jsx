@@ -5594,6 +5594,89 @@ export default function MainApp() {
                                     </div>
                                 </div>
 
+                                {/* ===== SEÇÃO DE FOTOS ===== */}
+                                <div className="space-y-4">
+                                    <div className="flex items-center gap-2 text-purple-600 font-bold uppercase text-xs tracking-widest">
+                                        <ImageIcon size={16} /> Fotos do Equipamento
+                                    </div>
+
+                                    {/* Botão de upload – aparece apenas em modo de edição */}
+                                    {!isViewMode && (
+                                        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                                            <div className="flex flex-wrap gap-4 items-center">
+                                                <label className="flex items-center gap-2 px-4 py-3 bg-white border border-slate-200 rounded-xl cursor-pointer hover:bg-blue-50 transition-colors">
+                                                    <Upload size={20} className="text-blue-600" />
+                                                    <span className="text-sm font-bold">Adicionar Fotos</span>
+                                                    <input
+                                                        type="file"
+                                                        multiple
+                                                        accept="image/*"
+                                                        className="hidden"
+                                                        onChange={handlePhotoUpload}
+                                                        disabled={uploadingPhotos}
+                                                    />
+                                                </label>
+                                                {uploadingPhotos && (
+                                                    <div className="flex items-center gap-2 text-blue-600">
+                                                        <Loader2 size={20} className="animate-spin" />
+                                                        <span className="text-sm">Enviando...</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Galeria de fotos */}
+                                    {formData.photos && formData.photos.length > 0 ? (
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+                                            {formData.photos.map((photoUrl, index) => (
+                                                <div key={index} className="relative group rounded-xl overflow-hidden border border-slate-200 bg-white">
+                                                    <img
+                                                        src={photoUrl}
+                                                        alt={`Foto ${index + 1}`}
+                                                        className="w-full h-32 object-cover"
+                                                        onError={(e) => {
+                                                            e.target.onerror = null;
+                                                            e.target.src = 'https://via.placeholder.com/150?text=Erro';
+                                                        }}
+                                                    />
+                                                    {/* Botão de remover – só em modo de edição */}
+                                                    {!isViewMode && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => removePhoto(index)}
+                                                            className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600 shadow-lg"
+                                                            title="Remover foto"
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    )}
+                                                    {/* Link para abrir a foto em tamanho real */}
+                                                    <a
+                                                        href={photoUrl}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="absolute bottom-2 right-2 p-1.5 bg-blue-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-blue-600 shadow-lg"
+                                                        title="Abrir em nova guia"
+                                                    >
+                                                        <ExternalLink size={14} />
+                                                    </a>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="text-center py-8 bg-slate-50 rounded-2xl border border-slate-100">
+                                            <ImageIcon size={40} className="mx-auto text-slate-300 mb-2" />
+                                            <p className="text-sm text-slate-400 font-medium">Nenhuma foto adicionada</p>
+                                            {!isViewMode && (
+                                                <p className="text-xs text-slate-400 mt-1">
+                                                    Clique em "Adicionar Fotos" para enviar imagens do equipamento.
+                                                </p>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
                                 {/* SEÇÃO FINANCEIRA - SOMENTE EM MODO EDIÇÃO */}
                                 {!isViewMode && (
                                     <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-6 transition-all duration-300">

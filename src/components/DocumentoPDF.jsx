@@ -101,8 +101,8 @@ const styles = StyleSheet.create({
     },
     clientItem: {
         width: '33%',
-        marginBottom: 8,        // ↑ aumentado de 4 para 8
-        paddingRight: 8,       // Novo: espaçamento horizontal
+        marginBottom: 8,
+        paddingRight: 8,
     },
     clientLabel: {
         fontWeight: 'bold',
@@ -111,7 +111,7 @@ const styles = StyleSheet.create({
     },
     clientValue: {
         fontSize: 7,
-        lineHeight: 1.4,       // ↑ aumentado para dar mais respiro
+        lineHeight: 1.4,
         marginTop: 1,
     },
     itemsTable: {
@@ -131,7 +131,7 @@ const styles = StyleSheet.create({
         borderBottomWidth: 1,
         borderBottomColor: '#f1f5f9',
         paddingVertical: 4,
-        minHeight: 45,         // Ajustado para comportar a nova linha de data
+        minHeight: 45,
         alignItems: 'stretch',
     },
     tableCell: {
@@ -139,7 +139,7 @@ const styles = StyleSheet.create({
         fontSize: 7,
         verticalAlign: 'top',
     },
-    // 🔹 NOVAS LARGURAS (OS aumentado, Observações reduzido)
+    // Larguras das colunas
     cellOS: { width: '10%' },
     cell18: { width: '18%' },
     cell17: { width: '17%' },
@@ -250,7 +250,7 @@ const styles = StyleSheet.create({
         borderRadius: 2,
         fontSize: 6.5,
         lineHeight: 1.2,
-        minHeight: 35,          // Ajustado para manter proporção
+        minHeight: 35,
         flex: 1,
     },
     defectSolutionItem: {
@@ -279,6 +279,30 @@ const styles = StyleSheet.create({
     boldGreen: {
         fontWeight: 'bold',
         color: '#059669',
+    },
+    // NOVOS ESTILOS PARA A LINHA DE FOTOS
+    photoRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        marginTop: 4,
+        marginBottom: 8,
+        paddingHorizontal: 3,
+        width: '100%',
+    },
+    photoThumb: {
+        width: 100,
+        height: 100,
+        objectFit: 'cover',
+        marginRight: 4,
+        marginBottom: 4,
+        borderRadius: 4,
+    },
+    photoCount: {
+        fontSize: 7,
+        color: '#666',
+        fontStyle: 'italic',
+        marginLeft: 4,
+        alignSelf: 'center',
     },
 });
 
@@ -495,74 +519,96 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                                     const isBudgetItem = item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento';
 
                                     return (
-                                        <View key={`${item.groupIndex}-${index}`} style={styles.tableRow}>
-                                            {/* 🔹 CÉLULA DA OS – AGORA COM DATA DO STATUS */}
-                                            <View style={[styles.tableCell, mostrarValor ? styles.cellOS : styles.cellOS_noValor]}>
-                                                <Text style={styles.osTag}>{item.osNumber || '---'}</Text>
-                                                <Text style={{ fontSize: 6.5 }}>{item.status || '---'}</Text>
-                                                {item.statusDate && (
-                                                    <Text style={{ fontSize: 6, color: '#666', marginTop: 2 }}>
-                                                        {formatDateBR(item.statusDate)}
-                                                    </Text>
-                                                )}
-                                            </View>
-
-                                            <View style={[styles.tableCell, mostrarValor ? styles.cell18 : styles.cell18_noValor]}>
-                                                <Text style={styles.bold}>{item.item || '---'}</Text>
-                                                <Text style={{ fontSize: 6.5, color: '#666' }}>
-                                                    {item.manufacturer || ''} {item.model || ''}
-                                                </Text>
-                                                <Text style={{ fontSize: 6.5, color: '#999' }}>NS: {item.serial || 'N/D'}</Text>
-                                                {item.quantity && parseInt(item.quantity) > 1 && (
-                                                    <Text style={{ fontSize: 6.5, color: '#666' }}>Qtd: {item.quantity}</Text>
-                                                )}
-                                            </View>
-
-                                            <View style={[styles.tableCell, mostrarValor ? styles.cell17 : styles.cell17_noValor]}>
-                                                {defects.length > 0 ? (
-                                                    defects.map((d, i) => (
-                                                        <Text key={i} style={styles.defectSolutionItem}>• {d}</Text>
-                                                    ))
-                                                ) : (
-                                                    <Text style={{ fontSize: 6.5, color: '#999' }}>Sem defeitos</Text>
-                                                )}
-                                            </View>
-
-                                            <View style={[styles.tableCell, mostrarValor ? styles.cell30 : styles.cell30_noValor]}>
-                                                {solutions.length > 0 ? (
-                                                    solutions.map((s, i) => (
-                                                        <Text key={i} style={styles.defectSolutionItem}>• {s}</Text>
-                                                    ))
-                                                ) : (
-                                                    <Text style={{ fontSize: 6.5, color: '#999' }}>Solução em análise</Text>
-                                                )}
-                                            </View>
-
-                                            <View style={[styles.tableCell, mostrarValor ? styles.cellObs : styles.cellObs_noValor]}>
-                                                <Text style={styles.observationBox}>
-                                                    {observation || 'Sem observações'}
-                                                </Text>
-                                            </View>
-
-                                            {mostrarValor && (
-                                                <View style={[styles.tableCell, styles.cell15]}>
-                                                    {isBudgetItem ? (
-                                                        <Text style={styles.valorCell}>
-                                                            {formatMoney(valorItem)}
-                                                            {item.discount5Days && (
-                                                                <Text style={styles.discountText}>
-                                                                    {' '}(com 5% desc.)
-                                                                </Text>
-                                                            )}
+                                        <React.Fragment key={`${item.groupIndex}-${index}`}>
+                                            {/* Linha principal da OS */}
+                                            <View style={styles.tableRow}>
+                                                {/* Célula da OS */}
+                                                <View style={[styles.tableCell, mostrarValor ? styles.cellOS : styles.cellOS_noValor]}>
+                                                    <Text style={styles.osTag}>{item.osNumber || '---'}</Text>
+                                                    <Text style={{ fontSize: 6.5 }}>{item.status || '---'}</Text>
+                                                    {item.statusDate && (
+                                                        <Text style={{ fontSize: 6, color: '#666', marginTop: 2 }}>
+                                                            {formatDateBR(item.statusDate)}
                                                         </Text>
+                                                    )}
+                                                </View>
+
+                                                <View style={[styles.tableCell, mostrarValor ? styles.cell18 : styles.cell18_noValor]}>
+                                                    <Text style={styles.bold}>{item.item || '---'}</Text>
+                                                    <Text style={{ fontSize: 6.5, color: '#666' }}>
+                                                        {item.manufacturer || ''} {item.model || ''}
+                                                    </Text>
+                                                    <Text style={{ fontSize: 6.5, color: '#999' }}>NS: {item.serial || 'N/D'}</Text>
+                                                    {item.quantity && parseInt(item.quantity) > 1 && (
+                                                        <Text style={{ fontSize: 6.5, color: '#666' }}>Qtd: {item.quantity}</Text>
+                                                    )}
+                                                </View>
+
+                                                <View style={[styles.tableCell, mostrarValor ? styles.cell17 : styles.cell17_noValor]}>
+                                                    {defects.length > 0 ? (
+                                                        defects.map((d, i) => (
+                                                            <Text key={i} style={styles.defectSolutionItem}>• {d}</Text>
+                                                        ))
                                                     ) : (
-                                                        <Text style={[styles.italicText, { fontSize: 6.5, color: '#999' }]}>
-                                                            Não orçado
+                                                        <Text style={{ fontSize: 6.5, color: '#999' }}>Sem defeitos</Text>
+                                                    )}
+                                                </View>
+
+                                                <View style={[styles.tableCell, mostrarValor ? styles.cell30 : styles.cell30_noValor]}>
+                                                    {solutions.length > 0 ? (
+                                                        solutions.map((s, i) => (
+                                                            <Text key={i} style={styles.defectSolutionItem}>• {s}</Text>
+                                                        ))
+                                                    ) : (
+                                                        <Text style={{ fontSize: 6.5, color: '#999' }}>Solução em análise</Text>
+                                                    )}
+                                                </View>
+
+                                                {/* Célula de Observações */}
+                                                <View style={[styles.tableCell, mostrarValor ? styles.cellObs : styles.cellObs_noValor]}>
+                                                    <View style={styles.observationBox}>
+                                                        <Text>{observation || 'Sem observações'}</Text>
+                                                    </View>
+                                                </View>
+
+                                                {mostrarValor && (
+                                                    <View style={[styles.tableCell, styles.cell15]}>
+                                                        {isBudgetItem ? (
+                                                            <Text style={styles.valorCell}>
+                                                                {formatMoney(valorItem)}
+                                                                {item.discount5Days && (
+                                                                    <Text style={styles.discountText}>
+                                                                        {' '}(com 5% desc.)
+                                                                    </Text>
+                                                                )}
+                                                            </Text>
+                                                        ) : (
+                                                            <Text style={[styles.italicText, { fontSize: 6.5, color: '#999' }]}>
+                                                                Não orçado
+                                                            </Text>
+                                                        )}
+                                                    </View>
+                                                )}
+                                            </View>
+
+                                            {/* Linha de fotos (se houver) */}
+                                            {item.photos && item.photos.length > 0 && (
+                                                <View style={styles.photoRow}>
+                                                    {item.photos.slice(0, 6).map((photoUrl, idx) => (
+                                                        <Image
+                                                            key={idx}
+                                                            src={photoUrl}
+                                                            style={styles.photoThumb}
+                                                        />
+                                                    ))}
+                                                    {item.photos.length > 6 && (
+                                                        <Text style={styles.photoCount}>
+                                                            +{item.photos.length - 6} foto(s)
                                                         </Text>
                                                     )}
                                                 </View>
                                             )}
-                                        </View>
+                                        </React.Fragment>
                                     );
                                 })}
                             </View>
