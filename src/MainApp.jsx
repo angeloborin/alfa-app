@@ -5937,7 +5937,7 @@ export default function MainApp() {
                                             </div>
                                         )}
                                     </div>
-                                    {formData.sentToThirdParty === "Sim" && formData.status !== 'Recebido' && (
+                                    {!isViewMode && formData.sentToThirdParty === "Sim" && formData.status !== 'Recebido' && (
                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-6 bg-slate-100 rounded-3xl border border-slate-200 animate-in slide-in-from-top-4">
                                             <input
                                                 placeholder="Empresa Terceira"
