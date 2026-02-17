@@ -289,9 +289,13 @@ const styles = StyleSheet.create({
         paddingHorizontal: 3,
         width: '100%',
     },
+    // Estilo para centralizar quando há poucas fotos
+    photoRowCentered: {
+        justifyContent: 'center',
+    },
     photoThumb: {
-        width: 100,
-        height: 100,
+        width: 175,
+        height: 175,
         objectFit: 'cover',
         marginRight: 4,
         marginBottom: 4,
@@ -591,9 +595,12 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                                                 )}
                                             </View>
 
-                                            {/* Linha de fotos (se houver) */}
+                                            {/* Linha de fotos (se houver) - COM CENTRALIZAÇÃO PARA 1 OU 2 FOTOS */}
                                             {item.photos && item.photos.length > 0 && (
-                                                <View style={styles.photoRow}>
+                                                <View style={[
+                                                    styles.photoRow,
+                                                    item.photos.length <= 2 && styles.photoRowCentered
+                                                ]}>
                                                     {item.photos.slice(0, 6).map((photoUrl, idx) => (
                                                         <Image
                                                             key={idx}
