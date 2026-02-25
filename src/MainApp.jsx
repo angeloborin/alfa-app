@@ -5879,18 +5879,20 @@ export default function MainApp() {
                                             </div>
                                         </div>
 
-                                        {/* PRAZO DE ENTREGA - APENAS EXIBIÇÃO */}
-                                        {(formData.status === "Em orçamento" || formData.status === "Aguardando aprovação do orçamento") && formData.deliveryDeadline && (
+                                        {(formData.status === "Em orçamento" || formData.status === "Aguardando aprovação do orçamento") && (
                                             <div className="space-y-1 animate-in fade-in">
                                                 <label className="text-[10px] font-black text-slate-400 uppercase">Prazo de Entrega</label>
                                                 <div className="flex items-center">
-                                                    <div className={`w-20 p-4 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-white'} border border-slate-200 rounded-l-2xl font-bold text-center`}>
-                                                        {formData.deliveryDeadline}
-                                                    </div>
-                                                    <div className="p-4 bg-slate-100 border border-slate-200 rounded-r-2xl font-bold text-slate-600">
-                                                        dias úteis
-                                                    </div>
+                                                    <input
+                                                        type="number"
+                                                        placeholder="Ex: 7"
+                                                        className="w-20 p-4 border border-slate-200 rounded-l-2xl outline-none font-bold text-center"
+                                                        value={formData.deliveryDeadline}
+                                                        onChange={e => setFormData({ ...formData, deliveryDeadline: e.target.value })}
+                                                    />
+                                                    <div className="p-4 bg-slate-100 border border-slate-200 rounded-r-2xl font-bold text-slate-600">dias úteis</div>
                                                 </div>
+                                                <p className="text-[10px] text-slate-400 mt-1 ml-4">Esta informação será exibida na proposta de orçamento</p>
                                             </div>
                                         )}
                                     </div>
