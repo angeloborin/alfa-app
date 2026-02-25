@@ -385,7 +385,7 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                 totalOriginal += original;
                 totalFinal += final;
 
-                if (item.discount5Days) {
+                if (item.hasDiscount) {
                     hasDiscount = true;
                 }
             });
@@ -630,10 +630,6 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                                     const solutions = item.solution ? item.solution.split('\n').filter(s => s.trim()) : [];
                                     const observation = item.equipmentObservation || '';
 
-                                    const valorItem = item.finalChargedAmount ?
-                                        parseCurrency(item.finalChargedAmount) :
-                                        parseCurrency(item.chargedAmount);
-
                                     const isBudgetItem = item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento';
 
                                     // Filtra URLs de fotos válidas
@@ -699,12 +695,7 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                                                     <View style={[styles.tableCell, styles.cell15]}>
                                                         {isBudgetItem ? (
                                                             <Text style={styles.valorCell}>
-                                                                {formatMoney(valorItem)}
-                                                                {item.discount5Days && (
-                                                                    <Text style={styles.discountText}>
-                                                                        {' '}(com 5% desc.)
-                                                                    </Text>
-                                                                )}
+                                                                {formatMoney(parseCurrency(item.chargedAmount))}
                                                             </Text>
                                                         ) : (
                                                             <Text style={[styles.italicText, { fontSize: 6.5, color: '#999' }]}>
@@ -775,31 +766,15 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                                             }
                                             {paymentCondition === 'Boleto' && (
                                                 <>
-                                                    {installments === "5 dias (5% de desconto)" ? (
+                                                    {/* Opção principal (escolhida) */}
+                                                    <Text>
+                                                        Pagamento via boleto bancário{installments ? ` em ${installments}` : ''} = {formatMoney(totalFinal)}.
+                                                    </Text>
+                                                    {/* Se a opção principal não for "5 dias (5% de desconto)", exibir também a opção de 5 dias com desconto */}
+                                                    {installments !== "5 dias (5% de desconto)" && (
                                                         <Text>
-                                                            Boleto bancário em 5 dias = {formatMoney(totalFinal)}{' '}
-                                                            {hasDiscount && (
-                                                                <Text>
-                                                                    {'\n'}Valor original: {formatMoney(totalOriginal)}
-                                                                </Text>
-                                                            )}
-                                                        </Text>
-                                                    ) : installments === "30 / 60 dias" ? (
-                                                        <Text>
-                                                            Boleto bancário em 30/60 dias = {formatMoney(totalFinal)}.
-                                                            {'\n'}
-                                                            Boleto bancário em 5 dias = {formatMoney(totalOriginal * 0.95)}{' '}
-                                                            <Text style={styles.boldGreen}>
-                                                                (com 5% de desconto)
-                                                            </Text>
-                                                        </Text>
-                                                    ) : installments ? (
-                                                        <Text>
-                                                            Pagamento via boleto bancário em {installments} = {formatMoney(totalFinal)}.
-                                                        </Text>
-                                                    ) : (
-                                                        <Text>
-                                                            Pagamento via boleto bancário = {formatMoney(totalFinal)}.
+                                                            {'\n'}Boleto bancário em 5 dias = {formatMoney(totalOriginal * 0.95)}{' '}
+                                                            <Text>(com 5% de desconto)</Text>
                                                         </Text>
                                                     )}
                                                 </>
