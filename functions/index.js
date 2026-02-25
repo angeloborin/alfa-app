@@ -37,7 +37,7 @@ exports.onBudgetApproved = functions.firestore
             // Verificar se o status mudou para "Em manutenção"
             if (newData.status === 'Em manutenção' && previousData.status !== 'Em manutenção') {
                 
-                console.log(`✅ Status mudou para "Em manutenção" para OS ${newData.osNumber}`);
+                console.log(` Status mudou para "Em manutenção" para OS ${newData.osNumber}`);
                 
                 // Verificar se foi um cliente que aprovou
                 if (newData.clientUid || newData.clientEmail) {
@@ -59,7 +59,7 @@ exports.onBudgetApproved = functions.firestore
                     // Enviar e-mail para o administrador
                     await sendApprovalEmailToAdmin(orderData);
                     
-                    console.log(`✅ E-mail enviado para ${adminEmail} sobre OS ${orderData.osNumber}`);
+                    console.log(` E-mail enviado para ${adminEmail} sobre OS ${orderData.osNumber}`);
                 } else {
                     console.log('⚠️  OS atualizada para "Em manutenção", mas sem clientUid/clientEmail');
                 }
@@ -80,7 +80,7 @@ async function sendApprovalEmailToAdmin(orderData) {
             email: fromEmail,
             name: 'Sistema de OS - Alfa Tecnologia'
         },
-        subject: `✅ Orçamento Aprovado - OS ${orderData.osNumber}`,
+        subject: ` Orçamento Aprovado - OS ${orderData.osNumber}`,
         html: `
             <!DOCTYPE html>
             <html>
@@ -144,15 +144,11 @@ async function sendApprovalEmailToAdmin(orderData) {
             </head>
             <body>
                 <div class="header">
-                    <h1 style="margin:0;">✅ Orçamento Aprovado</h1>
+                    <h1 style="margin:0;"> Orçamento Aprovado</h1>
                     <p style="margin:5px 0 0 0;">Novo orçamento aprovado pelo cliente</p>
                 </div>
                 
                 <div class="content">
-                    <div class="test-notice">
-                        <strong>⚠️ ESTE É UM E-MAIL DE TESTE ⚠️</strong><br>
-                        Sistema em fase de desenvolvimento
-                    </div>
                     
                     <h2 style="color:#1a56db;">OS ${orderData.osNumber}</h2>
                     
@@ -171,7 +167,7 @@ async function sendApprovalEmailToAdmin(orderData) {
                         ${orderData.installments ? `<p><span class="label">Parcelas:</span> <span class="value">${orderData.installments}</span></p>` : ''}
                     </div>
                     
-                    <p><em>Esta é uma notificação automática. A OS já foi movida para "Em manutenção".</em></p>
+                    <p><em>A OS já foi movida para "Em manutenção".</em></p>
                 </div>
                 
                 <div class="footer">
@@ -186,7 +182,7 @@ async function sendApprovalEmailToAdmin(orderData) {
     try {
         console.log('📤 Enviando e-mail para:', adminEmail);
         const result = await sgMail.send(msg);
-        console.log('✅ E-mail enviado com sucesso:', result[0].statusCode);
+        console.log(' E-mail enviado com sucesso:', result[0].statusCode);
         return result;
     } catch (error) {
         console.error('❌ Erro ao enviar e-mail:', error);
@@ -215,10 +211,10 @@ exports.sendTestEmail = functions.https.onRequest(async (req, res) => {
 
         await sendApprovalEmailToAdmin(testData);
         
-        console.log('✅ Teste de e-mail concluído com sucesso');
+        console.log(' Teste de e-mail concluído com sucesso');
         res.status(200).send({ 
             success: true, 
-            message: '✅ E-mail de teste enviado com sucesso!',
+            message: ' E-mail de teste enviado com sucesso!',
             to: adminEmail,
             from: fromEmail
         });
