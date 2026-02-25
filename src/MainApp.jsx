@@ -402,40 +402,15 @@ const InstallmentSelect = ({
     onChange,
     paymentCondition,
     showAddOption = false,
-    onAddOption
+    onAddOption,
+    options = []  // Recebe as opções combinadas como prop
 }) => {
     const [showAddInput, setShowAddInput] = useState(false);
     const [newOption, setNewOption] = useState('');
-    const [customOptions, setCustomOptions] = useState([]);
-
-    // Opções padrão
-    const defaultOptions = {
-        'Boleto': [
-            "30 / 60 dias",
-            "5 dias (5% de desconto)" // Desconto AUTOMÁTICO, sem checkbox
-        ],
-        'Cartão': [
-            "1x (30 Dias)",
-            "2x (30/60 Dias)",
-            "3x (30/60/90 Dias)",
-            "4x (30/60/90/120 Dias)"
-        ],
-        'À vista': []
-    };
-
-    // Combina opções padrão com customizadas
-    const allOptions = paymentCondition === 'Boleto'
-        ? [...defaultOptions[paymentCondition], ...customOptions]
-        : defaultOptions[paymentCondition] || [];
 
     const handleAddOption = () => {
         if (newOption.trim()) {
-            const optionToAdd = newOption.trim();
-            if (!allOptions.includes(optionToAdd)) {
-                setCustomOptions([...customOptions, optionToAdd]);
-                onChange({ target: { value: optionToAdd } });
-                if (onAddOption) onAddOption(optionToAdd);
-            }
+            onAddOption(paymentCondition, newOption.trim());
             setNewOption('');
             setShowAddInput(false);
         }
@@ -449,12 +424,11 @@ const InstallmentSelect = ({
                 className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-bold"
             >
                 <option value="">Selecione...</option>
-                {allOptions.map((option, index) => (
-                    <option key={index} value={option}>{option}</option>
+                {options.map((opt, idx) => (
+                    <option key={idx} value={opt}>{opt}</option>
                 ))}
             </select>
 
-            {/* Input para adicionar nova opção (apenas para Boleto) */}
             {showAddOption && paymentCondition === 'Boleto' && (
                 <div className="space-y-2 w-full">
                     {!showAddInput ? (
@@ -581,18 +555,14 @@ const PaymentConditionsModal = ({
     totalOriginalValue,
     initialData,
     onConfirm,
-    orderNumber = null
+    orderNumber = null,
+    customInstallmentOptions,
+    onAddOption
 }) => {
     const installmentOptions = {
         'Boleto': [
-            "30 / 60 dias",
-            "5 dias (5% de desconto)"
         ],
         'Cartão': [
-            "1x (30 Dias)",
-            "2x (30/60 Dias)",
-            "3x (30/60/90 Dias)",
-            "4x (30/60/90/120 Dias)"
         ]
     };
 
@@ -769,13 +739,11 @@ const PaymentConditionsModal = ({
                                     });
                                 }}
                                 showAddOption={paymentData.paymentCondition === 'Boleto'}
-                                onAddOption={(newOption) => {
-                                    // Adicionar à lista de opções customizadas
-                                    setPaymentData(prev => ({
-                                        ...prev,
-                                        customInstallmentOptions: [...(prev.customInstallmentOptions || []), newOption]
-                                    }));
-                                }}
+                                onAddOption={onAddOption}
+                                options={[
+                                    ...(installmentOptions[paymentData.paymentCondition] || []),
+                                    ...(customInstallmentOptions[paymentData.paymentCondition] || [])
+                                ]}
                             />
                         </div>
                     )}
@@ -904,6 +872,9 @@ export default function MainApp() {
     // === AUTENTICAÇÃO ===
     const { user, userData, loading: authLoading, hasPermission, logout } = useAuth();
 
+    const [showAddBoletoInput, setShowAddBoletoInput] = useState(false);
+    const [newBoletoOption, setNewBoletoOption] = useState('');
+
     const [isClientPaymentModalOpen, setIsClientPaymentModalOpen] = useState(false);
     const [orderForPayment, setOrderForPayment] = useState(null);
     const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
@@ -940,8 +911,21 @@ export default function MainApp() {
 
 
     // Estados
-    const [customInstallmentOptions, setCustomInstallmentOptions] = useState({
-        'Cartão': []
+    const [customInstallmentOptions, setCustomInstallmentOptions] = useState(() => {
+        // Tentar carregar do localStorage
+        const saved = localStorage.getItem('customInstallmentOptions');
+        if (saved) {
+            try {
+                return JSON.parse(saved);
+            } catch (e) {
+                console.error('Erro ao carregar opções de parcelamento', e);
+            }
+        }
+        // Opções padrão (já existentes)
+        return {
+            'Boleto': [],
+            'Cartão': []
+        };
     });
     const [currentPage, setCurrentPage] = useState('os');
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -1333,6 +1317,17 @@ export default function MainApp() {
         }
     };
 
+    const toggleOrderSelection = (orderId, e) => {
+        if (e) e.stopPropagation(); // útil se chamado a partir de eventos, mas aqui não será necessário
+        setSelectedOrders(prev => {
+            if (prev.includes(orderId)) {
+                return prev.filter(id => id !== orderId);
+            } else {
+                return [...prev, orderId];
+            }
+        });
+    };
+
     const showNotification = (message, type = 'error') => {
         setNotification({
             show: true,
@@ -1493,6 +1488,13 @@ export default function MainApp() {
         });
         return Array.from(map.values()).sort((a, b) => a.client.localeCompare(b.client));
     }, [orders, contracts]);
+
+    const allOptions = [
+        ...(installmentOptions[formData.paymentCondition] || []),
+        ...(customInstallmentOptions[formData.paymentCondition] || [])
+    ];
+    // Remover duplicatas
+    const uniqueOptions = [...new Set(allOptions)];
 
     // Autocomplete de Defeitos - ATUALIZADO
     const uniqueDefects = useMemo(() => {
@@ -2096,190 +2098,208 @@ export default function MainApp() {
 
     // MODAL DE PAGAMENTO PARA CLIENTE (SEM IMPRESSÃO)
     const ClientPaymentModal = ({
-        isOpen,
-        onClose,
-        order,
-        onConfirm
-    }) => {
-        // Definir installmentOptions dentro do componente
-        const installmentOptions = {
-            'Boleto': [
-                "30 / 60 dias",
-                "5 dias (5% de desconto)"
-            ],
-            'Cartão': [
-                "1x (30 Dias)",
-                "2x (30/60 Dias)",
-                "3x (30/60/90 Dias)",
-                "4x (30/60/90/120 Dias)"
-            ]
-        };
+    isOpen,
+    onClose,
+    order,
+    onConfirm,
+    customInstallmentOptions,  // <-- recebe do MainApp
+    onAddOption                 // <-- recebe do MainApp
+}) => {
+    // Opções padrão de parcelas (mesmas do PaymentConditionsModal)
+    const installmentOptions = {
+        'Boleto': [
+            "30 / 60 dias",
+            "5 dias (5% de desconto)"
+        ],
+        'Cartão': [
+            "1x (30 Dias)",
+            "2x (30/60 Dias)",
+            "3x (30/60/90 Dias)",
+            "4x (30/60/90/120 Dias)"
+        ]
+    };
 
-        // Estado inicial baseado na OS
-        const [paymentData, setPaymentData] = useState({
-            paymentCondition: order?.paymentCondition || 'À vista',
-            installments: order?.installments || '',
-            discount5Days: order?.discount5Days || false,
-            finalChargedAmount: order?.finalChargedAmount || parseCurrency(order?.chargedAmount),
-            originalValue: parseCurrency(order?.chargedAmount)
+    // Estado inicial baseado na OS
+    const [paymentData, setPaymentData] = useState({
+        paymentCondition: order?.paymentCondition || 'À vista',
+        installments: order?.installments || '',
+        discount5Days: order?.discount5Days || false,
+        finalChargedAmount: order?.finalChargedAmount || parseCurrency(order?.chargedAmount),
+        originalValue: parseCurrency(order?.chargedAmount)
+    });
+
+    // Combina opções padrão + customizadas para a condição atual
+    const combinedOptions = useMemo(() => {
+        const paymentType = paymentData.paymentCondition;
+        if (paymentType === 'À vista') return [];
+        const defaultOpts = installmentOptions[paymentType] || [];
+        const customOpts = (customInstallmentOptions && customInstallmentOptions[paymentType]) || [];
+        return [...new Set([...defaultOpts, ...customOpts])];
+    }, [paymentData.paymentCondition, customInstallmentOptions]);
+
+    // Função para calcular valor final com desconto automático
+    const calculateFinalAmount = (condition, installments, originalValue) => {
+        if (condition === 'Boleto' && installments === "5 dias (5% de desconto)") {
+            return originalValue * 0.95;
+        }
+        return originalValue;
+    };
+
+    const handlePaymentConditionChange = (e) => {
+        const newCondition = e.target.value;
+        let newInstallments = '';
+
+        if (newCondition === 'Boleto') {
+            newInstallments = "30 / 60 dias";
+        } else if (newCondition === 'Cartão') {
+            newInstallments = "1x (30 Dias)";
+        } else if (newCondition === 'À vista') {
+            newInstallments = '';
+        }
+
+        const finalAmount = calculateFinalAmount(
+            newCondition,
+            newInstallments,
+            paymentData.originalValue
+        );
+
+        setPaymentData({
+            ...paymentData,
+            paymentCondition: newCondition,
+            installments: newInstallments,
+            finalChargedAmount: finalAmount
         });
+    };
 
-        // Calcular valor final com desconto automático
-        const calculateFinalAmount = (condition, installments, originalValue) => {
-            if (condition === 'Boleto' && installments === "5 dias (5% de desconto)") {
-                return originalValue * 0.95;
-            }
-            return originalValue;
-        };
+    const handleInstallmentsChange = (e) => {
+        const newInstallments = e.target.value;
+        const finalAmount = calculateFinalAmount(
+            paymentData.paymentCondition,
+            newInstallments,
+            paymentData.originalValue
+        );
 
-        const handlePaymentConditionChange = (e) => {
-            const newCondition = e.target.value;
-            let newInstallments = '';
+        setPaymentData({
+            ...paymentData,
+            installments: newInstallments,
+            finalChargedAmount: finalAmount
+        });
+    };
 
-            if (newCondition === 'Boleto') {
-                newInstallments = "30 / 60 dias";
-            } else if (newCondition === 'Cartão') {
-                newInstallments = "1x (30 Dias)";
-            } else if (newCondition === 'À vista') {
-                newInstallments = '';
-            }
+    const handleConfirm = () => {
+        onConfirm(paymentData);
+        onClose();
+    };
 
-            const finalAmount = calculateFinalAmount(
-                newCondition,
-                newInstallments,
-                paymentData.originalValue
-            );
+    if (!isOpen || !order) return null;
 
-            setPaymentData({
-                ...paymentData,
-                paymentCondition: newCondition,
-                installments: newInstallments,
-                finalChargedAmount: finalAmount
-            });
-        };
-
-        const handleInstallmentsChange = (e) => {
-            const newInstallments = e.target.value;
-            const finalAmount = calculateFinalAmount(
-                paymentData.paymentCondition,
-                newInstallments,
-                paymentData.originalValue
-            );
-
-            setPaymentData({
-                ...paymentData,
-                installments: newInstallments,
-                finalChargedAmount: finalAmount
-            });
-        };
-
-        const handleConfirm = () => {
-            onConfirm(paymentData);
-            onClose();
-        };
-
-        if (!isOpen || !order) return null;
-
-        return (
-            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-                <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border border-slate-200 space-y-6 animate-in zoom-in-95">
-                    <div className="flex items-center gap-3">
-                        <div className="bg-blue-100 p-3 rounded-full text-blue-600">
-                            <CheckCircle2 size={24} />
-                        </div>
-                        <div>
-                            <h3 className="text-xl font-black text-slate-900">Confirmar Pagamento</h3>
-                            <p className="text-slate-500 text-sm">Configure o pagamento para a OS {order.osNumber}</p>
-                        </div>
+    return (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border border-slate-200 space-y-6 animate-in zoom-in-95">
+                <div className="flex items-center gap-3">
+                    <div className="bg-blue-100 p-3 rounded-full text-blue-600">
+                        <CheckCircle2 size={24} />
                     </div>
-
-                    <div className="space-y-4">
-                        <div className="space-y-2">
-                            <label className="text-xs font-bold text-slate-400 uppercase">Valor do Orçamento</label>
-                            <div className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-2xl text-slate-800 text-center">
-                                R$ {paymentData.originalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                            </div>
-
-                            {paymentData.finalChargedAmount !== paymentData.originalValue && (
-                                <div className="mt-4 space-y-2 animate-in fade-in">
-                                    <label className="text-xs font-bold text-green-600 uppercase">Valor com Desconto (5%)</label>
-                                    <div className="w-full p-4 bg-green-50 border-2 border-green-200 rounded-2xl font-black text-2xl text-green-800 text-center">
-                                        R$ {paymentData.finalChargedAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                        <div className="text-sm text-green-600 font-bold mt-2">
-                                            ✓ Desconto de 5% aplicado
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="space-y-2">
-                            <label className="text-xs font-bold text-slate-400 uppercase">Condição de Pagamento</label>
-                            <select
-                                value={paymentData.paymentCondition}
-                                onChange={handlePaymentConditionChange}
-                                className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-bold"
-                            >
-                                <option value="À vista">À vista</option>
-                                <option value="Boleto">Boleto</option>
-                                <option value="Cartão">Cartão</option>
-                            </select>
-                        </div>
-
-                        {(paymentData.paymentCondition === 'Boleto' || paymentData.paymentCondition === 'Cartão') && (
-                            <div className="space-y-2 animate-in fade-in">
-                                <label className="text-xs font-bold text-slate-400 uppercase">Parcelas</label>
-                                <select
-                                    value={paymentData.installments}
-                                    onChange={handleInstallmentsChange}
-                                    className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-bold"
-                                >
-                                    {paymentData.paymentCondition === 'Boleto' ? (
-                                        <>
-                                            <option value="30 / 60 dias">30 / 60 dias</option>
-                                            <option value="5 dias (5% de desconto)">5 dias (5% de desconto)</option>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <option value="1x (30 Dias)">1x (30 Dias)</option>
-                                            <option value="2x (30/60 Dias)">2x (30/60 Dias)</option>
-                                            <option value="3x (30/60/90 Dias)">3x (30/60/90 Dias)</option>
-                                            <option value="4x (30/60/90/120 Dias)">4x (30/60/90/120 Dias)</option>
-                                        </>
-                                    )}
-                                </select>
-                            </div>
-                        )}
-
-                        <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
-                            <div className="flex items-center gap-2 text-blue-600 mb-2">
-                                <Info size={16} />
-                                <span className="text-xs font-bold uppercase">Informação</span>
-                            </div>
-                            <p className="text-xs text-blue-700">
-                                Ao confirmar, a OS será movida para <strong>"Em manutenção"</strong> e você será notificado sobre os próximos passos.
-                            </p>
-                        </div>
-                    </div>
-
-                    <div className="flex gap-3">
-                        <button
-                            onClick={onClose}
-                            className="flex-1 py-4 rounded-xl font-bold text-slate-500 hover:bg-slate-100 transition-colors"
-                        >
-                            Cancelar
-                        </button>
-                        <button
-                            onClick={handleConfirm}
-                            className="flex-1 py-4 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 shadow-xl shadow-green-200 transition-colors flex items-center justify-center gap-2"
-                        >
-                            <Check size={20} /> Confirmar Pagamento
-                        </button>
+                    <div>
+                        <h3 className="text-xl font-black text-slate-900">Confirmar Pagamento</h3>
+                        <p className="text-slate-500 text-sm">Configure o pagamento para a OS {order.osNumber}</p>
                     </div>
                 </div>
+
+                <div className="space-y-4">
+                    <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-400 uppercase">Valor do Orçamento</label>
+                        <div className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-2xl text-slate-800 text-center">
+                            R$ {paymentData.originalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </div>
+
+                        {paymentData.finalChargedAmount !== paymentData.originalValue && (
+                            <div className="mt-4 space-y-2 animate-in fade-in">
+                                <label className="text-xs font-bold text-green-600 uppercase">Valor com Desconto (5%)</label>
+                                <div className="w-full p-4 bg-green-50 border-2 border-green-200 rounded-2xl font-black text-2xl text-green-800 text-center">
+                                    R$ {paymentData.finalChargedAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    <div className="text-sm text-green-600 font-bold mt-2">
+                                        ✓ Desconto de 5% aplicado
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-400 uppercase">Condição de Pagamento</label>
+                        <select
+                            value={paymentData.paymentCondition}
+                            onChange={handlePaymentConditionChange}
+                            className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-bold"
+                        >
+                            <option value="À vista">À vista</option>
+                            <option value="Boleto">Boleto</option>
+                            <option value="Cartão">Cartão</option>
+                        </select>
+                    </div>
+
+                    {(paymentData.paymentCondition === 'Boleto' || paymentData.paymentCondition === 'Cartão') && (
+                        <div className="space-y-2 animate-in fade-in">
+                            <label className="text-xs font-bold text-slate-400 uppercase">Parcelas</label>
+
+                            <InstallmentSelect
+                                value={paymentData.installments}
+                                onChange={handleInstallmentsChange}
+                                paymentCondition={paymentData.paymentCondition}
+                                discount5Days={paymentData.discount5Days}
+                                onDiscountChange={(e) => {
+                                    const isChecked = e.target.checked;
+                                    const finalAmount = calculateFinalAmount(
+                                        paymentData.paymentCondition,
+                                        paymentData.installments,
+                                        paymentData.originalValue
+                                    );
+                                    setPaymentData({
+                                        ...paymentData,
+                                        discount5Days: isChecked,
+                                        finalChargedAmount: finalAmount
+                                    });
+                                }}
+                                showAddOption={paymentData.paymentCondition === 'Boleto'}
+                                onAddOption={(newOption) => {
+                                    // Chama a função do pai para adicionar a opção globalmente
+                                    onAddOption(paymentData.paymentCondition, newOption);
+                                }}
+                                options={combinedOptions} // <-- opções combinadas (padrão + customizadas)
+                            />
+                        </div>
+                    )}
+
+                    <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
+                        <div className="flex items-center gap-2 text-blue-600 mb-2">
+                            <Info size={16} />
+                            <span className="text-xs font-bold uppercase">Informação</span>
+                        </div>
+                        <p className="text-xs text-blue-700">
+                            Ao confirmar, a OS será movida para <strong>"Em manutenção"</strong> e você será notificado sobre os próximos passos.
+                        </p>
+                    </div>
+                </div>
+
+                <div className="flex gap-3">
+                    <button
+                        onClick={onClose}
+                        className="flex-1 py-4 rounded-xl font-bold text-slate-500 hover:bg-slate-100 transition-colors"
+                    >
+                        Cancelar
+                    </button>
+                    <button
+                        onClick={handleConfirm}
+                        className="flex-1 py-4 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 shadow-xl shadow-green-200 transition-colors flex items-center justify-center gap-2"
+                    >
+                        <Check size={20} /> Confirmar Pagamento
+                    </button>
+                </div>
             </div>
-        );
-    };
+        </div>
+    );
+};
 
 
     const openViewModal = (order) => {
@@ -2978,12 +2998,26 @@ export default function MainApp() {
     const addCustomInstallmentOption = (paymentType, option) => {
         if (!option.trim()) return;
 
-        setCustomInstallmentOptions(prev => ({
-            ...prev,
-            [paymentType]: [...(prev[paymentType] || []), option.trim()]
-        }));
+        const trimmedOption = option.trim();
+        // Verificar se já existe nas opções padrão ou nas customizadas atuais
+        const existsInDefault = installmentOptions[paymentType]?.includes(trimmedOption);
+        const existsInCustom = customInstallmentOptions[paymentType]?.includes(trimmedOption);
 
-        showNotification(`Opção de parcela "${option}" adicionada com sucesso!`, 'success');
+        if (existsInDefault || existsInCustom) {
+            showNotification('Esta opção já existe!', 'warning');
+            return;
+        }
+
+        setCustomInstallmentOptions(prev => {
+            const updated = {
+                ...prev,
+                [paymentType]: [...(prev[paymentType] || []), trimmedOption]
+            };
+            localStorage.setItem('customInstallmentOptions', JSON.stringify(updated));
+            return updated;
+        });
+
+        showNotification(`Opção de parcela "${trimmedOption}" adicionada com sucesso!`, 'success');
     };
 
 
@@ -4140,7 +4174,11 @@ export default function MainApp() {
                                                 return clientMatch || osNumberMatch || itemMatch ||
                                                     manufacturerMatch || modelMatch || serialMatch || statusDateMatch;
                                             }).map(o => (
-                                                <tr key={o.firestoreId} className={`hover:bg-blue-50/30 transition-colors group ${selectedOrders.includes(o.firestoreId) ? 'bg-blue-50/50' : ''}`}>
+                                                <tr
+                                                    key={o.firestoreId}
+                                                    className={`hover:bg-blue-50/30 transition-colors group cursor-pointer ${selectedOrders.includes(o.firestoreId) ? 'bg-blue-50/50' : ''}`}
+                                                    onClick={() => toggleOrderSelection(o.firestoreId)}
+                                                >
                                                     <td className="px-6 py-4 text-center">
                                                         <input
                                                             type="checkbox"
@@ -4155,6 +4193,7 @@ export default function MainApp() {
                                                                     }
                                                                 });
                                                             }}
+                                                            onClick={(e) => e.stopPropagation()}
                                                         />
                                                     </td>
                                                     <td className="px-8 py-6">
@@ -5708,14 +5747,79 @@ export default function MainApp() {
                                                 </div>
                                                 <hr className="border-slate-200/50" />
                                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 items-start">
+                                                    {/* COLUNA 1: Valor Sugerido + Botão Boleto */}
                                                     <div className="space-y-2">
                                                         <label className="text-[10px] font-bold text-blue-500 uppercase">Valor Sugerido (+60%)</label>
                                                         <div className="w-full p-4 bg-blue-50/50 border border-blue-100 rounded-2xl font-black text-blue-600 cursor-not-allowed text-sm">R$ {formatMoney(suggestedValue)}</div>
+
+                                                        {/* Botão de adicionar opção de boleto - só quando Boleto selecionado */}
+                                                        {!isViewMode && formData.paymentCondition === 'Boleto' && (
+                                                            <div className="mt-2">
+                                                                {!showAddBoletoInput ? (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setShowAddBoletoInput(true)}
+                                                                        className="w-full p-3 bg-blue-50 text-blue-600 border-2 border-blue-200 border-dashed rounded-xl font-bold text-sm hover:bg-blue-100 transition-colors flex items-center gap-2 justify-center"
+                                                                    >
+                                                                        <Plus size={16} />
+                                                                        Adicionar nova opção de boleto
+                                                                    </button>
+                                                                ) : (
+                                                                    <div className="space-y-2 animate-in fade-in w-full">
+                                                                        <div className="flex gap-2 items-center">
+                                                                            <input
+                                                                                type="text"
+                                                                                placeholder="Ex: 45 / 75 dias"
+                                                                                className="flex-1 p-3 bg-white border border-blue-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                                                                                value={newBoletoOption}
+                                                                                onChange={(e) => setNewBoletoOption(e.target.value)}
+                                                                                onKeyDown={(e) => {
+                                                                                    if (e.key === 'Enter' && newBoletoOption.trim()) {
+                                                                                        addCustomInstallmentOption('Boleto', newBoletoOption.trim());
+                                                                                        setNewBoletoOption('');
+                                                                                        setShowAddBoletoInput(false);
+                                                                                    }
+                                                                                }}
+                                                                                autoFocus
+                                                                            />
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => {
+                                                                                    if (newBoletoOption.trim()) {
+                                                                                        addCustomInstallmentOption('Boleto', newBoletoOption.trim());
+                                                                                        setNewBoletoOption('');
+                                                                                        setShowAddBoletoInput(false);
+                                                                                    }
+                                                                                }}
+                                                                                className="bg-blue-600 text-white p-3 rounded-xl hover:bg-blue-700 transition-colors flex-shrink-0"
+                                                                                title="Adicionar"
+                                                                            >
+                                                                                <Plus size={16} />
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => {
+                                                                                    setShowAddBoletoInput(false);
+                                                                                    setNewBoletoOption('');
+                                                                                }}
+                                                                                className="text-slate-400 hover:text-slate-600 p-2 flex-shrink-0"
+                                                                                title="Cancelar"
+                                                                            >
+                                                                                <X size={16} />
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        )}
                                                     </div>
+
+                                                    {/* COLUNA 2: Soma Itens Laudo */}
                                                     <div className="space-y-2">
                                                         <label className="text-[10px] font-bold text-purple-600 uppercase">Soma Itens Laudo</label>
                                                         <div className="w-full p-4 bg-purple-50/50 border border-purple-100 rounded-2xl font-black text-purple-700 cursor-not-allowed text-sm">R$ {formatMoney(solutionsTotal)}</div>
                                                     </div>
+
                                                     <div className="space-y-2">
                                                         <label className="text-[10px] font-bold text-green-600 uppercase">Valor Cobrado (R$)</label>
                                                         <div className="relative">
@@ -5745,27 +5849,33 @@ export default function MainApp() {
                                                         <div className="space-y-2 animate-in fade-in">
                                                             <label className="text-[10px] font-bold text-slate-400 uppercase">Parcelas</label>
                                                             {formData.paymentCondition === 'Boleto' ? (
-                                                                <div className="space-y-3">
-                                                                    <AccessibleSelect
-                                                                        value={formData.installments}
-                                                                        onChange={(e) => {
-                                                                            const is5Days = e.target.value === "5 dias (5% de desconto)";
-                                                                            setFormData({
-                                                                                ...formData,
-                                                                                installments: e.target.value,
-                                                                                discount5Days: is5Days
-                                                                            });
-                                                                        }}
-                                                                        options={installmentOptions['Boleto']}
-                                                                        label="Parcelas boleto"
-                                                                    />
-                                                                </div>
+                                                                <InstallmentSelect
+                                                                    value={formData.installments}
+                                                                    onChange={(e) => {
+                                                                        const is5Days = e.target.value === "5 dias (5% de desconto)";
+                                                                        setFormData({ ...formData, installments: e.target.value, discount5Days: is5Days });
+                                                                    }}
+                                                                    paymentCondition={formData.paymentCondition}
+                                                                    discount5Days={formData.discount5Days}
+                                                                    onDiscountChange={(e) => {
+                                                                        const isChecked = e.target.checked;
+                                                                        const charged = parseCurrency(formData.chargedAmount);
+                                                                        const discount = isChecked ? charged * 0.05 : 0;
+                                                                        const final = isChecked ? charged - discount : charged;
+                                                                        setFormData({ ...formData, discount5Days: isChecked, discountAmount: discount, finalChargedAmount: final });
+                                                                    }}
+                                                                    showAddOption={false}  // Agora o botão está fora, então desabilitamos aqui
+                                                                    onAddOption={addCustomInstallmentOption}
+                                                                    options={[...new Set([...(installmentOptions[formData.paymentCondition] || []), ...(customInstallmentOptions[formData.paymentCondition] || [])])]}
+                                                                />
                                                             ) : (
-                                                                <AccessibleSelect
+                                                                <InstallmentSelect
                                                                     value={formData.installments}
                                                                     onChange={(e) => setFormData({ ...formData, installments: e.target.value })}
-                                                                    options={installmentOptions['Cartão']}
-                                                                    label="Parcelas cartão"
+                                                                    paymentCondition={formData.paymentCondition}
+                                                                    discount5Days={false}
+                                                                    showAddOption={false}
+                                                                    options={[...new Set([...(installmentOptions[formData.paymentCondition] || []), ...(customInstallmentOptions[formData.paymentCondition] || [])])]}
                                                                 />
                                                             )}
                                                         </div>
@@ -5800,7 +5910,6 @@ export default function MainApp() {
                                         )}
                                     </div>
                                 )}
-
                                 {/* SEÇÃO LOGÍSTICA E STATUS FINAL */}
                                 <div className="space-y-6 pt-6 border-t">
                                     <div className="flex items-center gap-2 text-slate-900 font-bold uppercase text-xs tracking-widest">
@@ -6291,6 +6400,8 @@ export default function MainApp() {
                 totalOriginalValue={paymentModalData.totalOriginalValue}
                 initialData={paymentModalData}
                 onConfirm={handleConfirmPrintWithPayment}
+                customInstallmentOptions={customInstallmentOptions}
+                onAddOption={addCustomInstallmentOption}
             />
 
             <ClientPaymentModal
@@ -6301,6 +6412,8 @@ export default function MainApp() {
                 }}
                 order={orderForPayment}
                 onConfirm={handleConfirmClientPayment}
+                customInstallmentOptions={customInstallmentOptions}
+                onAddOption={addCustomInstallmentOption}
             />
 
             <RejectConfirmModal
