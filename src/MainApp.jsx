@@ -561,8 +561,14 @@ const PaymentConditionsModal = ({
 }) => {
     const installmentOptions = {
         'Boleto': [
+            "30 / 60 dias",
+            "5 dias (5% de desconto)"
         ],
         'Cartão': [
+            "1x (30 Dias)",
+            "2x (30/60 Dias)",
+            "3x (30/60/90 Dias)",
+            "4x (30/60/90/120 Dias)"
         ]
     };
 
