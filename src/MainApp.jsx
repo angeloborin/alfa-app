@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import {
     collection, addDoc, updateDoc, deleteDoc,
-    doc, onSnapshot, setDoc
+    doc, onSnapshot, setDoc, getDoc
 } from 'firebase/firestore';
 import { auth, db, storage } from "./firebase/firebase";
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
@@ -401,12 +401,24 @@ const InstallmentSelect = ({
     value,
     onChange,
     paymentCondition,
+    options = [],
+    customOptions = [],
+    onDeleteOption,
+    userRole,
     showAddOption = false,
     onAddOption,
-    options = []  // Recebe as opções combinadas como prop
 }) => {
+    const [isOpen, setIsOpen] = useState(false);
     const [showAddInput, setShowAddInput] = useState(false);
     const [newOption, setNewOption] = useState('');
+    const dropdownRef = useRef(null);
+
+    useOutsideClick(dropdownRef, () => setIsOpen(false));
+
+    const handleSelect = (opt) => {
+        onChange({ target: { value: opt } });
+        setIsOpen(false);
+    };
 
     const handleAddOption = () => {
         if (newOption.trim()) {
@@ -417,61 +429,91 @@ const InstallmentSelect = ({
     };
 
     return (
-        <div className="space-y-3">
-            <select
-                value={value}
-                onChange={onChange}
-                className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-bold"
+        <div className="relative w-full" ref={dropdownRef}>
+            <button
+                type="button"
+                onClick={() => setIsOpen(!isOpen)}
+                className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-bold text-left flex items-center justify-between"
             >
-                <option value="">Selecione...</option>
-                {options.map((opt, idx) => (
-                    <option key={idx} value={opt}>{opt}</option>
-                ))}
-            </select>
+                <span>{value || 'Selecione...'}</span>
+                <ChevronDown size={20} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+            </button>
 
-            {showAddOption && paymentCondition === 'Boleto' && (
-                <div className="space-y-2 w-full">
-                    {!showAddInput ? (
-                        <div className="w-full flex justify-start">
-                            <button
-                                type="button"
-                                onClick={() => setShowAddInput(true)}
-                                className="p-3 bg-blue-50 text-blue-600 border-2 border-blue-200 border-dashed rounded-xl font-bold text-sm hover:bg-blue-100 transition-colors flex items-center gap-2"
-                            >
-                                <Plus size={16} />
-                                Adicionar nova opção de boleto
-                            </button>
-                        </div>
+            {isOpen && (
+                <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 max-h-80 overflow-y-auto animate-in slide-in-from-top-2">
+                    {options.length === 0 ? (
+                        <div className="p-4 text-center text-slate-400 text-sm">Nenhuma opção</div>
                     ) : (
-                        <div className="space-y-2 animate-in fade-in w-full">
-                            <div className="flex gap-2 items-center">
-                                <input
-                                    type="text"
-                                    placeholder="Ex: 45 / 75 dias"
-                                    className="flex-1 p-3 bg-white border border-blue-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
-                                    value={newOption}
-                                    onChange={(e) => setNewOption(e.target.value)}
-                                    onKeyDown={(e) => e.key === 'Enter' && handleAddOption()}
-                                />
+                        options.map((opt, idx) => {
+                            const isCustom = customOptions.includes(opt);
+                            return (
+                                <div
+                                    key={idx}
+                                    className="flex items-center justify-between px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 last:border-0"
+                                    onClick={() => handleSelect(opt)}
+                                >
+                                    <span className="font-medium text-slate-700">{opt}</span>
+                                    {isCustom && userRole === 'admin' && (
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                onDeleteOption(paymentCondition, opt);
+                                            }}
+                                            className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-full"
+                                            title="Remover opção"
+                                        >
+                                            <X size={16} />
+                                        </button>
+                                    )}
+                                </div>
+                            );
+                        })
+                    )}
+                    {showAddOption && paymentCondition === 'Boleto' && (
+                        <div className="p-4 border-t border-slate-100 bg-slate-50">
+                            {!showAddInput ? (
                                 <button
                                     type="button"
-                                    onClick={handleAddOption}
-                                    className="bg-blue-600 text-white p-3 rounded-xl hover:bg-blue-700 transition-colors flex-shrink-0"
+                                    onClick={() => setShowAddInput(true)}
+                                    className="w-full p-3 bg-blue-50 text-blue-600 border-2 border-blue-200 border-dashed rounded-xl font-bold text-sm hover:bg-blue-100 transition-colors flex items-center gap-2 justify-center"
                                 >
                                     <Plus size={16} />
+                                    Adicionar nova opção de boleto
                                 </button>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setShowAddInput(false);
-                                        setNewOption('');
-                                    }}
-                                    className="text-slate-400 hover:text-slate-600 p-2"
-                                    title="Cancelar"
-                                >
-                                    <X size={16} />
-                                </button>
-                            </div>
+                            ) : (
+                                <div className="space-y-2 animate-in fade-in w-full">
+                                    <div className="flex gap-2 items-center">
+                                        <input
+                                            type="text"
+                                            placeholder="Ex: 45 / 75 dias"
+                                            className="flex-1 p-3 bg-white border border-blue-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                                            value={newOption}
+                                            onChange={(e) => setNewOption(e.target.value)}
+                                            onKeyDown={(e) => e.key === 'Enter' && handleAddOption()}
+                                            autoFocus
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={handleAddOption}
+                                            className="bg-blue-600 text-white p-3 rounded-xl hover:bg-blue-700 transition-colors flex-shrink-0"
+                                        >
+                                            <Plus size={16} />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setShowAddInput(false);
+                                                setNewOption('');
+                                            }}
+                                            className="text-slate-400 hover:text-slate-600 p-2 flex-shrink-0"
+                                            title="Cancelar"
+                                        >
+                                            <X size={16} />
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
@@ -556,8 +598,11 @@ const PaymentConditionsModal = ({
     initialData,
     onConfirm,
     orderNumber = null,
-    customInstallmentOptions,
-    onAddOption
+    customOptions,
+    onAddOption,
+    onDeleteOption,
+    userRole,
+    showNotification
 }) => {
     const installmentOptions = {
         'Boleto': [
@@ -582,13 +627,6 @@ const PaymentConditionsModal = ({
     });
 
     const { userData } = useAuth();
-
-    useEffect(() => {
-        if (isOpen && userData?.role === 'client') {
-            onClose();
-            showNotification('Este modal é apenas para administradores', 'error');
-        }
-    }, [isOpen, userData, onClose]);
 
     useEffect(() => {
         if (isOpen) {
@@ -670,6 +708,14 @@ const PaymentConditionsModal = ({
         onClose();
     };
 
+    const combinedOptions = useMemo(() => {
+        const paymentType = paymentData.paymentCondition;
+        if (paymentType === 'À vista') return [];
+        const defaultOpts = installmentOptions[paymentType] || [];
+        const customOpts = (customOptions && customOptions[paymentType]) || [];
+        return [...defaultOpts, ...customOpts];
+    }, [paymentData.paymentCondition, customOptions]);
+
     if (!isOpen) return null;
 
     return (
@@ -697,7 +743,6 @@ const PaymentConditionsModal = ({
                             R$ {paymentData.originalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                         </div>
 
-                        {/* ADICIONE ESTE BLOCO PARA MOSTRAR O VALOR COM DESCONTO */}
                         {paymentData.finalChargedAmount !== paymentData.originalValue && (
                             <div className="mt-4 space-y-2 animate-in fade-in">
                                 <label className="text-xs font-bold text-green-600 uppercase">Valor com Desconto (5%)</label>
@@ -729,27 +774,12 @@ const PaymentConditionsModal = ({
                                 value={paymentData.installments}
                                 onChange={handleInstallmentsChange}
                                 paymentCondition={paymentData.paymentCondition}
-                                discount5Days={paymentData.discount5Days}
-                                onDiscountChange={(e) => {
-                                    const isChecked = e.target.checked;
-                                    const finalAmount = calculateFinalAmount(
-                                        paymentData.paymentCondition,
-                                        paymentData.installments,
-                                        isChecked,
-                                        paymentData.originalValue
-                                    );
-                                    setPaymentData({
-                                        ...paymentData,
-                                        discount5Days: isChecked,
-                                        finalChargedAmount: finalAmount
-                                    });
-                                }}
-                                showAddOption={paymentData.paymentCondition === 'Boleto'}
+                                options={combinedOptions}
+                                customOptions={customOptions[paymentData.paymentCondition] || []}
+                                onDeleteOption={onDeleteOption}
+                                userRole={userRole}
+                                showAddOption={paymentData.paymentCondition === 'Boleto' && userRole === 'admin'}
                                 onAddOption={onAddOption}
-                                options={[
-                                    ...(installmentOptions[paymentData.paymentCondition] || []),
-                                    ...(customInstallmentOptions[paymentData.paymentCondition] || [])
-                                ]}
                             />
                         </div>
                     )}
@@ -915,24 +945,52 @@ export default function MainApp() {
         }
     });
 
+    const [showBenchRepairSuggestions, setShowBenchRepairSuggestions] = useState(false);
+
 
     // Estados
-    const [customInstallmentOptions, setCustomInstallmentOptions] = useState(() => {
-        // Tentar carregar do localStorage
-        const saved = localStorage.getItem('customInstallmentOptions');
-        if (saved) {
-            try {
-                return JSON.parse(saved);
-            } catch (e) {
-                console.error('Erro ao carregar opções de parcelamento', e);
-            }
-        }
-        // Opções padrão (já existentes)
-        return {
-            'Boleto': [],
-            'Cartão': []
-        };
-    });
+
+    const [customOptions, setCustomOptions] = useState({ Boleto: [], Cartão: [] });
+
+    useEffect(() => {
+        const unsub = onSnapshot(
+            collection(db, 'artifacts', finalAppId, 'public', 'data', 'customOptions'),
+            (snap) => {
+                const options = { Boleto: [], Cartão: [] };
+                snap.docs.forEach(doc => {
+                    const data = doc.data();
+                    if (data.paymentType && Array.isArray(data.options)) {
+                        options[data.paymentType] = data.options;
+                    }
+                });
+                setCustomOptions(options);
+            },
+            (error) => console.error('Erro ao buscar opções personalizadas:', error)
+        );
+        return unsub;
+    }, []);
+
+    // Estado para sugestões ocultas
+    const [hiddenSuggestions, setHiddenSuggestions] = useState({ defects: [], solutions: [] });
+
+    // Listener para sugestões ocultas
+    useEffect(() => {
+        const unsub = onSnapshot(
+            collection(db, 'artifacts', finalAppId, 'public', 'data', 'hiddenSuggestions'),
+            (snap) => {
+                const hidden = { defects: [], solutions: [] };
+                snap.docs.forEach(doc => {
+                    const data = doc.data();
+                    if (data.type === 'defect') hidden.defects.push(data.value);
+                    if (data.type === 'solution') hidden.solutions.push(data.value);
+                });
+                setHiddenSuggestions(hidden);
+            },
+            (error) => console.error('Erro ao buscar sugestões ocultas:', error)
+        );
+        return unsub;
+    }, []);
+
     const [currentPage, setCurrentPage] = useState('os');
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [showValues, setShowValues] = useState(true);
@@ -1050,7 +1108,7 @@ export default function MainApp() {
         installments: '',
         discount5Days: false,
         finalChargedAmount: 0,
-        customInstallmentOptions: []
+        customOptions: []
     });
     // === ESTADOS PARA FILTROS NO PAINEL DE STATUS ===
     const [statusFilter, setStatusFilter] = useState(null);
@@ -1495,21 +1553,12 @@ export default function MainApp() {
         return Array.from(map.values()).sort((a, b) => a.client.localeCompare(b.client));
     }, [orders, contracts]);
 
-    const allOptions = [
-        ...(installmentOptions[formData.paymentCondition] || []),
-        ...(customInstallmentOptions[formData.paymentCondition] || [])
-    ];
-    // Remover duplicatas
-    const uniqueOptions = [...new Set(allOptions)];
-
-    // Autocomplete de Defeitos - ATUALIZADO
     const uniqueDefects = useMemo(() => {
         if (!orders || orders.length === 0) return [];
 
         const allDefects = [];
 
         orders.forEach(o => {
-            // Coletar defeitos de defectsList
             if (o.defectsList && Array.isArray(o.defectsList)) {
                 o.defectsList.forEach(d => {
                     if (d && typeof d === 'string' && d.trim()) {
@@ -1517,25 +1566,41 @@ export default function MainApp() {
                     }
                 });
             }
-
-            // Coletar defeitos do campo antigo defect
             if (o.defect && typeof o.defect === 'string' && o.defect.trim()) {
                 allDefects.push(o.defect.trim());
             }
         });
 
-        // Aplicar limpeza de sugestões concatenadas
-        return cleanConcatenatedSuggestions(allDefects);
-    }, [orders]);
+        // Limpeza e remoção das ocultas
+        return cleanConcatenatedSuggestions(allDefects)
+            .filter(item => !hiddenSuggestions.defects.includes(item));
+    }, [orders, hiddenSuggestions.defects]);
 
-    // Autocomplete de Soluções - ATUALIZADO
+    // Autocomplete para Conserto em bancada
+    const uniqueBenchRepair = useMemo(() => {
+        if (!orders || orders.length === 0) return [];
+
+        const allItems = [];
+        orders.forEach(o => {
+            if (o.benchRepairList && Array.isArray(o.benchRepairList)) {
+                o.benchRepairList.forEach(item => {
+                    if (item && typeof item === 'string' && item.trim()) {
+                        allItems.push(item.trim());
+                    }
+                });
+            }
+        });
+
+        return cleanConcatenatedSuggestions(allItems)
+            .filter(item => !hiddenSuggestions.solutions.includes(item)); // reutiliza o tipo 'solution'
+    }, [orders, hiddenSuggestions.solutions]);
+
     const uniqueSolutions = useMemo(() => {
         if (!orders || orders.length === 0) return [];
 
         const allSolutions = [];
 
         orders.forEach(o => {
-            // Coletar de manualSolutionsList
             if (o.manualSolutionsList && Array.isArray(o.manualSolutionsList)) {
                 o.manualSolutionsList.forEach(s => {
                     if (s && typeof s === 'string' && s.trim()) {
@@ -1543,8 +1608,6 @@ export default function MainApp() {
                     }
                 });
             }
-
-            // Coletar de benchRepairList
             if (o.benchRepairList && Array.isArray(o.benchRepairList)) {
                 o.benchRepairList.forEach(s => {
                     if (s && typeof s === 'string' && s.trim()) {
@@ -1552,8 +1615,6 @@ export default function MainApp() {
                     }
                 });
             }
-
-            // Coletar de solutionsList (objetos com campo text)
             if (o.solutionsList && Array.isArray(o.solutionsList)) {
                 o.solutionsList.forEach(s => {
                     if (s && s.text && typeof s.text === 'string' && s.text.trim()) {
@@ -1561,36 +1622,14 @@ export default function MainApp() {
                     }
                 });
             }
-
-            // Coletar do campo antigo solution
             if (o.solution && typeof o.solution === 'string' && o.solution.trim()) {
                 allSolutions.push(o.solution.trim());
             }
         });
 
-        // Aplicar limpeza de sugestões concatenadas
-        return cleanConcatenatedSuggestions(allSolutions);
-    }, [orders]);
-
-    // Autocomplete de SolutionsList para modo com custos - ATUALIZADO
-    const uniqueSolutionsList = useMemo(() => {
-        if (!orders || orders.length === 0) return [];
-
-        const allItems = [];
-
-        orders.forEach(o => {
-            if (o.solutionsList && Array.isArray(o.solutionsList)) {
-                o.solutionsList.forEach(item => {
-                    if (item && item.text && typeof item.text === 'string' && item.text.trim()) {
-                        allItems.push(item.text.trim());
-                    }
-                });
-            }
-        });
-
-        // Aplicar limpeza de sugestões concatenadas
-        return cleanConcatenatedSuggestions(allItems);
-    }, [orders]);
+        return cleanConcatenatedSuggestions(allSolutions)
+            .filter(item => !hiddenSuggestions.solutions.includes(item));
+    }, [orders, hiddenSuggestions.solutions]);
 
     // Autocomplete de Equipamentos (com padronização case-insensitive)
     const uniqueItems = useMemo(() => {
@@ -2104,208 +2143,217 @@ export default function MainApp() {
 
     // MODAL DE PAGAMENTO PARA CLIENTE (SEM IMPRESSÃO)
     const ClientPaymentModal = ({
-    isOpen,
-    onClose,
-    order,
-    onConfirm,
-    customInstallmentOptions,  // <-- recebe do MainApp
-    onAddOption                 // <-- recebe do MainApp
-}) => {
-    // Opções padrão de parcelas (mesmas do PaymentConditionsModal)
-    const installmentOptions = {
-        'Boleto': [
-            "30 / 60 dias",
-            "5 dias (5% de desconto)"
-        ],
-        'Cartão': [
-            "1x (30 Dias)",
-            "2x (30/60 Dias)",
-            "3x (30/60/90 Dias)",
-            "4x (30/60/90/120 Dias)"
-        ]
-    };
+        isOpen,
+        onClose,
+        order,
+        onConfirm,
+        customOptions,
+        onAddOption,
+        onDeleteOption,
+        userRole
+    }) => {
+        // Opções padrão de parcelas
+        const installmentOptions = {
+            'Boleto': [
+                "30 / 60 dias",
+                "5 dias (5% de desconto)"
+            ],
+            'Cartão': [
+                "1x (30 Dias)",
+                "2x (30/60 Dias)",
+                "3x (30/60/90 Dias)",
+                "4x (30/60/90/120 Dias)"
+            ]
+        };
 
-    // Estado inicial baseado na OS
-    const [paymentData, setPaymentData] = useState({
-        paymentCondition: order?.paymentCondition || 'À vista',
-        installments: order?.installments || '',
-        discount5Days: order?.discount5Days || false,
-        finalChargedAmount: order?.finalChargedAmount || parseCurrency(order?.chargedAmount),
-        originalValue: parseCurrency(order?.chargedAmount)
-    });
-
-    // Combina opções padrão + customizadas para a condição atual
-    const combinedOptions = useMemo(() => {
-        const paymentType = paymentData.paymentCondition;
-        if (paymentType === 'À vista') return [];
-        const defaultOpts = installmentOptions[paymentType] || [];
-        const customOpts = (customInstallmentOptions && customInstallmentOptions[paymentType]) || [];
-        return [...new Set([...defaultOpts, ...customOpts])];
-    }, [paymentData.paymentCondition, customInstallmentOptions]);
-
-    // Função para calcular valor final com desconto automático
-    const calculateFinalAmount = (condition, installments, originalValue) => {
-        if (condition === 'Boleto' && installments === "5 dias (5% de desconto)") {
-            return originalValue * 0.95;
-        }
-        return originalValue;
-    };
-
-    const handlePaymentConditionChange = (e) => {
-        const newCondition = e.target.value;
-        let newInstallments = '';
-
-        if (newCondition === 'Boleto') {
-            newInstallments = "30 / 60 dias";
-        } else if (newCondition === 'Cartão') {
-            newInstallments = "1x (30 Dias)";
-        } else if (newCondition === 'À vista') {
-            newInstallments = '';
-        }
-
-        const finalAmount = calculateFinalAmount(
-            newCondition,
-            newInstallments,
-            paymentData.originalValue
-        );
-
-        setPaymentData({
-            ...paymentData,
-            paymentCondition: newCondition,
-            installments: newInstallments,
-            finalChargedAmount: finalAmount
+        // Estado inicial baseado na OS
+        const [paymentData, setPaymentData] = useState({
+            paymentCondition: order?.paymentCondition || 'À vista',
+            installments: order?.installments || '',
+            discount5Days: order?.discount5Days || false,
+            finalChargedAmount: order?.finalChargedAmount || parseCurrency(order?.chargedAmount),
+            originalValue: parseCurrency(order?.chargedAmount)
         });
-    };
 
-    const handleInstallmentsChange = (e) => {
-        const newInstallments = e.target.value;
-        const finalAmount = calculateFinalAmount(
-            paymentData.paymentCondition,
-            newInstallments,
-            paymentData.originalValue
-        );
+        // Combina opções padrão + customizadas para a condição atual
+        const combinedOptions = useMemo(() => {
+            const paymentType = paymentData.paymentCondition;
+            if (paymentType === 'À vista') return [];
+            const defaultOpts = installmentOptions[paymentType] || [];
+            const customOpts = (customOptions && customOptions[paymentType]) || [];
+            return [...defaultOpts, ...customOpts];
+        }, [paymentData.paymentCondition, customOptions]);
 
-        setPaymentData({
-            ...paymentData,
-            installments: newInstallments,
-            finalChargedAmount: finalAmount
-        });
-    };
+        // Função para calcular valor final com desconto automático
+        const calculateFinalAmount = (condition, installments, originalValue) => {
+            if (condition === 'Boleto' && installments === "5 dias (5% de desconto)") {
+                return originalValue * 0.95;
+            }
+            return originalValue;
+        };
 
-    const handleConfirm = () => {
-        onConfirm(paymentData);
-        onClose();
-    };
+        const handlePaymentConditionChange = (e) => {
+            const newCondition = e.target.value;
+            let newInstallments = '';
 
-    if (!isOpen || !order) return null;
+            if (newCondition === 'Boleto') {
+                newInstallments = "30 / 60 dias";
+            } else if (newCondition === 'Cartão') {
+                newInstallments = "1x (30 Dias)";
+            } else if (newCondition === 'À vista') {
+                newInstallments = '';
+            }
 
-    return (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border border-slate-200 space-y-6 animate-in zoom-in-95">
-                <div className="flex items-center gap-3">
-                    <div className="bg-blue-100 p-3 rounded-full text-blue-600">
-                        <CheckCircle2 size={24} />
-                    </div>
-                    <div>
-                        <h3 className="text-xl font-black text-slate-900">Confirmar Pagamento</h3>
-                        <p className="text-slate-500 text-sm">Configure o pagamento para a OS {order.osNumber}</p>
-                    </div>
-                </div>
+            const finalAmount = calculateFinalAmount(
+                newCondition,
+                newInstallments,
+                paymentData.originalValue
+            );
 
-                <div className="space-y-4">
-                    <div className="space-y-2">
-                        <label className="text-xs font-bold text-slate-400 uppercase">Valor do Orçamento</label>
-                        <div className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-2xl text-slate-800 text-center">
-                            R$ {paymentData.originalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            setPaymentData({
+                ...paymentData,
+                paymentCondition: newCondition,
+                installments: newInstallments,
+                finalChargedAmount: finalAmount
+            });
+        };
+
+        const handleInstallmentsChange = (e) => {
+            const newInstallments = e.target.value;
+            const finalAmount = calculateFinalAmount(
+                paymentData.paymentCondition,
+                newInstallments,
+                paymentData.originalValue
+            );
+
+            setPaymentData({
+                ...paymentData,
+                installments: newInstallments,
+                finalChargedAmount: finalAmount
+            });
+        };
+
+        const handleConfirm = () => {
+            onConfirm(paymentData);
+            onClose();
+        };
+
+        if (!isOpen || !order) return null;
+
+        return (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+                <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border border-slate-200 space-y-6 animate-in zoom-in-95">
+                    <div className="flex items-center gap-3">
+                        <div className="bg-blue-100 p-3 rounded-full text-blue-600">
+                            <CheckCircle2 size={24} />
                         </div>
+                        <div>
+                            <h3 className="text-xl font-black text-slate-900">Confirmar Pagamento</h3>
+                            <p className="text-slate-500 text-sm">Configure o pagamento para a OS {order.osNumber}</p>
+                        </div>
+                    </div>
 
-                        {paymentData.finalChargedAmount !== paymentData.originalValue && (
-                            <div className="mt-4 space-y-2 animate-in fade-in">
-                                <label className="text-xs font-bold text-green-600 uppercase">Valor com Desconto (5%)</label>
-                                <div className="w-full p-4 bg-green-50 border-2 border-green-200 rounded-2xl font-black text-2xl text-green-800 text-center">
-                                    R$ {paymentData.finalChargedAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                    <div className="text-sm text-green-600 font-bold mt-2">
-                                        ✓ Desconto de 5% aplicado
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold text-slate-400 uppercase">Valor do Orçamento</label>
+                            <div className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-2xl text-slate-800 text-center">
+                                R$ {paymentData.originalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </div>
+
+                            {paymentData.finalChargedAmount !== paymentData.originalValue && (
+                                <div className="mt-4 space-y-2 animate-in fade-in">
+                                    <label className="text-xs font-bold text-green-600 uppercase">Valor com Desconto (5%)</label>
+                                    <div className="w-full p-4 bg-green-50 border-2 border-green-200 rounded-2xl font-black text-2xl text-green-800 text-center">
+                                        R$ {paymentData.finalChargedAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        <div className="text-sm text-green-600 font-bold mt-2">
+                                            ✓ Desconto de 5% aplicado
+                                        </div>
                                     </div>
                                 </div>
+                            )}
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold text-slate-400 uppercase">Condição de Pagamento</label>
+                            <select
+                                value={paymentData.paymentCondition}
+                                onChange={handlePaymentConditionChange}
+                                className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-bold"
+                            >
+                                <option value="À vista">À vista</option>
+                                <option value="Boleto">Boleto</option>
+                                <option value="Cartão">Cartão</option>
+                            </select>
+                        </div>
+
+                        {(paymentData.paymentCondition === 'Boleto' || paymentData.paymentCondition === 'Cartão') && (
+                            <div className="space-y-2 animate-in fade-in">
+                                <label className="text-xs font-bold text-slate-400 uppercase">Parcelas</label>
+
+                                <InstallmentSelect
+                                    value={paymentData.installments}
+                                    onChange={handleInstallmentsChange}
+                                    paymentCondition={paymentData.paymentCondition}
+                                    options={combinedOptions}
+                                    customOptions={customOptions[paymentData.paymentCondition] || []}
+                                    onDeleteOption={onDeleteOption}
+                                    userRole={userRole}
+                                    showAddOption={paymentData.paymentCondition === 'Boleto' && userRole === 'admin'}
+                                    onAddOption={onAddOption}
+                                />
                             </div>
                         )}
+
+                        <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
+                            <div className="flex items-center gap-2 text-blue-600 mb-2">
+                                <Info size={16} />
+                                <span className="text-xs font-bold uppercase">Informação</span>
+                            </div>
+                            <p className="text-xs text-blue-700">
+                                Ao confirmar, a OS será movida para <strong>"Em manutenção"</strong> e você será notificado sobre os próximos passos.
+                            </p>
+                        </div>
                     </div>
 
-                    <div className="space-y-2">
-                        <label className="text-xs font-bold text-slate-400 uppercase">Condição de Pagamento</label>
-                        <select
-                            value={paymentData.paymentCondition}
-                            onChange={handlePaymentConditionChange}
-                            className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-bold"
+                    <div className="flex gap-3">
+                        <button
+                            onClick={onClose}
+                            className="flex-1 py-4 rounded-xl font-bold text-slate-500 hover:bg-slate-100 transition-colors"
                         >
-                            <option value="À vista">À vista</option>
-                            <option value="Boleto">Boleto</option>
-                            <option value="Cartão">Cartão</option>
-                        </select>
+                            Cancelar
+                        </button>
+                        <button
+                            onClick={handleConfirm}
+                            className="flex-1 py-4 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 shadow-xl shadow-green-200 transition-colors flex items-center justify-center gap-2"
+                        >
+                            <Check size={20} /> Confirmar Pagamento
+                        </button>
                     </div>
-
-                    {(paymentData.paymentCondition === 'Boleto' || paymentData.paymentCondition === 'Cartão') && (
-                        <div className="space-y-2 animate-in fade-in">
-                            <label className="text-xs font-bold text-slate-400 uppercase">Parcelas</label>
-
-                            <InstallmentSelect
-                                value={paymentData.installments}
-                                onChange={handleInstallmentsChange}
-                                paymentCondition={paymentData.paymentCondition}
-                                discount5Days={paymentData.discount5Days}
-                                onDiscountChange={(e) => {
-                                    const isChecked = e.target.checked;
-                                    const finalAmount = calculateFinalAmount(
-                                        paymentData.paymentCondition,
-                                        paymentData.installments,
-                                        paymentData.originalValue
-                                    );
-                                    setPaymentData({
-                                        ...paymentData,
-                                        discount5Days: isChecked,
-                                        finalChargedAmount: finalAmount
-                                    });
-                                }}
-                                showAddOption={paymentData.paymentCondition === 'Boleto'}
-                                onAddOption={(newOption) => {
-                                    // Chama a função do pai para adicionar a opção globalmente
-                                    onAddOption(paymentData.paymentCondition, newOption);
-                                }}
-                                options={combinedOptions} // <-- opções combinadas (padrão + customizadas)
-                            />
-                        </div>
-                    )}
-
-                    <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
-                        <div className="flex items-center gap-2 text-blue-600 mb-2">
-                            <Info size={16} />
-                            <span className="text-xs font-bold uppercase">Informação</span>
-                        </div>
-                        <p className="text-xs text-blue-700">
-                            Ao confirmar, a OS será movida para <strong>"Em manutenção"</strong> e você será notificado sobre os próximos passos.
-                        </p>
-                    </div>
-                </div>
-
-                <div className="flex gap-3">
-                    <button
-                        onClick={onClose}
-                        className="flex-1 py-4 rounded-xl font-bold text-slate-500 hover:bg-slate-100 transition-colors"
-                    >
-                        Cancelar
-                    </button>
-                    <button
-                        onClick={handleConfirm}
-                        className="flex-1 py-4 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 shadow-xl shadow-green-200 transition-colors flex items-center justify-center gap-2"
-                    >
-                        <Check size={20} /> Confirmar Pagamento
-                    </button>
                 </div>
             </div>
-        </div>
-    );
-};
+        );
+    };
+
+    // Autocomplete de SolutionsList para modo com custos - ATUALIZADO com filtro de ocultas
+    const uniqueSolutionsList = useMemo(() => {
+        if (!orders || orders.length === 0) return [];
+
+        const allItems = [];
+
+        orders.forEach(o => {
+            if (o.solutionsList && Array.isArray(o.solutionsList)) {
+                o.solutionsList.forEach(item => {
+                    if (item && item.text && typeof item.text === 'string' && item.text.trim()) {
+                        allItems.push(item.text.trim());
+                    }
+                });
+            }
+        });
+
+        // Aplicar limpeza de sugestões concatenadas e filtrar as ocultas
+        return cleanConcatenatedSuggestions(allItems)
+            .filter(item => !hiddenSuggestions.solutions.includes(item));
+    }, [orders, hiddenSuggestions.solutions]);
 
 
     const openViewModal = (order) => {
@@ -2709,6 +2757,82 @@ export default function MainApp() {
         } finally {
             setIsSaving(false);
         }
+        // Após salvar, verificar se textos foram usados e desocultá-los
+        if (!hasErrors) {
+            try {
+                // Coletar todos os textos de defeitos da OS salva (cleanData já processado)
+                const defectTexts = [];
+                if (cleanData.defectsList && Array.isArray(cleanData.defectsList)) {
+                    defectTexts.push(...cleanData.defectsList);
+                }
+                if (cleanData.defect && typeof cleanData.defect === 'string' && cleanData.defect.trim()) {
+                    // Se defect for uma string com múltiplas linhas, quebrar em itens
+                    const lines = cleanData.defect.split('\n').map(l => l.trim()).filter(l => l);
+                    defectTexts.push(...lines);
+                }
+
+                const solutionTexts = [];
+                if (cleanData.manualSolutionsList && Array.isArray(cleanData.manualSolutionsList)) {
+                    solutionTexts.push(...cleanData.manualSolutionsList);
+                }
+                if (cleanData.benchRepairList && Array.isArray(cleanData.benchRepairList)) {
+                    solutionTexts.push(...cleanData.benchRepairList);
+                }
+                if (cleanData.solutionsList && Array.isArray(cleanData.solutionsList)) {
+                    cleanData.solutionsList.forEach(item => {
+                        if (item.text && typeof item.text === 'string' && item.text.trim()) {
+                            solutionTexts.push(item.text.trim());
+                        }
+                    });
+                }
+                if (cleanData.solution && typeof cleanData.solution === 'string' && cleanData.solution.trim()) {
+                    const lines = cleanData.solution.split('\n').map(l => l.trim()).filter(l => l);
+                    solutionTexts.push(...lines);
+                }
+                if (cleanData.notRepairableDetail && typeof cleanData.notRepairableDetail === 'string' && cleanData.notRepairableDetail.trim()) {
+                    solutionTexts.push(cleanData.notRepairableDetail.trim());
+                }
+
+                // Executar as remoções em paralelo
+                await Promise.all([
+                    checkAndUnhide('defect', defectTexts),
+                    checkAndUnhide('solution', solutionTexts)
+                ]);
+            } catch (unhideErr) {
+                console.error('Erro ao desocultar sugestões:', unhideErr);
+                // Não mostrar erro ao usuário, apenas log
+            }
+        }
+        // Após salvar com sucesso (dentro do try, depois de updateDoc ou addDoc)
+        const checkAndUnhide = async (type, texts) => {
+            for (const text of texts) {
+                if (!text || typeof text !== 'string') continue;
+                const docId = `${type}_${text.replace(/[^a-zA-Z0-9]/g, '_')}`;
+                const docRef = doc(db, 'artifacts', finalAppId, 'public', 'data', 'hiddenSuggestions', docId);
+                const docSnap = await getDoc(docRef);
+                if (docSnap.exists()) {
+                    await deleteDoc(docRef);
+                    console.log(`Sugestão "${text}" removida da blacklist por nova ocorrência.`);
+                }
+            }
+        };
+
+        // Coletar todos os textos de defeitos e soluções da nova OS
+        const defectTexts = [
+            ...(cleanData.defectsList || []),
+            ...(cleanData.defect ? [cleanData.defect] : [])
+        ].filter(Boolean);
+
+        const solutionTexts = [
+            ...(cleanData.manualSolutionsList || []),
+            ...(cleanData.benchRepairList || []),
+            ...(cleanData.solutionsList?.map(s => s.text) || []),
+            ...(cleanData.solution ? [cleanData.solution] : []),
+            ...(cleanData.notRepairableDetail ? [cleanData.notRepairableDetail] : [])
+        ].filter(Boolean);
+
+        await checkAndUnhide('defect', defectTexts);
+        await checkAndUnhide('solution', solutionTexts);
     };
 
     const cleanupAllConcatenatedSuggestions = async () => {
@@ -2968,11 +3092,6 @@ export default function MainApp() {
             return;
         }
 
-        if (userData?.role === 'client') {
-            handlePrint(printType);
-            return;
-        }
-
         const hasBudgetStage = selectedData.some(os =>
             os.status === 'Em orçamento' || os.status === 'Aguardando aprovação do orçamento'
         );
@@ -3001,31 +3120,75 @@ export default function MainApp() {
         setIsPaymentModalOpen(true);
     };
 
-    const addCustomInstallmentOption = (paymentType, option) => {
+    const addCustomInstallmentOption = async (paymentType, option) => {
         if (!option.trim()) return;
-
         const trimmedOption = option.trim();
-        // Verificar se já existe nas opções padrão ou nas customizadas atuais
-        const existsInDefault = installmentOptions[paymentType]?.includes(trimmedOption);
-        const existsInCustom = customInstallmentOptions[paymentType]?.includes(trimmedOption);
 
-        if (existsInDefault || existsInCustom) {
+        // Verifica duplicidade com opções padrão e já existentes
+        const defaultOpts = installmentOptions[paymentType] || [];
+        const currentCustom = customOptions[paymentType] || [];
+        if (defaultOpts.includes(trimmedOption) || currentCustom.includes(trimmedOption)) {
             showNotification('Esta opção já existe!', 'warning');
             return;
         }
 
-        setCustomInstallmentOptions(prev => {
-            const updated = {
-                ...prev,
-                [paymentType]: [...(prev[paymentType] || []), trimmedOption]
-            };
-            localStorage.setItem('customInstallmentOptions', JSON.stringify(updated));
-            return updated;
-        });
-
-        showNotification(`Opção de parcela "${trimmedOption}" adicionada com sucesso!`, 'success');
+        try {
+            const docRef = doc(db, 'artifacts', finalAppId, 'public', 'data', 'customOptions', paymentType);
+            await setDoc(docRef, {
+                paymentType,
+                options: [...currentCustom, trimmedOption]
+            }, { merge: true });
+            showNotification(`Opção "${trimmedOption}" adicionada!`, 'success');
+        } catch (error) {
+            console.error('Erro ao adicionar opção:', error);
+            showNotification('Erro ao adicionar opção.', 'error');
+        }
     };
 
+    const deleteCustomInstallmentOption = async (paymentType, option) => {
+        if (userData?.role !== 'admin') return;
+        if (!window.confirm(`Tem certeza que deseja remover a opção "${option}"?`)) return;
+
+        try {
+            const currentCustom = customOptions[paymentType] || [];
+            const updated = currentCustom.filter(opt => opt !== option);
+            const docRef = doc(db, 'artifacts', finalAppId, 'public', 'data', 'customOptions', paymentType);
+
+            if (updated.length === 0) {
+                await deleteDoc(docRef);
+            } else {
+                await setDoc(docRef, { paymentType, options: updated }, { merge: true });
+            }
+            showNotification('Opção removida!', 'success');
+        } catch (error) {
+            console.error('Erro ao remover opção:', error);
+            showNotification('Erro ao remover opção.', 'error');
+        }
+    };
+
+    const handleDeleteCustomOption = (paymentType, option) => {
+        deleteCustomInstallmentOption(paymentType, option);
+    };
+
+    const handleHideSuggestion = async (type, value) => {
+        if (!userData || userData.role !== 'admin') return;
+        try {
+            const docId = `${type}_${value.replace(/[^a-zA-Z0-9]/g, '_')}`;
+            await setDoc(
+                doc(db, 'artifacts', finalAppId, 'public', 'data', 'hiddenSuggestions', docId),
+                {
+                    type,
+                    value,
+                    hiddenAt: Date.now(),
+                    hiddenBy: user.uid
+                }
+            );
+            showNotification(`Sugestão "${value}" removida da lista.`, 'success');
+        } catch (error) {
+            console.error('Erro ao ocultar sugestão:', error);
+            showNotification('Erro ao remover sugestão.', 'error');
+        }
+    };
 
     // Atualize a função handleConfirmPrintWithPayment para lidar com OS única
     const handleConfirmPrintWithPayment = (paymentData) => {
@@ -3103,10 +3266,7 @@ export default function MainApp() {
 
             Promise.all(updatePromises).then(() => {
                 setIsPaymentModalOpen(false);
-                handlePrint('client', {
-                    ...paymentData,
-                    customInstallmentOptions: customInstallmentOptions
-                });
+                handlePrint('client');
             });
         }
     };
@@ -5386,14 +5546,46 @@ export default function MainApp() {
                                                             <Plus size={20} />
                                                         </button>
 
-                                                        {showDefectSuggestions && uniqueDefects.length > 0 && (
+                                                        {!isViewMode && showDefectSuggestions && uniqueDefects.length > 0 && (
                                                             <div className="absolute top-full left-0 right-14 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
-                                                                <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400">Sugestões</div>
-                                                                {uniqueDefects.filter(d => d.toLowerCase().includes(tempDefect.toLowerCase())).slice(0, 5).map((d, idx) => (
-                                                                    <div key={idx} className="p-3 hover:bg-emerald-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700" onMouseDown={(e) => { e.preventDefault(); setTempDefect(d); setShowDefectSuggestions(false); }}>
-                                                                        {d.length > 50 ? d.substring(0, 50) + '...' : d}
-                                                                    </div>
-                                                                ))}
+                                                                <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400 flex justify-between items-center">
+                                                                    <span>Sugestões de Defeitos</span>
+                                                                </div>
+                                                                {uniqueDefects
+                                                                    .filter(d => d.toLowerCase().includes(tempDefect.toLowerCase()))
+                                                                    .slice(0, 5)
+                                                                    .map((d, idx) => (
+                                                                        <div
+                                                                            key={idx}
+                                                                            className="flex items-center justify-between p-3 hover:bg-emerald-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700 group"
+                                                                        >
+                                                                            <span
+                                                                                className="flex-1"
+                                                                                onMouseDown={(e) => {
+                                                                                    e.preventDefault();
+                                                                                    setTempDefect(d);
+                                                                                    setShowDefectSuggestions(false);
+                                                                                }}
+                                                                            >
+                                                                                {d.length > 50 ? d.substring(0, 50) + '...' : d}
+                                                                            </span>
+                                                                            {userData?.role === 'admin' && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        e.preventDefault();
+                                                                                        handleHideSuggestion('defect', d);
+                                                                                    }}
+                                                                                    className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                                                                    title="Remover sugestão"
+                                                                                >
+                                                                                    <X size={14} />
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
+                                                                    ))
+                                                                }
                                                             </div>
                                                         )}
                                                     </div>
@@ -5461,21 +5653,41 @@ export default function MainApp() {
 
                                                                 {showSolutionSuggestions && uniqueSolutions.length > 0 && (
                                                                     <div className="absolute top-full left-0 right-14 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
-                                                                        <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400">Sugestões</div>
+                                                                        <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400 flex justify-between items-center">
+                                                                            <span>Sugestões de Soluções</span>
+                                                                        </div>
                                                                         {uniqueSolutions
                                                                             .filter(s => s.toLowerCase().includes(tempManualSolution.toLowerCase()))
                                                                             .slice(0, 5)
                                                                             .map((s, idx) => (
                                                                                 <div
                                                                                     key={idx}
-                                                                                    className="p-3 hover:bg-indigo-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700"
-                                                                                    onMouseDown={(e) => {
-                                                                                        e.preventDefault();
-                                                                                        setTempManualSolution(s);
-                                                                                        setShowSolutionSuggestions(false);
-                                                                                    }}
+                                                                                    className="flex items-center justify-between p-3 hover:bg-indigo-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700 group"
                                                                                 >
-                                                                                    {s.length > 50 ? s.substring(0, 50) + '...' : s}
+                                                                                    <span
+                                                                                        className="flex-1"
+                                                                                        onMouseDown={(e) => {
+                                                                                            e.preventDefault();
+                                                                                            setTempManualSolution(s);
+                                                                                            setShowSolutionSuggestions(false);
+                                                                                        }}
+                                                                                    >
+                                                                                        {s.length > 50 ? s.substring(0, 50) + '...' : s}
+                                                                                    </span>
+                                                                                    {userData?.role === 'admin' && (
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                e.preventDefault();
+                                                                                                handleHideSuggestion('solution', s);
+                                                                                            }}
+                                                                                            className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                                                                            title="Remover sugestão"
+                                                                                        >
+                                                                                            <X size={14} />
+                                                                                        </button>
+                                                                                    )}
                                                                                 </div>
                                                                             ))
                                                                         }
@@ -5523,30 +5735,60 @@ export default function MainApp() {
                                                                 />
                                                                 {showSolutionSuggestions && uniqueSolutionsList.length > 0 && (
                                                                     <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
-                                                                        <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400">Sugestões</div>
+                                                                        <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400 flex justify-between items-center">
+                                                                            <span>Sugestões de Itens</span>
+                                                                        </div>
                                                                         {uniqueSolutionsList
                                                                             .filter(s => s.toLowerCase().includes(tempSolution.toLowerCase()))
                                                                             .slice(0, 5)
                                                                             .map((s, idx) => (
                                                                                 <div
                                                                                     key={idx}
-                                                                                    className="p-3 hover:bg-green-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700"
-                                                                                    onMouseDown={(e) => {
-                                                                                        e.preventDefault();
-                                                                                        setTempSolution(s);
-                                                                                        setShowSolutionSuggestions(false);
-                                                                                    }}
+                                                                                    className="flex items-center justify-between p-3 hover:bg-green-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700 group"
                                                                                 >
-                                                                                    {s}
+                                                                                    <span
+                                                                                        className="flex-1"
+                                                                                        onMouseDown={(e) => {
+                                                                                            e.preventDefault();
+                                                                                            setTempSolution(s);
+                                                                                            setShowSolutionSuggestions(false);
+                                                                                        }}
+                                                                                    >
+                                                                                        {s.length > 50 ? s.substring(0, 50) + '...' : s}
+                                                                                    </span>
+                                                                                    {userData?.role === 'admin' && (
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                e.preventDefault();
+                                                                                                handleHideSuggestion('solution', s);
+                                                                                            }}
+                                                                                            className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                                                                            title="Remover sugestão"
+                                                                                        >
+                                                                                            <X size={14} />
+                                                                                        </button>
+                                                                                    )}
                                                                                 </div>
                                                                             ))
                                                                         }
                                                                     </div>
                                                                 )}
                                                             </div>
+                                                            {/* Resto do conteúdo (input de custo e botão adicionar) permanece igual */}
                                                             <div className="flex gap-2">
-                                                                <input placeholder="Valor R$ 0,00" className="flex-1 p-2 bg-white border border-green-200 rounded-lg text-sm" value={tempCost} onChange={e => setTempCost(e.target.value)} />
-                                                                <button type="button" onClick={addSolutionItem} className="bg-green-600 text-white p-2.5 rounded-lg shadow-lg shadow-green-200">
+                                                                <input
+                                                                    placeholder="Valor R$ 0,00"
+                                                                    className="flex-1 p-2 bg-white border border-green-200 rounded-lg text-sm"
+                                                                    value={tempCost}
+                                                                    onChange={e => setTempCost(e.target.value)}
+                                                                />
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={addSolutionItem}
+                                                                    className="bg-green-600 text-white p-2.5 rounded-lg shadow-lg shadow-green-200"
+                                                                >
                                                                     <Plus size={20} />
                                                                 </button>
                                                             </div>
@@ -5580,14 +5822,67 @@ export default function MainApp() {
                                                     {!isViewMode && (
                                                         <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100 space-y-3">
                                                             <div className="relative flex gap-2">
-                                                                <input
-                                                                    placeholder="Descreva uma etapa do conserto em bancada..."
-                                                                    className="flex-1 p-3 bg-white border border-amber-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-amber-500/20"
-                                                                    value={tempBenchRepair}
-                                                                    onChange={e => setTempBenchRepair(e.target.value)}
-                                                                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addBenchRepairItem(); } }}
-                                                                />
-                                                                <button type="button" onClick={addBenchRepairItem} className="bg-amber-600 text-white p-3 rounded-xl shadow-lg shadow-amber-200 hover:bg-amber-700 transition-colors">
+                                                                <div className="relative flex-1">
+                                                                    <input
+                                                                        placeholder="Descreva uma etapa do conserto em bancada..."
+                                                                        className="w-full p-3 bg-white border border-amber-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-amber-500/20"
+                                                                        value={tempBenchRepair}
+                                                                        onChange={e => {
+                                                                            setTempBenchRepair(e.target.value);
+                                                                            setShowBenchRepairSuggestions(true);
+                                                                        }}
+                                                                        onFocus={() => setShowBenchRepairSuggestions(true)}
+                                                                        onBlur={() => setTimeout(() => setShowBenchRepairSuggestions(false), 200)}
+                                                                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addBenchRepairItem(); } }}
+                                                                    />
+                                                                    {showBenchRepairSuggestions && uniqueBenchRepair.length > 0 && (
+                                                                        <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
+                                                                            <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400 flex justify-between items-center">
+                                                                                <span>Sugestões de Etapas</span>
+                                                                            </div>
+                                                                            {uniqueBenchRepair
+                                                                                .filter(s => s.toLowerCase().includes(tempBenchRepair.toLowerCase()))
+                                                                                .slice(0, 5)
+                                                                                .map((s, idx) => (
+                                                                                    <div
+                                                                                        key={idx}
+                                                                                        className="flex items-center justify-between p-3 hover:bg-amber-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700 group"
+                                                                                    >
+                                                                                        <span
+                                                                                            className="flex-1"
+                                                                                            onMouseDown={(e) => {
+                                                                                                e.preventDefault();
+                                                                                                setTempBenchRepair(s);
+                                                                                                setShowBenchRepairSuggestions(false);
+                                                                                            }}
+                                                                                        >
+                                                                                            {s.length > 50 ? s.substring(0, 50) + '...' : s}
+                                                                                        </span>
+                                                                                        {userData?.role === 'admin' && (
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                onClick={(e) => {
+                                                                                                    e.stopPropagation();
+                                                                                                    e.preventDefault();
+                                                                                                    handleHideSuggestion('solution', s);
+                                                                                                }}
+                                                                                                className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                                                                                title="Remover sugestão"
+                                                                                            >
+                                                                                                <X size={14} />
+                                                                                            </button>
+                                                                                        )}
+                                                                                    </div>
+                                                                                ))
+                                                                            }
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={addBenchRepairItem}
+                                                                    className="bg-amber-600 text-white p-3 rounded-xl shadow-lg shadow-amber-200 hover:bg-amber-700 transition-colors"
+                                                                >
                                                                     <Plus size={20} />
                                                                 </button>
                                                             </div>
@@ -5854,36 +6149,25 @@ export default function MainApp() {
                                                     {(formData.paymentCondition === 'Boleto' || formData.paymentCondition === 'Cartão') && (
                                                         <div className="space-y-2 animate-in fade-in">
                                                             <label className="text-[10px] font-bold text-slate-400 uppercase">Parcelas</label>
-                                                            {formData.paymentCondition === 'Boleto' ? (
-                                                                <InstallmentSelect
-                                                                    value={formData.installments}
-                                                                    onChange={(e) => {
-                                                                        const is5Days = e.target.value === "5 dias (5% de desconto)";
-                                                                        setFormData({ ...formData, installments: e.target.value, discount5Days: is5Days });
-                                                                    }}
-                                                                    paymentCondition={formData.paymentCondition}
-                                                                    discount5Days={formData.discount5Days}
-                                                                    onDiscountChange={(e) => {
-                                                                        const isChecked = e.target.checked;
-                                                                        const charged = parseCurrency(formData.chargedAmount);
-                                                                        const discount = isChecked ? charged * 0.05 : 0;
-                                                                        const final = isChecked ? charged - discount : charged;
-                                                                        setFormData({ ...formData, discount5Days: isChecked, discountAmount: discount, finalChargedAmount: final });
-                                                                    }}
-                                                                    showAddOption={false}  // Agora o botão está fora, então desabilitamos aqui
-                                                                    onAddOption={addCustomInstallmentOption}
-                                                                    options={[...new Set([...(installmentOptions[formData.paymentCondition] || []), ...(customInstallmentOptions[formData.paymentCondition] || [])])]}
-                                                                />
-                                                            ) : (
-                                                                <InstallmentSelect
-                                                                    value={formData.installments}
-                                                                    onChange={(e) => setFormData({ ...formData, installments: e.target.value })}
-                                                                    paymentCondition={formData.paymentCondition}
-                                                                    discount5Days={false}
-                                                                    showAddOption={false}
-                                                                    options={[...new Set([...(installmentOptions[formData.paymentCondition] || []), ...(customInstallmentOptions[formData.paymentCondition] || [])])]}
-                                                                />
-                                                            )}
+                                                            <InstallmentSelect
+                                                                value={formData.installments}
+                                                                onChange={(e) => {
+                                                                    const newInstallments = e.target.value;
+                                                                    const is5Days = formData.paymentCondition === 'Boleto' && newInstallments === "5 dias (5% de desconto)";
+                                                                    setFormData({
+                                                                        ...formData,
+                                                                        installments: newInstallments,
+                                                                        discount5Days: is5Days
+                                                                    });
+                                                                }}
+                                                                paymentCondition={formData.paymentCondition}
+                                                                options={[...new Set([...(installmentOptions[formData.paymentCondition] || []), ...(customOptions[formData.paymentCondition] || [])])]}
+                                                                customOptions={customOptions[formData.paymentCondition] || []}
+                                                                onDeleteOption={handleDeleteCustomOption}
+                                                                userRole={userData?.role}
+                                                                showAddOption={false} // o botão de adicionar já está fora, então não mostrar dentro
+                                                                onAddOption={addCustomInstallmentOption}
+                                                            />
                                                         </div>
                                                     )}
                                                 </div>
@@ -6406,8 +6690,11 @@ export default function MainApp() {
                 totalOriginalValue={paymentModalData.totalOriginalValue}
                 initialData={paymentModalData}
                 onConfirm={handleConfirmPrintWithPayment}
-                customInstallmentOptions={customInstallmentOptions}
+                customOptions={customOptions}
                 onAddOption={addCustomInstallmentOption}
+                onDeleteOption={handleDeleteCustomOption}
+                userRole={userData?.role}
+                showNotification={showNotification}
             />
 
             <ClientPaymentModal
@@ -6418,8 +6705,10 @@ export default function MainApp() {
                 }}
                 order={orderForPayment}
                 onConfirm={handleConfirmClientPayment}
-                customInstallmentOptions={customInstallmentOptions}
+                customOptions={customOptions}
                 onAddOption={addCustomInstallmentOption}
+                onDeleteOption={handleDeleteCustomOption}
+                userRole={userData?.role}
             />
 
             <RejectConfirmModal
