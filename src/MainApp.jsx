@@ -78,7 +78,7 @@ const EMPTY_FORM_DATA = {
     discount5Days: false,
     discountAmount: 0,
     finalChargedAmount: 0,
-    photos: []
+    photos: [],
 };
 
 // Componente de Gráfico Donut Simples
@@ -2728,6 +2728,7 @@ export default function MainApp() {
         }));
     };
 
+    // Função prepareDataForSave atualizada
     const prepareDataForSave = () => {
         const { firestoreId, ...cleanData } = formData;
 
@@ -2754,11 +2755,9 @@ export default function MainApp() {
             const cleanedDefects = cleanConcatenatedSuggestions(cleanData.defectsList)
                 .filter(item => item && item.trim().length > 2);
             cleanData.defectsList = cleanedDefects;
-            // Atualizar o campo defect (para compatibilidade) com os dados limpos
             cleanData.defect = cleanedDefects.length > 0 ? cleanedDefects.join('\n') : '';
         } else {
             cleanData.defect = cleanData.defect || '';
-            // Se não houver defectsList, mas houver defect, criar o array
             if (cleanData.defect) {
                 const cleanedDefects = cleanConcatenatedSuggestions([cleanData.defect])
                     .filter(item => item && item.trim().length > 2);
@@ -2804,7 +2803,6 @@ export default function MainApp() {
                     }))
                     .filter(item => item.text && item.text.trim().length > 2);
                 cleanData.solutionsList = cleanedSolutionsList;
-                // Para este tipo, também preencher o campo solution com os textos
                 const solutionTexts = cleanedSolutionsList.map(item => item.text);
                 cleanData.solution = solutionTexts.length > 0 ? solutionTexts.join('\n') : '';
             } else {
@@ -2824,13 +2822,11 @@ export default function MainApp() {
             cleanData.solutionsList = [];
         }
 
-        // Se houver solutionType de "Não passível de conserto...", não fazer nada com as listas
-        // Mas garantir que as outras listas estejam vazias
+        // Para "Não passível de conserto..."
         if (cleanData.solutionType === "Não passível de conserto, substituir por novo equipamento / material") {
             cleanData.manualSolutionsList = [];
             cleanData.benchRepairList = [];
             cleanData.solutionsList = [];
-            // A solução será o texto em notRepairableDetail
             cleanData.solution = cleanData.notRepairableDetail || '';
         }
 
@@ -2844,6 +2840,7 @@ export default function MainApp() {
             cleanData.deliveryDeadline = '';
         }
 
+        // Histórico de status
         let history = cleanData.statusHistory ? [...cleanData.statusHistory] : [];
         const currentStatusDate = cleanData.statusDate || new Date().toISOString().split('T')[0];
 
@@ -2854,7 +2851,7 @@ export default function MainApp() {
                 status: cleanData.status,
                 date: currentStatusDate,
                 timestamp: Date.now(),
-                user: currentUser?.displayName || currentUser?.email || 'Sistema'
+                user: userData?.displayName || user?.email || 'Sistema'   // ✅ CORRIGIDO
             });
         } else {
             history[history.length - 1].date = currentStatusDate;
@@ -2896,77 +2893,26 @@ export default function MainApp() {
     };
 
     const handleSubmit = async (e) => {
-        if (e) e.preventDefault();
+    if (e) e.preventDefault();
 
-        const hasErrors = validateForm();
-        if (hasErrors) {
-            return;
+    const hasErrors = validateForm();
+    if (hasErrors) {
+        return;
+    }
+
+    setIsSaving(true);
+    try {
+        const cleanData = prepareDataForSave();   // ✅ declarado aqui
+
+        if (editingOrder) {
+            await updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', editingOrder.firestoreId), cleanData);
+            showNotification("OS atualizada com sucesso!", 'success');
+        } else {
+            await addDoc(collection(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders'), cleanData);
+            showNotification("OS criada com sucesso!", 'success');
         }
 
-        setIsSaving(true);
-        try {
-            const cleanData = prepareDataForSave();
-            if (editingOrder) {
-                await updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', editingOrder.firestoreId), cleanData);
-                showNotification("OS atualizada com sucesso!", 'success');
-            } else {
-                await addDoc(collection(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders'), cleanData);
-                showNotification("OS criada com sucesso!", 'success');
-            }
-            setIsModalOpen(false);
-        } catch (err) {
-            console.error(err);
-            showNotification(`Erro ao salvar: ${err.message}`, 'error');
-        } finally {
-            setIsSaving(false);
-        }
         // Após salvar, verificar se textos foram usados e desocultá-los
-        if (!hasErrors) {
-            try {
-                // Coletar todos os textos de defeitos da OS salva (cleanData já processado)
-                const defectTexts = [];
-                if (cleanData.defectsList && Array.isArray(cleanData.defectsList)) {
-                    defectTexts.push(...cleanData.defectsList);
-                }
-                if (cleanData.defect && typeof cleanData.defect === 'string' && cleanData.defect.trim()) {
-                    // Se defect for uma string com múltiplas linhas, quebrar em itens
-                    const lines = cleanData.defect.split('\n').map(l => l.trim()).filter(l => l);
-                    defectTexts.push(...lines);
-                }
-
-                const solutionTexts = [];
-                if (cleanData.manualSolutionsList && Array.isArray(cleanData.manualSolutionsList)) {
-                    solutionTexts.push(...cleanData.manualSolutionsList);
-                }
-                if (cleanData.benchRepairList && Array.isArray(cleanData.benchRepairList)) {
-                    solutionTexts.push(...cleanData.benchRepairList);
-                }
-                if (cleanData.solutionsList && Array.isArray(cleanData.solutionsList)) {
-                    cleanData.solutionsList.forEach(item => {
-                        if (item.text && typeof item.text === 'string' && item.text.trim()) {
-                            solutionTexts.push(item.text.trim());
-                        }
-                    });
-                }
-                if (cleanData.solution && typeof cleanData.solution === 'string' && cleanData.solution.trim()) {
-                    const lines = cleanData.solution.split('\n').map(l => l.trim()).filter(l => l);
-                    solutionTexts.push(...lines);
-                }
-                if (cleanData.notRepairableDetail && typeof cleanData.notRepairableDetail === 'string' && cleanData.notRepairableDetail.trim()) {
-                    solutionTexts.push(cleanData.notRepairableDetail.trim());
-                }
-
-                // Executar as remoções em paralelo
-                await Promise.all([
-                    checkAndUnhide('defect', defectTexts),
-                    checkAndUnhide('solution', solutionTexts)
-                ]);
-            } catch (unhideErr) {
-                console.error('Erro ao desocultar sugestões:', unhideErr);
-                // Não mostrar erro ao usuário, apenas log
-            }
-        }
-        // Após salvar com sucesso (dentro do try, depois de updateDoc ou addDoc)
         const checkAndUnhide = async (type, texts) => {
             for (const text of texts) {
                 if (!text || typeof text !== 'string') continue;
@@ -2980,7 +2926,6 @@ export default function MainApp() {
             }
         };
 
-        // Coletar todos os textos de defeitos e soluções da nova OS
         const defectTexts = [
             ...(cleanData.defectsList || []),
             ...(cleanData.defect ? [cleanData.defect] : [])
@@ -2994,11 +2939,17 @@ export default function MainApp() {
             ...(cleanData.notRepairableDetail ? [cleanData.notRepairableDetail] : [])
         ].filter(Boolean);
 
-        const cleanData = prepareDataForSave(userData || user);
-
         await checkAndUnhide('defect', defectTexts);
         await checkAndUnhide('solution', solutionTexts);
-    };
+
+        setIsModalOpen(false);
+    } catch (err) {
+        console.error(err);
+        showNotification(`Erro ao salvar: ${err.message}`, 'error');
+    } finally {
+        setIsSaving(false);
+    }
+};
 
     const cleanupAllConcatenatedSuggestions = async () => {
         if (!window.confirm('ATENÇÃO: Esta ação irá limpar TODAS as sugestões concatenadas do banco de dados. Pode demorar alguns minutos. Continuar?')) {
