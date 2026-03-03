@@ -11,7 +11,7 @@ import {
     ArrowUpRight, ArrowDownRight, Percent, FileSignature,
     CheckSquare, CalendarDays, Receipt, Eye, EyeOff, Shield, LogOut,
     ArrowDownWideNarrow, ArrowUpNarrowWide, Check, ArrowRight,
-    FileText, Upload, Image as ImageIcon, Camera, MoreVertical
+    FileText, Upload, Image as ImageIcon, Camera, MoreVertical, Link2
 } from 'lucide-react';
 import {
     collection, addDoc, updateDoc, deleteDoc,
@@ -79,6 +79,7 @@ const EMPTY_FORM_DATA = {
     discountAmount: 0,
     finalChargedAmount: 0,
     photos: [],
+    linkedOS: []
 };
 
 // Componente de Gráfico Donut Simples
@@ -814,7 +815,7 @@ const PaymentConditionsModal = ({
     );
 };
 
-const OrderActionsDropdown = ({ order, openModal, openViewModal, openNewWithClient, confirmDelete, userData, hasPermission, isOpen, onOpenChange, openHistoryModal }) => {
+const OrderActionsDropdown = ({ order, openModal, openViewModal, openNewWithClient, handleNewAssociatedOS, confirmDelete, userData, hasPermission, isOpen, onOpenChange, openHistoryModal }) => {
     const dropdownRef = useRef(null);
 
     useOutsideClick(dropdownRef, () => {
@@ -878,6 +879,20 @@ const OrderActionsDropdown = ({ order, openModal, openViewModal, openNewWithClie
                                 <Plus size={18} className="flex-shrink-0 mt-0.5" />
                                 <span className="flex-1 text-left leading-tight">
                                     OS com mesmo cliente
+                                </span>
+                            </button>
+
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onOpenChange(null);
+                                    handleNewAssociatedOS(order); // <-- você precisará passar essa função como prop
+                                }}
+                                className="w-full flex items-start gap-3 px-4 py-3 text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors text-sm font-medium"
+                            >
+                                <Link2 size={18} className="flex-shrink-0 mt-0.5" />
+                                <span className="flex-1 text-left leading-tight">
+                                    OS associada
                                 </span>
                             </button>
 
@@ -1035,6 +1050,8 @@ export default function MainApp() {
     const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
     const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
 
+    const [creatingLinkedToOrder, setCreatingLinkedToOrder] = useState(null);
+
     const [editingOrder, setEditingOrder] = useState(null);
     const [orderToDelete, setOrderToDelete] = useState(null);
     const [isSaving, setIsSaving] = useState(false);
@@ -1166,7 +1183,141 @@ export default function MainApp() {
 
     // === FUNÇÕES UTILITÁRIAS ===
 
-    // Adicione esta função após as outras funções principais
+    // Função para encontrar todas as OS no mesmo grupo (componente conexo)
+    // Função para encontrar todas as OS no mesmo grupo (componente conexo) considerando grafo não-direcionado
+    const findLinkedGroup = (orderId) => {
+        // Construir um mapa de adjacência com base em todas as OS que têm linkedOS
+        const graph = new Map();
+        ordersForUser.forEach(o => {
+            if (o.linkedOS && o.linkedOS.length > 0) {
+                const neighbors = graph.get(o.firestoreId) || new Set();
+                o.linkedOS.forEach(linkedId => {
+                    neighbors.add(linkedId);
+                    // Adicionar aresta de volta para garantir simetria na busca
+                    const backNeighbors = graph.get(linkedId) || new Set();
+                    backNeighbors.add(o.firestoreId);
+                    graph.set(linkedId, backNeighbors);
+                });
+                graph.set(o.firestoreId, neighbors);
+            }
+        });
+
+        // BFS/DFS para encontrar todos os nós conectados
+        const visited = new Set();
+        const stack = [orderId];
+        while (stack.length) {
+            const current = stack.pop();
+            if (visited.has(current)) continue;
+            visited.add(current);
+            const neighbors = graph.get(current) || new Set();
+            neighbors.forEach(neighbor => {
+                if (!visited.has(neighbor)) {
+                    stack.push(neighbor);
+                }
+            });
+        }
+        return Array.from(visited);
+    };
+
+    // Função atualizada para selecionar/desselecionar todo o grupo
+    const toggleOrderSelectionWithLinked = (orderId) => {
+        setSelectedOrders(prev => {
+            const group = findLinkedGroup(orderId);
+            const isSelected = group.some(id => prev.includes(id));
+
+            if (isSelected) {
+                // Se algum do grupo está selecionado, remover todos do grupo
+                return prev.filter(id => !group.includes(id));
+            } else {
+                // Se nenhum está selecionado, adicionar todos do grupo
+                return [...prev, ...group];
+            }
+        });
+    };
+
+    const SelectLinkedOS = ({ currentOSId, selectedIds, onChange }) => {
+        console.log('SelectLinkedOS - currentOSId:', currentOSId);
+        console.log('SelectLinkedOS - ordersForUser length:', ordersForUser?.length);
+        console.log('SelectLinkedOS - selectedIds:', selectedIds);
+        const [search, setSearch] = useState('');
+        const [isOpen, setIsOpen] = useState(false);
+        const dropdownRef = useRef(null);
+
+        useOutsideClick(dropdownRef, () => setIsOpen(false));
+
+        // Filtrar OS que não são a atual e que correspondem à busca
+        const availableOS = ordersForUser
+            .filter(o => o.firestoreId !== currentOSId)
+            .filter(o =>
+                o.osNumber?.toLowerCase().includes(search.toLowerCase()) ||
+                o.client?.toLowerCase().includes(search.toLowerCase()) ||
+                o.item?.toLowerCase().includes(search.toLowerCase())
+            );
+
+        const toggleOS = (id) => {
+            if (selectedIds.includes(id)) {
+                onChange(selectedIds.filter(i => i !== id));
+            } else {
+                onChange([...selectedIds, id]);
+            }
+        };
+
+        return (
+            <div className="relative" ref={dropdownRef}>
+                <div
+                    className="w-full p-3 bg-white border border-slate-200 rounded-xl cursor-pointer flex items-center justify-between"
+                    onClick={() => setIsOpen(!isOpen)}
+                >
+                    <span className="text-sm font-medium">
+                        {selectedIds.length === 0
+                            ? 'Nenhuma OS vinculada'
+                            : `${selectedIds.length} OS(s) vinculada(s)`}
+                    </span>
+                    <ChevronDown size={18} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                </div>
+
+                {isOpen && (
+                    <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-200 z-50 max-h-80 overflow-y-auto p-2">
+                        <div className="sticky top-0 bg-white p-2 border-b">
+                            <input
+                                type="text"
+                                placeholder="Buscar por OS, cliente, equipamento..."
+                                className="w-full p-2 border border-slate-200 rounded-lg text-sm"
+                                value={search}
+                                onChange={(e) => setSearch(e.target.value)}
+                                autoFocus
+                            />
+                        </div>
+                        <div className="space-y-1 mt-2">
+                            {availableOS.map(os => (
+                                <div
+                                    key={os.firestoreId}
+                                    className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer hover:bg-blue-50 ${selectedIds.includes(os.firestoreId) ? 'bg-blue-100' : ''
+                                        }`}
+                                    onClick={() => toggleOS(os.firestoreId)}
+                                >
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedIds.includes(os.firestoreId)}
+                                        onChange={() => { }}
+                                        className="w-4 h-4 text-blue-600 rounded border-slate-300"
+                                    />
+                                    <div className="flex-1 min-w-0">
+                                        <div className="font-bold text-xs">{os.osNumber}</div>
+                                        <div className="text-xs truncate">{os.client}</div>
+                                        <div className="text-[10px] text-slate-500 truncate">{os.item}</div>
+                                    </div>
+                                </div>
+                            ))}
+                            {availableOS.length === 0 && (
+                                <div className="text-center py-4 text-slate-400 text-sm">Nenhuma OS disponível</div>
+                            )}
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    };
 
     // Função para aprovar orçamento
 
@@ -1176,6 +1327,26 @@ export default function MainApp() {
         if (!year || !month || !day) return dateString; // fallback
         return `${day}/${month}/${year}`;
     };
+
+    const handleNewAssociatedOS = (order) => {
+        // Preencher formulário com dados do cliente
+        setFormData({
+            ...EMPTY_FORM_DATA,
+            client: order.client,
+            cnpj: order.cnpj || '',
+            contactPerson: order.contactPerson || '',
+            email: order.email || '',
+            address: order.address || '',
+            osNumber: generateNextOsNumber(ordersForUser),
+            // Já vincula à OS de referência
+            linkedOS: [order.firestoreId]
+        });
+        setEditingOrder(null);
+        setCreatingLinkedToOrder(order.firestoreId); // Guarda a OS de referência para atualização posterior
+        setIsModalOpen(true);
+        setDropdownOpen(null);
+    };
+
     const handleApproveBudget = async (order) => {
         if (!order) return;
 
@@ -1811,6 +1982,14 @@ export default function MainApp() {
     };
 
     // === EFFECTS ===
+
+    useEffect(() => {
+        if (!isModalOpen) {
+            setIsViewMode(false);
+            setCreatingLinkedToOrder(null); // <-- adicionar esta linha
+        }
+    }, [isModalOpen]);
+
     useEffect(() => {
         if (!user || authLoading) return;
 
@@ -2893,63 +3072,76 @@ export default function MainApp() {
     };
 
     const handleSubmit = async (e) => {
-    if (e) e.preventDefault();
+        if (e) e.preventDefault();
 
-    const hasErrors = validateForm();
-    if (hasErrors) {
-        return;
-    }
+        const hasErrors = validateForm();
+        if (hasErrors) return;
 
-    setIsSaving(true);
-    try {
-        const cleanData = prepareDataForSave();   // ✅ declarado aqui
+        setIsSaving(true);
+        try {
+            const cleanData = prepareDataForSave();
 
-        if (editingOrder) {
-            await updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', editingOrder.firestoreId), cleanData);
-            showNotification("OS atualizada com sucesso!", 'success');
-        } else {
-            await addDoc(collection(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders'), cleanData);
-            showNotification("OS criada com sucesso!", 'success');
-        }
+            let newDocRef = null;
+            if (editingOrder) {
+                await updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', editingOrder.firestoreId), cleanData);
+                showNotification("OS atualizada com sucesso!", 'success');
+            } else {
+                const docRef = await addDoc(collection(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders'), cleanData);
+                newDocRef = docRef; // Guarda a referência da nova OS
+                showNotification("OS criada com sucesso!", 'success');
+            }
 
-        // Após salvar, verificar se textos foram usados e desocultá-los
-        const checkAndUnhide = async (type, texts) => {
-            for (const text of texts) {
-                if (!text || typeof text !== 'string') continue;
-                const docId = `${type}_${text.replace(/[^a-zA-Z0-9]/g, '_')}`;
-                const docRef = doc(db, 'artifacts', finalAppId, 'public', 'data', 'hiddenSuggestions', docId);
-                const docSnap = await getDoc(docRef);
-                if (docSnap.exists()) {
-                    await deleteDoc(docRef);
-                    console.log(`Sugestão "${text}" removida da blacklist por nova ocorrência.`);
+            // Se estamos criando uma OS associada a outra, atualizar a OS de origem
+            if (creatingLinkedToOrder && newDocRef) {
+                const originOrder = ordersForUser.find(o => o.firestoreId === creatingLinkedToOrder);
+                if (originOrder) {
+                    const updatedLinked = [...(originOrder.linkedOS || []), newDocRef.id];
+                    await updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', creatingLinkedToOrder), {
+                        linkedOS: updatedLinked
+                    });
+                    showNotification(`OS associada à OS ${originOrder.osNumber}`, 'success');
                 }
             }
-        };
 
-        const defectTexts = [
-            ...(cleanData.defectsList || []),
-            ...(cleanData.defect ? [cleanData.defect] : [])
-        ].filter(Boolean);
+            // Após salvar, verificar se textos foram usados e desocultá-los
+            const checkAndUnhide = async (type, texts) => {
+                for (const text of texts) {
+                    if (!text || typeof text !== 'string') continue;
+                    const docId = `${type}_${text.replace(/[^a-zA-Z0-9]/g, '_')}`;
+                    const docRef = doc(db, 'artifacts', finalAppId, 'public', 'data', 'hiddenSuggestions', docId);
+                    const docSnap = await getDoc(docRef);
+                    if (docSnap.exists()) {
+                        await deleteDoc(docRef);
+                        console.log(`Sugestão "${text}" removida da blacklist por nova ocorrência.`);
+                    }
+                }
+            };
 
-        const solutionTexts = [
-            ...(cleanData.manualSolutionsList || []),
-            ...(cleanData.benchRepairList || []),
-            ...(cleanData.solutionsList?.map(s => s.text) || []),
-            ...(cleanData.solution ? [cleanData.solution] : []),
-            ...(cleanData.notRepairableDetail ? [cleanData.notRepairableDetail] : [])
-        ].filter(Boolean);
+            const defectTexts = [
+                ...(cleanData.defectsList || []),
+                ...(cleanData.defect ? [cleanData.defect] : [])
+            ].filter(Boolean);
 
-        await checkAndUnhide('defect', defectTexts);
-        await checkAndUnhide('solution', solutionTexts);
+            const solutionTexts = [
+                ...(cleanData.manualSolutionsList || []),
+                ...(cleanData.benchRepairList || []),
+                ...(cleanData.solutionsList?.map(s => s.text) || []),
+                ...(cleanData.solution ? [cleanData.solution] : []),
+                ...(cleanData.notRepairableDetail ? [cleanData.notRepairableDetail] : [])
+            ].filter(Boolean);
 
-        setIsModalOpen(false);
-    } catch (err) {
-        console.error(err);
-        showNotification(`Erro ao salvar: ${err.message}`, 'error');
-    } finally {
-        setIsSaving(false);
-    }
-};
+            await checkAndUnhide('defect', defectTexts);
+            await checkAndUnhide('solution', solutionTexts);
+
+            setIsModalOpen(false);
+        } catch (err) {
+            console.error(err);
+            showNotification(`Erro ao salvar: ${err.message}`, 'error');
+        } finally {
+            setIsSaving(false);
+            setCreatingLinkedToOrder(null); // Limpar estado
+        }
+    };
 
     const cleanupAllConcatenatedSuggestions = async () => {
         if (!window.confirm('ATENÇÃO: Esta ação irá limpar TODAS as sugestões concatenadas do banco de dados. Pode demorar alguns minutos. Continuar?')) {
@@ -4407,12 +4599,19 @@ export default function MainApp() {
                                                         });
 
                                                         if (e.target.checked) {
-                                                            setSelectedOrders(visibleOrders.map(o => o.firestoreId));
+                                                            // Selecionar todas as visíveis E suas linked
+                                                            const ids = new Set();
+                                                            visibleOrders.forEach(o => {
+                                                                ids.add(o.firestoreId);
+                                                                if (o.linkedOS && o.linkedOS.length > 0) {
+                                                                    o.linkedOS.forEach(id => ids.add(id));
+                                                                }
+                                                            });
+                                                            setSelectedOrders(Array.from(ids));
                                                         } else {
-                                                            const visibleOrderIds = visibleOrders.map(o => o.firestoreId);
-                                                            setSelectedOrders(prev =>
-                                                                prev.filter(id => !visibleOrderIds.includes(id))
-                                                            );
+                                                            // Desselecionar apenas as visíveis (as linked de outras podem permanecer)
+                                                            const visibleIds = visibleOrders.map(o => o.firestoreId);
+                                                            setSelectedOrders(prev => prev.filter(id => !visibleIds.includes(id)));
                                                         }
                                                     }}
                                                     checked={
@@ -4465,22 +4664,14 @@ export default function MainApp() {
                                                 <tr
                                                     key={o.firestoreId}
                                                     className={`hover:bg-blue-50/30 transition-colors group cursor-pointer ${selectedOrders.includes(o.firestoreId) ? 'bg-blue-50/50' : ''}`}
-                                                    onClick={() => toggleOrderSelection(o.firestoreId)}
+                                                    onClick={() => toggleOrderSelectionWithLinked(o.firestoreId)} // ✅ função atualizada
                                                 >
                                                     <td className="px-6 py-4 text-center">
                                                         <input
                                                             type="checkbox"
                                                             className="w-4 h-4 rounded border-slate-300 text-blue-600"
                                                             checked={selectedOrders.includes(o.firestoreId)}
-                                                            onChange={() => {
-                                                                setSelectedOrders(prev => {
-                                                                    if (prev.includes(o.firestoreId)) {
-                                                                        return prev.filter(id => id !== o.firestoreId);
-                                                                    } else {
-                                                                        return [...prev, o.firestoreId];
-                                                                    }
-                                                                });
-                                                            }}
+                                                            onChange={() => toggleOrderSelectionWithLinked(o.firestoreId)} // ✅ função atualizada
                                                             onClick={(e) => e.stopPropagation()}
                                                         />
                                                     </td>
@@ -4553,6 +4744,7 @@ export default function MainApp() {
                                                                 openNewWithClient={handleNewOSWithClient}
                                                                 confirmDelete={confirmDelete}
                                                                 userData={userData}
+                                                                handleNewAssociatedOS={handleNewAssociatedOS} 
                                                                 hasPermission={hasPermission}
                                                                 isOpen={dropdownOpen === o.firestoreId}
                                                                 onOpenChange={(id) => setDropdownOpen(id)}
@@ -6493,6 +6685,27 @@ export default function MainApp() {
                                     )}
                                 </div>
                             </div>
+                            {/* Seção de Associação de OS */}
+                            {!isViewMode && (
+                                <div className="space-y-4 mt-6">
+                                    <div className="flex items-center gap-2 text-purple-600 font-bold uppercase text-xs tracking-widest">
+                                        <Link2 size={16} /> Associar OS
+                                    </div>
+                                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                                        <label className="text-xs font-bold text-slate-500 block mb-2">
+                                            Selecione outras OS para vincular a esta (ao selecionar esta, as vinculadas serão selecionadas automaticamente):
+                                        </label>
+                                        <SelectLinkedOS
+                                            currentOSId={editingOrder?.firestoreId}
+                                            selectedIds={formData.linkedOS || []}
+                                            onChange={(ids) => setFormData({ ...formData, linkedOS: ids })}
+                                        />
+                                        <p className="text-xs text-slate-400 mt-2">
+                                            As OS vinculadas aparecerão juntas na seleção da dashboard e na impressão em lote.
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
 
                             {/* BOTÕES DO MODAL */}
                             <div className="flex flex-col md:flex-row gap-4 pt-10 border-t">
