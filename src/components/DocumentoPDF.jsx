@@ -9,12 +9,9 @@ import {
     Font,
     Link,
 } from '@react-pdf/renderer';
-
-// Importar imagens localmente
 import logo from '../assets/logo.png';
 import assinatura from '../assets/assinatura.jpg';
 
-// Registrar fontes (opcional)
 try {
     Font.register({
         family: 'Helvetica',
@@ -29,7 +26,6 @@ try {
     console.log('Font registration failed:', e);
 }
 
-// 🔹 FUNÇÃO UTILITÁRIA PARA FORMATAR DATA (YYYY-MM-DD -> DD/MM/YYYY)
 const formatDateBR = (dateString) => {
     if (!dateString) return '';
     const [year, month, day] = dateString.split('-');
@@ -334,34 +330,21 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
             )
         );
 
-    // Calcular totais original e final (COM e SEM desconto)
     const calculateTotals = () => {
-        const groupsArray = Object.values(groups);
         let totalOriginal = 0;
         let totalFinal = 0;
         let hasDiscount = false;
 
-        groupsArray.forEach(group => {
-            const budgetItems = group.items.filter(item =>
-                item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento'
-            );
-
-            budgetItems.forEach(item => {
-                const qty = parseInt(item.quantity) || 1;
-                const unitValue = parseCurrency(item.chargedAmount);
-                const original = unitValue * qty;
-                let final = original;
-
-                if (item.finalChargedAmount) {
-                    const finalValue = parseCurrency(item.finalChargedAmount);
-                    if (finalValue !== original) {
-                        final = finalValue;
-                        hasDiscount = true;
-                    }
+        Object.values(groups).forEach(group => {
+            group.items.forEach(item => {
+                const isBudget = item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento';
+                if (isBudget) {
+                    const original = parseCurrency(item.chargedAmount);
+                    const final = parseCurrency(item.finalChargedAmount) || original;
+                    totalOriginal += original;
+                    totalFinal += final;
+                    if (final !== original) hasDiscount = true;
                 }
-
-                totalOriginal += original;
-                totalFinal += final;
             });
         });
 
@@ -557,7 +540,7 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                                             <View style={[styles.tableCell, styles.cell15]}>
                                                 {isBudgetItem ? (
                                                     <Text style={styles.valorCell}>
-                                                        {formatMoney(parseCurrency(item.chargedAmount) * (parseInt(item.quantity) || 1))}
+                                                        {formatMoney(parseCurrency(item.chargedAmount))}
                                                     </Text>
                                                 ) : (
                                                     <Text style={[styles.italicText, { fontSize: 6.5, color: '#999' }]}>

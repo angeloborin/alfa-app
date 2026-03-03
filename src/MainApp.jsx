@@ -814,8 +814,7 @@ const PaymentConditionsModal = ({
     );
 };
 
-// Adicione este componente antes da função MainApp
-const OrderActionsDropdown = ({ order, openModal, openViewModal, openNewWithClient, confirmDelete, userData, hasPermission, isOpen, onOpenChange }) => {
+const OrderActionsDropdown = ({ order, openModal, openViewModal, openNewWithClient, confirmDelete, userData, hasPermission, isOpen, onOpenChange, openHistoryModal }) => {
     const dropdownRef = useRef(null);
 
     useOutsideClick(dropdownRef, () => {
@@ -838,13 +837,13 @@ const OrderActionsDropdown = ({ order, openModal, openViewModal, openNewWithClie
             </button>
 
             {isOpen && (
-                <div className="absolute right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-50 min-w-[140px] animate-in fade-in slide-in-from-top-2">
+                <div className="absolute right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-50 min-w-[160px] animate-in fade-in slide-in-from-top-2">
                     {/* Item: Exibir */}
                     <button
                         onClick={(e) => {
                             e.stopPropagation();
                             onOpenChange(null);
-                            openViewModal(order); // Modo visualização
+                            openViewModal(order);
                         }}
                         className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors text-sm font-medium"
                     >
@@ -855,6 +854,18 @@ const OrderActionsDropdown = ({ order, openModal, openViewModal, openNewWithClie
                     {/* Itens apenas para ADMIN */}
                     {userData?.role !== 'client' && (
                         <>
+                            {/* Item: Histórico */}
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onOpenChange(null);
+                                    openHistoryModal(order);
+                                }}
+                                className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors text-sm font-medium"
+                            >
+                                <Clock size={18} />
+                                Histórico - Em manutenção
+                            </button>
 
                             <button
                                 onClick={(e) => {
@@ -882,7 +893,6 @@ const OrderActionsDropdown = ({ order, openModal, openViewModal, openNewWithClie
                                 Editar
                             </button>
 
-                            {/* Item: Excluir (apenas para quem tem permissão) */}
                             {hasPermission('canDeleteOS') && (
                                 <button
                                     onClick={(e) => {
@@ -910,6 +920,9 @@ export default function MainApp() {
 
     const [showAddBoletoInput, setShowAddBoletoInput] = useState(false);
     const [newBoletoOption, setNewBoletoOption] = useState('');
+
+    const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+    const [selectedOrderForHistory, setSelectedOrderForHistory] = useState(null);
 
     const [isClientPaymentModalOpen, setIsClientPaymentModalOpen] = useState(false);
     const [orderForPayment, setOrderForPayment] = useState(null);
@@ -1174,7 +1187,8 @@ export default function MainApp() {
                 statusHistory: [...(order.statusHistory || []), {
                     status: 'Aguardando aprovação do orçamento',
                     date: new Date().toISOString().split('T')[0],
-                    timestamp: Date.now()
+                    timestamp: Date.now(),
+                    user: userData?.displayName || user?.email || 'Sistema'
                 }]
             });
 
@@ -1209,7 +1223,8 @@ export default function MainApp() {
                 statusHistory: [...(order.statusHistory || []), {
                     status: 'Orçamento recusado',
                     date: new Date().toISOString().split('T')[0],
-                    timestamp: Date.now()
+                    timestamp: Date.now(),
+                    user: userData?.displayName || user?.email || 'Sistema'
                 }]
             });
 
@@ -1268,7 +1283,8 @@ export default function MainApp() {
                 statusHistory: [...(orderForPayment.statusHistory || []), {
                     status: 'Em manutenção',
                     date: new Date().toISOString().split('T')[0],
-                    timestamp: Date.now()
+                    timestamp: Date.now(),
+                    user: userData?.displayName || user?.email || 'Cliente'
                 }],
                 clientUid: user?.uid || null,
                 clientEmail: user?.email || null,
@@ -2067,6 +2083,20 @@ export default function MainApp() {
             });
         }
 
+        if (!order) {
+            setEditingOrder(null);
+            setFormData({
+                ...EMPTY_FORM_DATA,
+                osNumber: generateNextOsNumber(ordersForUser),
+                statusHistory: [{
+                    status: 'Recebido',
+                    date: new Date().toISOString().split('T')[0],
+                    timestamp: Date.now(),
+                    user: userData?.displayName || user?.email || 'Sistema'
+                }]
+            });
+        }
+
         if (order) {
             setEditingOrder(order);
 
@@ -2139,6 +2169,139 @@ export default function MainApp() {
         setEditingOrder(null);
         setIsModalOpen(true);
         setDropdownOpen(null);
+    };
+
+    // Componente do Modal de Histórico
+    const HistoryModal = ({ isOpen, onClose, order }) => {
+        if (!isOpen || !order) return null;
+
+        const renderList = (items, emptyMessage = "Nenhum item") => {
+            if (!items || items.length === 0) return <p className="text-slate-400 text-xs italic">{emptyMessage}</p>;
+            return (
+                <ul className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                    {items.map((item, idx) => (
+                        <li key={idx} className="text-sm bg-slate-50 p-2 rounded-lg border border-slate-100">
+                            {typeof item === 'string' ? item : item.text || JSON.stringify(item)}
+                        </li>
+                    ))}
+                </ul>
+            );
+        };
+
+        const solutionItems = [
+            ...(order.manualSolutionsList || []),
+            ...(order.benchRepairList || []),
+            ...(order.solutionsList?.map(s => s.text) || []),
+            ...(order.notRepairableDetail ? [order.notRepairableDetail] : [])
+        ].filter(Boolean);
+
+        return (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+                <div className="bg-white rounded-3xl p-8 max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200 animate-in zoom-in-95">
+                    <div className="flex justify-between items-start mb-6">
+                        <div>
+                            <h2 className="text-2xl font-black text-slate-900">Histórico da OS</h2>
+                            <p className="text-slate-500 text-sm">{order.osNumber} - {order.client}</p>
+                        </div>
+                        <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 transition-colors">
+                            <X size={20} />
+                        </button>
+                    </div>
+
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 mb-6">
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase block">Equipamento</span>
+                                <span className="font-bold text-slate-800">{order.item || '---'}</span>
+                            </div>
+                            <div>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase block">Status atual</span>
+                                <span className="inline-block px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-bold">
+                                    {order.status}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="mb-6">
+                        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                            <Clock size={14} /> Movimentações de status
+                        </h3>
+                        <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
+                            {order.statusHistory && order.statusHistory.length > 0 ? (
+                                order.statusHistory.map((entry, idx) => (
+                                    <div key={idx} className="flex items-start gap-3 p-3 bg-white border border-slate-100 rounded-xl">
+                                        <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center flex-shrink-0 mt-0.5">
+                                            <Check size={12} />
+                                        </div>
+                                        <div className="flex-1">
+                                            <div className="flex justify-between items-center">
+                                                <span className="font-bold text-slate-800">{entry.status}</span>
+                                                <span className="text-[10px] font-medium text-slate-400">
+                                                    {formatDateBR(entry.date)}
+                                                </span>
+                                            </div>
+                                            {entry.user && (
+                                                <p className="text-xs text-slate-500 mt-1">
+                                                    <span className="font-medium">Por:</span> {entry.user}
+                                                </p>
+                                            )}
+                                            {entry.timestamp && (
+                                                <p className="text-[9px] text-slate-400 mt-0.5">
+                                                    {new Date(entry.timestamp).toLocaleString('pt-BR')}
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))
+                            ) : (
+                                <p className="text-slate-400 text-xs italic">Nenhuma movimentação registrada.</p>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="mb-6">
+                        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Defeitos relatados</h3>
+                        {renderList(order.defectsList || (order.defect ? [order.defect] : []), "Nenhum defeito registrado.")}
+                    </div>
+
+                    <div className="mb-6">
+                        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Soluções aplicadas</h3>
+                        {renderList(solutionItems, "Nenhuma solução registrada.")}
+                    </div>
+
+                    {order.photos && order.photos.length > 0 && (
+                        <div className="mb-6">
+                            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                                <Camera size={14} /> Fotos ({order.photos.length})
+                            </h3>
+                            <div className="grid grid-cols-4 gap-2">
+                                {order.photos.map((url, idx) => (
+                                    <a
+                                        key={idx}
+                                        href={url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="block aspect-square rounded-lg overflow-hidden border border-slate-200 hover:opacity-80 transition"
+                                    >
+                                        <img src={url} alt={`Foto ${idx + 1}`} className="w-full h-full object-cover" />
+                                    </a>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="flex justify-end">
+                        <button
+                            onClick={onClose}
+                            className="px-6 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition"
+                        >
+                            Fechar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
     };
 
     // MODAL DE PAGAMENTO PARA CLIENTE (SEM IMPRESSÃO)
@@ -2681,7 +2844,6 @@ export default function MainApp() {
             cleanData.deliveryDeadline = '';
         }
 
-        // Processar histórico de status
         let history = cleanData.statusHistory ? [...cleanData.statusHistory] : [];
         const currentStatusDate = cleanData.statusDate || new Date().toISOString().split('T')[0];
 
@@ -2691,7 +2853,8 @@ export default function MainApp() {
             history.push({
                 status: cleanData.status,
                 date: currentStatusDate,
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                user: currentUser?.displayName || currentUser?.email || 'Sistema'
             });
         } else {
             history[history.length - 1].date = currentStatusDate;
@@ -2831,6 +2994,8 @@ export default function MainApp() {
             ...(cleanData.notRepairableDetail ? [cleanData.notRepairableDetail] : [])
         ].filter(Boolean);
 
+        const cleanData = prepareDataForSave(userData || user);
+
         await checkAndUnhide('defect', defectTexts);
         await checkAndUnhide('solution', solutionTexts);
     };
@@ -2958,6 +3123,9 @@ export default function MainApp() {
     };
 
     const handleSaveAndNewWithSameClient = async () => {
+
+        const cleanData = prepareDataForSave(userData || user);
+
         const hasErrors = validateForm();
         if (hasErrors) {
             return;
@@ -3058,7 +3226,8 @@ export default function MainApp() {
                 history.push({
                     status: moveStatus,
                     date: moveDate,
-                    timestamp: Date.now()
+                    timestamp: Date.now(),
+                    user: userData?.displayName || user?.email || 'Sistema'
                 });
 
                 return updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', orderId), {
@@ -3266,7 +3435,7 @@ export default function MainApp() {
 
             Promise.all(updatePromises).then(() => {
                 setIsPaymentModalOpen(false);
-                handlePrint('client');
+                handlePrint('client', paymentData);
             });
         }
     };
@@ -3392,6 +3561,8 @@ export default function MainApp() {
             console.error('Erro ao gerar PDF:', error);
             showNotification('Erro ao gerar PDF: ' + error.message, 'error');
         }
+
+        console.log('Selected orders for print:', selectedData.map(o => ({ osNumber: o.osNumber, chargedAmount: o.chargedAmount, quantity: o.quantity })));
     };
 
     // Funções para lidar com filtros no painel de status
@@ -4264,7 +4435,7 @@ export default function MainApp() {
 
                         <div className="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden overflow-x-auto relative z-0">
                             <div className="overflow-x-auto">
-                                <table className="w-full text-left min-w-[800px]">
+                                <table className="w-full text-left min-w-[900px]">
                                     <thead className="bg-slate-50/50 border-b text-[10px] font-black uppercase text-slate-400 tracking-widest">
                                         <tr>
                                             <th className="px-6 py-6 text-center w-12">
@@ -4308,7 +4479,8 @@ export default function MainApp() {
                                                     }
                                                 />
                                             </th>
-                                            <th className="px-8 py-6">Identificação</th>
+                                            <th className="px-8 py-6">OS</th>
+                                            <th className="px-8 py-6">Cliente</th>
                                             <th className="px-8 py-6">Equipamento</th>
                                             <th className="px-8 py-6">Tipo</th>
                                             <th className="px-8 py-6">Status</th>
@@ -4316,11 +4488,12 @@ export default function MainApp() {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-50">
-                                        {isLoading ? <tr><td colSpan="6" className="p-20 text-center"><Loader2 className="animate-spin mx-auto text-blue-600" size={32} /></td></tr> :
+                                        {isLoading ? (
+                                            <tr><td colSpan="7" className="p-20 text-center"><Loader2 className="animate-spin mx-auto text-blue-600" size={32} /></td></tr>
+                                        ) : (
                                             sortedOrders.filter(o => {
                                                 const normalizedSearchTerm = searchTerm.toLowerCase().trim();
 
-                                                // Campos de texto padrão
                                                 const clientMatch = o.client?.toLowerCase().includes(normalizedSearchTerm);
                                                 const osNumberMatch = o.osNumber?.includes(searchTerm);
                                                 const itemMatch = o.item?.toLowerCase().includes(normalizedSearchTerm);
@@ -4328,13 +4501,11 @@ export default function MainApp() {
                                                 const modelMatch = o.model?.toLowerCase().includes(normalizedSearchTerm);
                                                 const serialMatch = o.serial?.toLowerCase().includes(normalizedSearchTerm);
 
-                                                // 🔹 NOVO: Data do status atual (formato DD/MM/YYYY ou YYYY-MM-DD)
                                                 let statusDateMatch = false;
                                                 if (o.statusDate) {
                                                     const [year, month, day] = o.statusDate.split('-');
-                                                    const formattedDate = `${day}/${month}/${year}`; // DD/MM/YYYY
-                                                    statusDateMatch = formattedDate.includes(normalizedSearchTerm) ||
-                                                        o.statusDate.includes(normalizedSearchTerm); // também busca YYYY-MM-DD
+                                                    const formattedDate = `${day}/${month}/${year}`;
+                                                    statusDateMatch = formattedDate.includes(normalizedSearchTerm) || o.statusDate.includes(normalizedSearchTerm);
                                                 }
 
                                                 return clientMatch || osNumberMatch || itemMatch ||
@@ -4364,6 +4535,8 @@ export default function MainApp() {
                                                     </td>
                                                     <td className="px-8 py-6">
                                                         <div className="font-black text-blue-700 text-lg">{o.osNumber}</div>
+                                                    </td>
+                                                    <td className="px-8 py-6">
                                                         <div className="font-bold text-slate-900 text-sm">{o.client}</div>
                                                     </td>
                                                     <td className="px-8 py-6">
@@ -4413,7 +4586,7 @@ export default function MainApp() {
                                                                         <button
                                                                             onClick={(e) => {
                                                                                 e.stopPropagation();
-                                                                                handleRejectBudget(o); // Agora abre o modal customizado
+                                                                                handleRejectBudget(o);
                                                                             }}
                                                                             className="px-4 py-2 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-colors text-sm shadow-md"
                                                                             title="Recusar orçamento"
@@ -4432,12 +4605,16 @@ export default function MainApp() {
                                                                 hasPermission={hasPermission}
                                                                 isOpen={dropdownOpen === o.firestoreId}
                                                                 onOpenChange={(id) => setDropdownOpen(id)}
+                                                                openHistoryModal={(order) => {
+                                                                    setSelectedOrderForHistory(order);
+                                                                    setIsHistoryModalOpen(true);
+                                                                }}
                                                             />
                                                         </div>
                                                     </td>
                                                 </tr>
                                             ))
-                                        }
+                                        )}
                                     </tbody>
                                 </table>
                             </div>
@@ -6709,6 +6886,15 @@ export default function MainApp() {
                 onAddOption={addCustomInstallmentOption}
                 onDeleteOption={handleDeleteCustomOption}
                 userRole={userData?.role}
+            />
+
+            <HistoryModal
+                isOpen={isHistoryModalOpen}
+                onClose={() => {
+                    setIsHistoryModalOpen(false);
+                    setSelectedOrderForHistory(null);
+                }}
+                order={selectedOrderForHistory}
             />
 
             <RejectConfirmModal
