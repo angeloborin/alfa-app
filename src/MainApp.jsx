@@ -930,86 +930,86 @@ const OrderActionsDropdown = ({ order, openModal, openViewModal, openNewWithClie
 };
 
 const SuggestionInput = ({
-        value,
-        onChange,
-        suggestions,
-        placeholder,
-        className = "",
-        disabled = false,
-        onRemoveSuggestion, // nova prop
-        userRole // para saber se é admin
-    }) => {
-        const [showSuggestions, setShowSuggestions] = useState(false);
-        const dropdownRef = useRef(null);
-        const inputRef = useRef(null);
+    value,
+    onChange,
+    suggestions,
+    placeholder,
+    className = "",
+    disabled = false,
+    onRemoveSuggestion, // nova prop
+    userRole // para saber se é admin
+}) => {
+    const [showSuggestions, setShowSuggestions] = useState(false);
+    const dropdownRef = useRef(null);
+    const inputRef = useRef(null);
 
-        useOutsideClick(dropdownRef, () => setShowSuggestions(false));
+    useOutsideClick(dropdownRef, () => setShowSuggestions(false));
 
-        const filteredSuggestions = suggestions
-            .filter(s => s.toLowerCase().includes(value.toLowerCase()))
-            .slice(0, 5);
+    const filteredSuggestions = suggestions
+        .filter(s => s.toLowerCase().includes(value.toLowerCase()))
+        .slice(0, 5);
 
-        return (
-            <div className="relative w-full">
-                <input
-                    ref={inputRef}
-                    type="text"
-                    className={`w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold ${className} ${disabled ? 'cursor-not-allowed opacity-70' : ''}`}
-                    value={value}
-                    onChange={onChange}
-                    onFocus={() => setShowSuggestions(true)}
-                    onBlur={(e) => {
-                        setTimeout(() => setShowSuggestions(false), 200);
-                        if (onBlur) onBlur(e);
-                    }}
-                    placeholder={placeholder}
-                    disabled={disabled}
-                    autoComplete="off"
-                />
-                {showSuggestions && filteredSuggestions.length > 0 && (
-                    <div
-                        ref={dropdownRef}
-                        className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2"
-                    >
-                        <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400 flex justify-between items-center">
-                            <span>Sugestões</span>
-                        </div>
-                        {filteredSuggestions.map((s, idx) => (
-                            <div
-                                key={idx}
-                                className="flex items-center justify-between p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700 group"
-                            >
-                                <span
-                                    className="flex-1"
-                                    onMouseDown={(e) => {
-                                        e.preventDefault();
-                                        onChange({ target: { value: s } });
-                                        setShowSuggestions(false);
-                                    }}
-                                >
-                                    {s}
-                                </span>
-                                {userRole === 'admin' && onRemoveSuggestion && (
-                                    <button
-                                        type="button"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            e.preventDefault();
-                                            onRemoveSuggestion(s);
-                                        }}
-                                        className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                                        title="Remover sugestão"
-                                    >
-                                        <X size={14} />
-                                    </button>
-                                )}
-                            </div>
-                        ))}
+    return (
+        <div className="relative w-full">
+            <input
+                ref={inputRef}
+                type="text"
+                className={`w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold ${className} ${disabled ? 'cursor-not-allowed opacity-70' : ''}`}
+                value={value}
+                onChange={onChange}
+                onFocus={() => setShowSuggestions(true)}
+                onBlur={(e) => {
+                    setTimeout(() => setShowSuggestions(false), 200);
+                    if (onBlur) onBlur(e);
+                }}
+                placeholder={placeholder}
+                disabled={disabled}
+                autoComplete="off"
+            />
+            {showSuggestions && filteredSuggestions.length > 0 && (
+                <div
+                    ref={dropdownRef}
+                    className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2"
+                >
+                    <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400 flex justify-between items-center">
+                        <span>Sugestões</span>
                     </div>
-                )}
-            </div>
-        );
-    };
+                    {filteredSuggestions.map((s, idx) => (
+                        <div
+                            key={idx}
+                            className="flex items-center justify-between p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700 group"
+                        >
+                            <span
+                                className="flex-1"
+                                onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    onChange({ target: { value: s } });
+                                    setShowSuggestions(false);
+                                }}
+                            >
+                                {s}
+                            </span>
+                            {userRole === 'admin' && onRemoveSuggestion && (
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        e.preventDefault();
+                                        onRemoveSuggestion(s);
+                                    }}
+                                    className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                    title="Remover sugestão"
+                                >
+                                    <X size={14} />
+                                </button>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
 
 export default function MainApp() {
     // === AUTENTICAÇÃO ===
@@ -4033,7 +4033,7 @@ export default function MainApp() {
         }
     };
 
-    const exportToWord = () => {
+    const exportToWord = async () => {
         if (selectedOrders.length === 0) {
             showNotification('Selecione pelo menos uma OS para exportar', 'error');
             return;
@@ -4048,7 +4048,9 @@ export default function MainApp() {
 
         try {
             setIsSaving(true);
+            showNotification('Preparando documento com imagens...', 'info');
 
+            // Agrupar OS por cliente
             const groups = {};
             selectedData.forEach(os => {
                 const key = `${os.client}-${os.cnpj || 'no-cnpj'}-${os.billingType}-${os.maintenanceVisit || 'no-visit'}`;
@@ -4069,179 +4071,153 @@ export default function MainApp() {
                 groups[key].items.push(os);
             });
 
+            // Função para buscar imagem e converter para base64 com redimensionamento
+            const toBase64 = async (url, maxWidth = 300, maxHeight = 200) => {
+                try {
+                    // Para URLs do Firebase, pode ser necessário adicionar headers para evitar CORS? Geralmente funciona.
+                    const response = await fetch(url);
+                    const blob = await response.blob();
+
+                    // Criar um elemento Image para redimensionar via canvas
+                    return new Promise((resolve, reject) => {
+                        const img = new Image();
+                        img.crossOrigin = 'anonymous'; // Importante para CORS
+                        img.onload = () => {
+                            // Calcular novas dimensões mantendo proporção
+                            let width = img.width;
+                            let height = img.height;
+                            if (width > maxWidth) {
+                                height = (maxWidth / width) * height;
+                                width = maxWidth;
+                            }
+                            if (height > maxHeight) {
+                                width = (maxHeight / height) * width;
+                                height = maxHeight;
+                            }
+
+                            // Desenhar no canvas e obter base64 redimensionado
+                            const canvas = document.createElement('canvas');
+                            canvas.width = width;
+                            canvas.height = height;
+                            const ctx = canvas.getContext('2d');
+                            ctx.drawImage(img, 0, 0, width, height);
+                            // Qualidade 0.8 para JPEG (menor tamanho)
+                            resolve(canvas.toDataURL('image/jpeg', 0.8));
+                        };
+                        img.onerror = reject;
+                        img.src = URL.createObjectURL(blob);
+                    });
+                } catch (error) {
+                    console.error('Erro ao carregar imagem:', error);
+                    return null;
+                }
+            };
+
+            // Processar todas as imagens de todas as OS em paralelo
+            const photoPromises = [];
+            selectedData.forEach(os => {
+                if (os.photos && os.photos.length > 0) {
+                    os.photos.forEach((photoUrl, index) => {
+                        photoPromises.push({ osId: os.firestoreId, index, promise: toBase64(photoUrl) });
+                    });
+                }
+            });
+
+            // Aguardar todas as conversões
+            const photoResults = await Promise.all(photoPromises.map(p => p.promise));
+            const photoMap = new Map();
+            photoPromises.forEach((p, idx) => {
+                const key = `${p.osId}_${p.index}`;
+                photoMap.set(key, photoResults[idx]);
+            });
+
+            // Converter o logo para base64 também (se for um caminho relativo)
+            let logoBase64 = '';
+            try {
+                const logoResponse = await fetch(logo);
+                const logoBlob = await logoResponse.blob();
+                logoBase64 = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result);
+                    reader.readAsDataURL(logoBlob);
+                });
+            } catch (e) {
+                console.warn('Não foi possível carregar o logo:', e);
+                logoBase64 = ''; 
+            }
+
+            // Montar HTML com as imagens embutidas e estilos ajustados
             let htmlContent = `
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="UTF-8">
-    <title>Relatório de OS - Alfa Tecnologia Hospitalar</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            margin: 0;
-            padding: 20px;
-        }
-        h1 {
-            text-align: center;
-            font-size: 28px;
-            margin-bottom: 10px;
-            color: #1a56db;
-        }
-        h2 {
-            text-align: center;
-            font-size: 20px;
-            margin-top: 0;
-            margin-bottom: 30px;
-            color: #1a56db;
-        }
-        h3 {
-            color: #1a56db;
-            font-size: 16px;
-            border-bottom: 2px solid #1a56db;
-            padding-bottom: 5px;
-            margin-top: 30px;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 20px;
-        }
-        th {
-            background-color: #f2f2f2;
-            color: #1a56db;
-            text-align: left;
-            padding: 10px;
-            border: 1px solid #ddd;
-        }
-        td {
-            padding: 10px;
-            border: 1px solid #ddd;
-            vertical-align: top;
-        }
-        .client-info {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 15px;
-            margin-bottom: 20px;
-        }
-        .info-item {
-            margin-bottom: 10px;
-        }
-        .info-label {
-            font-weight: bold;
-            font-size: 12px;
-            color: #666;
-            margin-bottom: 3px;
-        }
-        .info-value {
-            font-size: 14px;
-            color: #333;
-        }
-        .os-number {
-            font-weight: bold;
-            color: #1a56db;
-        }
-        .status {
-            font-size: 11px;
-            background-color: #f1f5f9;
-            color: #475569;
-            padding: 2px 6px;
-            border-radius: 4px;
-            display: inline-block;
-            margin-top: 3px;
-        }
-        .equipment-name {
-            font-weight: bold;
-        }
-        .equipment-details {
-            font-size: 12px;
-            color: #666;
-            margin-top: 3px;
-        }
-        .serial {
-            font-family: monospace;
-            font-size: 11px;
-            color: #999;
-        }
-        .footer {
-            margin-top: 50px;
-            text-align: center;
-            font-size: 12px;
-            color: #666;
-            border-top: 1px solid #ddd;
-            padding-top: 15px;
-        }
-        .page-break {
-            page-break-after: always;
-        }
-        .photo-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 5px;
-            margin-top: 10px;
-        }
-        .photo-item {
-            border: 1px solid #ddd;
-            border-radius: 3px;
-            overflow: hidden;
-        }
-        .photo-item img {
-            width: 100%;
-            height: 80px;
-            object-fit: cover;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <title>Relatório de OS - Alfa Tecnologia Hospitalar</title>
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 20px; }
+    h1 { text-align: center; font-size: 28px; margin-bottom: 10px; color: #1a56db; }
+    .logo { text-align: center; margin-bottom: 10px; }
+    .logo img {
+  width: 250px;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+}
+    h2 { text-align: center; font-size: 20px; margin-top: 0; margin-bottom: 30px; color: #1a56db; }
+    h3 { color: #1a56db; font-size: 16px; border-bottom: 2px solid #1a56db; padding-bottom: 5px; margin-top: 30px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+    th { background-color: #f2f2f2; color: #1a56db; text-align: left; padding: 10px; border: 1px solid #ddd; }
+    td { padding: 10px; border: 1px solid #ddd; vertical-align: top; }
+    .client-info { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; }
+    .info-item { margin-bottom: 10px; }
+    .info-label { font-weight: bold; font-size: 12px; color: #666; margin-bottom: 3px; }
+    .info-value { font-size: 14px; color: #333; }
+    .os-number { font-weight: bold; color: #1a56db; }
+    .status { font-size: 11px; background-color: #f1f5f9; color: #475569; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 3px; }
+    .equipment-name { font-weight: bold; }
+    .equipment-details { font-size: 12px; color: #666; margin-top: 3px; }
+    .serial { font-family: monospace; font-size: 11px; color: #999; }
+    .footer { margin-top: 50px; text-align: center; font-size: 12px; color: #666; border-top: 1px solid #ddd; padding-top: 15px; }
+    .page-break { page-break-after: always; }
+    .photo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-top: 10px; }
+    .photo-item { border: 1px solid #ddd; border-radius: 3px; overflow: hidden; }
+    .photo-item img { width: 100%; height: auto; max-height: 100px; object-fit: cover; }
+  </style>
 </head>
 <body>`;
 
+            // Logo no topo
+            if (logoBase64) {
+                htmlContent += `<div class="logo"><img src="${logoBase64}" alt="Logo Alfa Tecnologia Hospitalar" width="250" height="auto" /></div>`;
+            } else {
+                htmlContent += `<div class="logo"><span style="font-weight:bold;">Alfa Tecnologia Hospitalar</span></div>`;
+            }
+
             Object.values(groups).forEach((group, groupIndex) => {
                 htmlContent += `
-    <div style="text-align: center; margin-bottom: 30px;">
-        <img src="${logo}" alt="Logo" style="height: 60px; margin-bottom: 10px;">
-        <h1>Relatório de Atendimento Técnico</h1>
-    </div>
-    
-    <h3>DADOS DO CLIENTE</h3>
-    <div class="client-info">
-        <div class="info-item">
-            <div class="info-label">Cliente</div>
-            <div class="info-value">${group.header.client || '---'}</div>
-        </div>
-        <div class="info-item">
-            <div class="info-label">CNPJ</div>
-            <div class="info-value">${group.header.cnpj || '---'}</div>
-        </div>
-        <div class="info-item">
-            <div class="info-label">Contato</div>
-            <div class="info-value">${group.header.contactPerson || '---'}</div>
-        </div>
-        <div class="info-item">
-            <div class="info-label">E-mail</div>
-            <div class="info-value">${group.header.email || '---'}</div>
-        </div>
-        <div class="info-item">
-            <div class="info-label">Endereço</div>
-            <div class="info-value">${group.header.address || '---'}</div>
-        </div>
-        <div class="info-item">
-            <div class="info-label">Tipo de Atendimento</div>
-            <div class="info-value">${group.header.billingType} ${group.header.maintenanceVisit ? '- ' + group.header.maintenanceVisit : ''}</div>
-        </div>
-    </div>
-    
-    <h3>LISTA DE EQUIPAMENTOS</h3>
-    <table>
-        <thead>
-            <tr>
-                <th width="15%">OS</th>
-                <th width="25%">Equipamento</th>
-                <th width="30%">Defeito / Solução</th>
-                <th width="30%">Observações</th>
-            </tr>
-        </thead>
-        <tbody>`;
+  <h1>Relatório de Atendimento Técnico</h1>
+  
+  <h3>DADOS DO CLIENTE</h3>
+  <div class="client-info">
+    <div class="info-item"><div class="info-label">Cliente</div><div class="info-value">${group.header.client || '---'}</div></div>
+    <div class="info-item"><div class="info-label">CNPJ</div><div class="info-value">${group.header.cnpj || '---'}</div></div>
+    <div class="info-item"><div class="info-label">Contato</div><div class="info-value">${group.header.contactPerson || '---'}</div></div>
+    <div class="info-item"><div class="info-label">E-mail</div><div class="info-value">${group.header.email || '---'}</div></div>
+    <div class="info-item"><div class="info-label">Endereço</div><div class="info-value">${group.header.address || '---'}</div></div>
+    <div class="info-item"><div class="info-label">Tipo de Atendimento</div><div class="info-value">${group.header.billingType} ${group.header.maintenanceVisit ? '- ' + group.header.maintenanceVisit : ''}</div></div>
+  </div>
+  
+  <h3>LISTA DE EQUIPAMENTOS</h3>
+  <table>
+    <thead>
+      <tr>
+        <th width="15%">OS</th>
+        <th width="25%">Equipamento</th>
+        <th width="30%">Defeito / Solução</th>
+        <th width="30%">Observações</th>
+      </tr>
+    </thead>
+    <tbody>`;
 
                 group.items.forEach(item => {
                     const defects = item.defect ? item.defect.split('\n').filter(d => d.trim()) : [];
@@ -4249,60 +4225,66 @@ export default function MainApp() {
                     const photos = item.photos || [];
 
                     htmlContent += `
-            <tr>
-                <td>
-                    <div class="os-number">${item.osNumber || '---'}</div>
-                    <div class="status">${item.status || '---'}</div>
-                </td>
-                <td>
-                    <div class="equipment-name">${item.item || '---'}</div>
-                    <div class="equipment-details">${item.manufacturer || ''} ${item.model || ''}</div>
-                    <div class="serial">NS: ${item.serial || 'N/D'}</div>
-                    ${item.quantity && parseInt(item.quantity) > 1 ?
-                            `<div class="quantity" style="font-size:9px;color:#666;margin-top:2px;"><strong>Quantidade:</strong> ${item.quantity}</div>` :
-                            ''}
-                </td>
-                <td>
-                    <div><strong>Defeito:</strong></div>
-                    ${defects.length > 0 ?
-                            `<ul style="margin: 5px 0; padding-left: 20px;">${defects.map(d => `<li>${d}</li>`).join('')}</ul>` :
-                            '<div style="color: #999; font-style: italic;">Sem defeitos registrados</div>'}
-                    <div style="margin-top: 10px;"><strong>Solução:</strong></div>
-                    ${solutions.length > 0 ?
-                            `<ul style="margin: 5px 0; padding-left: 20px;">${solutions.map(s => `<li>${s}</li>`).join('')}</ul>` :
-                            '<div style="color: #999; font-style: italic;">Solução em análise</div>'}
-                </td>
-                <td>
-                    ${item.equipmentObservation ? `
-                    <div><strong>Observações:</strong> ${item.equipmentObservation}</div>
-                    ` : ''}
-                    
-                    ${photos.length > 0 ? `
-                    <div style="margin-top: 10px;"><strong>Fotos:</strong></div>
-                    <div class="photo-grid">
-                        ${photos.slice(0, 3).map(photo =>
-                                `<div class="photo-item">
-                                <img src="${photo}" alt="Foto" onerror="this.style.display='none';">
-                            </div>`
-                            ).join('')}
-                    </div>
-                    ${photos.length > 3 ?
-                                `<div style="font-size: 9px; color: #666; margin-top: 5px;">+ ${photos.length - 3} foto(s) adicional(is)</div>` :
-                                ''}
-                    ` : ''}
-                </td>
-            </tr>`;
+      <tr>
+        <td>
+          <div class="os-number">${item.osNumber || '---'}</div>
+          <div class="status">${item.status || '---'}</div>
+        </td>
+        <td>
+          <div class="equipment-name">${item.item || '---'}</div>
+          <div class="equipment-details">${item.manufacturer || ''} ${item.model || ''}</div>
+          <div class="serial">NS: ${item.serial || 'N/D'}</div>
+          ${item.quantity && parseInt(item.quantity) > 1 ? `<div class="quantity" style="font-size:9px;color:#666;margin-top:2px;"><strong>Quantidade:</strong> ${item.quantity}</div>` : ''}
+        </td>
+        <td>
+          <div><strong>Defeito:</strong></div>
+          ${defects.length > 0 ? `<ul style="margin:5px 0; padding-left:20px;">${defects.map(d => `<li>${d}</li>`).join('')}</ul>` : '<div style="color:#999; font-style:italic;">Sem defeitos registrados</div>'}
+          <div style="margin-top:10px;"><strong>Solução:</strong></div>
+          ${solutions.length > 0 ? `<ul style="margin:5px 0; padding-left:20px;">${solutions.map(s => `<li>${s}</li>`).join('')}</ul>` : '<div style="color:#999; font-style:italic;">Solução em análise</div>'}
+        </td>
+        <td>
+          ${item.equipmentObservation ? `<div><strong>Observações:</strong> ${item.equipmentObservation}</div>` : ''}
+          
+          ${photos.length > 0 ? `
+          <div style="margin-top: 10px;"><strong>Fotos:</strong></div>
+          <div class="photo-grid">` : ''}`;
+
+                    // Incluir imagens (até 6 por OS)
+                    if (photos.length > 0) {
+                        photos.slice(0, 6).forEach((_, idx) => {
+                            const key = `${item.firestoreId}_${idx}`;
+                            const base64 = photoMap.get(key);
+                            if (base64) {
+                                htmlContent += `
+            <div class="photo-item">
+              <img src="${base64}" alt="Foto" />
+            </div>`;
+                            } else {
+                                htmlContent += `
+            <div class="photo-item" style="background:#f0f0f0; display:flex; align-items:center; justify-content:center; height:80px;">
+              <span style="font-size:10px; color:#999;">Falha</span>
+            </div>`;
+                            }
+                        });
+                        htmlContent += `
+          </div>
+          ${photos.length > 6 ? `<div style="font-size: 9px; color: #666; margin-top: 5px;">+ ${photos.length - 6} foto(s) adicional(is)</div>` : ''}`;
+                    }
+
+                    htmlContent += `
+        </td>
+      </tr>`;
                 });
 
                 htmlContent += `
-        </tbody>
-    </table>
-    
-    <div class="footer">
-        <p><strong>Alfa Tecnologia Hospitalar</strong> - CNPJ: 50.993.453/0001-34</p>
-        <p>(55) 9 9137-9413 - alfa.manutencaosm@gmail.com</p>
-        <p>Endereço: Travessa Moreira, 125 - CEP: 97070-540 - Bairro: Duque de Caxias, Santa Maria/ RS</p>
-    </div>`;
+    </tbody>
+  </table>
+  
+  <div class="footer">
+    <p><strong>Alfa Tecnologia Hospitalar</strong> - CNPJ: 50.993.453/0001-34</p>
+    <p>(55) 9 9137-9413 - alfa.manutencaosm@gmail.com</p>
+    <p>Endereço: Travessa Moreira, 125 - CEP: 97070-540 - Bairro: Duque de Caxias, Santa Maria/ RS</p>
+  </div>`;
 
                 if (groupIndex < Object.values(groups).length - 1) {
                     htmlContent += `<div class="page-break"></div>`;
@@ -4313,13 +4295,11 @@ export default function MainApp() {
 </body>
 </html>`;
 
-            const blob = new Blob([htmlContent], {
-                type: 'application/msword;charset=utf-8'
-            });
-
+            // Criar blob e salvar
+            const blob = new Blob([htmlContent], { type: 'application/msword;charset=utf-8' });
             saveAs(blob, `relatorio_os_${new Date().toISOString().split('T')[0]}.doc`);
-            showNotification('Documento Word gerado com sucesso!', 'success');
 
+            showNotification('Documento Word gerado com sucesso!', 'success');
         } catch (error) {
             console.error('Erro ao gerar documento Word:', error);
             showNotification('Erro ao gerar documento Word: ' + error.message, 'error');
