@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import {
     collection, addDoc, updateDoc, deleteDoc,
-    doc, onSnapshot, setDoc, getDoc
+    doc, onSnapshot, setDoc, getDoc, query, orderBy
 } from 'firebase/firestore';
 import { auth, db, storage } from "./firebase/firebase";
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
@@ -865,7 +865,7 @@ const OrderActionsDropdown = ({ order, openModal, openViewModal, openNewWithClie
                                 className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors text-sm font-medium"
                             >
                                 <Clock size={18} />
-                                Histórico - Em manutenção
+                                Histórico
                             </button>
 
                             <button
@@ -1012,6 +1012,52 @@ const SuggestionInput = ({
 };
 
 export default function MainApp() {
+
+    const FIELD_LABELS = {
+        client: 'Cliente',
+        cnpj: 'CNPJ',
+        contactPerson: 'Contato do Cliente',
+        address: 'Endereço',
+        email: 'E-mail',
+        billingType: 'Tipo de Atendimento',
+        maintenanceVisit: 'Visita de Manutenção',
+        item: 'Equipamento',
+        manufacturer: 'Fabricante',
+        model: 'Modelo',
+        serial: 'Número de Série',
+        equipmentObservation: 'Observações do Equipamento',
+        quantity: 'Quantidade',
+        defect: 'Defeitos',
+        defectsList: 'Lista de Defeitos',
+        solutionType: 'Tipo de Solução',
+        solution: 'Soluções',
+        manualSolutionsList: 'Lista de Soluções Manuais',
+        benchRepairList: 'Etapas de Conserto em Bancada',
+        solutionsList: 'Lista de Soluções com Custos',
+        notRepairableDetail: 'Detalhe de Substituição',
+        costThirdPartyName: 'Nome do Terceiro',
+        costThirdPartyShipping: 'Frete Terceiro',
+        costParts: 'Custo de Peças',
+        costClientShipping: 'Frete Cliente',
+        chargedAmount: 'Valor Cobrado',
+        paymentCondition: 'Condição de Pagamento',
+        installments: 'Parcelas',
+        discount5Days: 'Desconto 5 dias',
+        discountAmount: 'Valor do Desconto',
+        finalChargedAmount: 'Valor Final',
+        status: 'Status',
+        statusDate: 'Data do Status',
+        trackingCode: 'Código de Rastreio',
+        sentToThirdParty: 'Enviado para Terceiro',
+        thirdPartyInfo: 'Informações do Terceiro',
+        thirdPartyTracking: 'Rastreio do Terceiro',
+        thirdPartyDate: 'Data do Terceiro',
+        osNumber: 'Número da OS',
+        deliveryDeadline: 'Prazo de Entrega',
+        photos: 'Fotos',
+        linkedOS: 'OS Vinculadas'
+    };
+
     // === AUTENTICAÇÃO ===
     const { user, userData, loading: authLoading, hasPermission, logout } = useAuth();
 
@@ -2479,36 +2525,194 @@ export default function MainApp() {
         setDropdownOpen(null);
     };
 
-    // Componente do Modal de Histórico
-    const HistoryModal = ({ isOpen, onClose, order }) => {
-        if (!isOpen || !order) return null;
+    // Função para calcular diferenças entre dois objetos
+    const computeChanges = (oldData, newData) => {
+        const changes = {};
+        const allKeys = new Set([...Object.keys(oldData || {}), ...Object.keys(newData || {})]);
+        const ignoreFields = ['firestoreId', 'statusHistory', 'history', 'id'];
 
-        const renderList = (items, emptyMessage = "Nenhum item") => {
-            if (!items || items.length === 0) return <p className="text-slate-400 text-xs italic">{emptyMessage}</p>;
-            return (
-                <ul className="space-y-2 max-h-40 overflow-y-auto pr-1">
-                    {items.map((item, idx) => (
-                        <li key={idx} className="text-sm bg-slate-50 p-2 rounded-lg border border-slate-100">
-                            {typeof item === 'string' ? item : item.text || JSON.stringify(item)}
-                        </li>
-                    ))}
-                </ul>
-            );
+        allKeys.forEach(key => {
+            if (ignoreFields.includes(key)) return;
+
+            const oldVal = oldData?.[key];
+            const newVal = newData?.[key];
+
+            // Se ambos são undefined, ignorar
+            if (oldVal === undefined && newVal === undefined) return;
+
+            // Evitar redundância: se defectsList mudou, ignorar defect
+            if (key === 'defect' && changes['defectsList']) return;
+            if (key === 'solution' && (changes['manualSolutionsList'] || changes['benchRepairList'] || changes['solutionsList'])) return;
+
+            // Comparação
+            if (JSON.stringify(oldVal) !== JSON.stringify(newVal)) {
+                if (Array.isArray(oldVal) && Array.isArray(newVal)) {
+                    const added = newVal.filter(item => !oldVal.includes(item));
+                    const removed = oldVal.filter(item => !newVal.includes(item));
+                    if (added.length > 0 || removed.length > 0) {
+                        changes[key] = { type: 'array', added, removed };
+                    }
+                } else {
+                    changes[key] = { type: 'value', old: oldVal, new: newVal };
+                }
+            }
+        });
+
+        return changes;
+    };
+    // Função para salvar uma entrada no histórico
+    const saveHistoryEntry = async (orderId, action, oldData, newData) => {
+        if (!orderId || !user) return;
+
+        const changes = action === 'create'
+            ? { initialData: newData }  // para criação, guardamos snapshot completo
+            : computeChanges(oldData, newData);
+
+        // Se não houver mudanças (apenas no update), não salvar
+        if (action === 'update' && Object.keys(changes).length === 0) return;
+
+        const historyRef = collection(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', orderId, 'history');
+
+        const today = new Date();
+        const day = `${today.getDate().toString().padStart(2, '0')}/${(today.getMonth() + 1).toString().padStart(2, '0')}/${today.getFullYear()}`;
+
+        await addDoc(historyRef, {
+            timestamp: Date.now(),
+            date: day,
+            user: {
+                uid: user.uid,
+                name: userData?.displayName || user.email || 'Sistema',
+                email: user.email
+            },
+            action,
+            changes
+        });
+    };
+
+    const HistoryModal = ({ isOpen, onClose, order }) => {
+        const [historyEntries, setHistoryEntries] = useState([]);
+        const [loading, setLoading] = useState(false);
+
+        useEffect(() => {
+            if (!isOpen || !order?.firestoreId) return;
+
+            setLoading(true);
+            const historyRef = collection(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', order.firestoreId, 'history');
+            const q = query(historyRef, orderBy('timestamp', 'desc'));
+
+            const unsubscribe = onSnapshot(q, (snapshot) => {
+                const entries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                setHistoryEntries(entries);
+                setLoading(false);
+            }, (error) => {
+                console.error('Erro ao buscar histórico:', error);
+                setLoading(false);
+            });
+
+            return () => unsubscribe();
+        }, [isOpen, order]);
+
+        // Agrupar por data
+        const grouped = useMemo(() => {
+            const groups = {};
+            historyEntries.forEach(entry => {
+                const date = entry.date; // já está no formato dd/mm/yyyy
+                if (!groups[date]) groups[date] = [];
+                groups[date].push(entry);
+            });
+            // Ordenar datas decrescente
+            const sortedDates = Object.keys(groups).sort((a, b) => {
+                const [da, ma, ya] = a.split('/');
+                const [db, mb, yb] = b.split('/');
+                return new Date(yb, mb - 1, db) - new Date(ya, ma - 1, da);
+            });
+            return sortedDates.map(date => ({ date, entries: groups[date] }));
+        }, [historyEntries]);
+
+        const renderChanges = (changes, action) => {
+            if (action === 'create') {
+                return <p className="text-sm text-green-600">OS criada</p>;
+            }
+
+            // Lista de campos que não queremos exibir
+            const hiddenFields = ['defectsList', 'solutionsList', 'manualSolutionsList', 'benchRepairList', 'statusHistory', 'history'];
+
+            return Object.entries(changes)
+                .filter(([field]) => !hiddenFields.includes(field))
+                .map(([field, data]) => {
+                    const label = FIELD_LABELS[field] || field;
+
+                    if (data.type === 'array') {
+                        const { added, removed } = data;
+                        return (
+                            <div key={field} className="mb-3">
+                                <span className="font-bold text-slate-700">{label}:</span>
+                                <div className="ml-4 space-y-1">
+                                    {added.length > 0 && (
+                                        <div className="text-green-600">
+                                            <span className="text-xs font-bold">ADICIONADOS:</span>
+                                            <ul className="list-disc list-inside text-sm">
+                                                {added.map((item, idx) => <li key={idx}>{item}</li>)}
+                                            </ul>
+                                        </div>
+                                    )}
+                                    {removed.length > 0 && (
+                                        <div className="text-red-600">
+                                            <span className="text-xs font-bold">REMOVIDOS:</span>
+                                            <ul className="list-disc list-inside text-sm line-through">
+                                                {removed.map((item, idx) => <li key={idx}>{item}</li>)}
+                                            </ul>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    } else {
+                        let oldDisplay = data.old;
+                        let newDisplay = data.new;
+
+                        // Formatação para exibição
+                        if (typeof oldDisplay === 'string') {
+                            oldDisplay = oldDisplay.split('\n').map((line, i) => (
+                                <span key={i}>{line}<br /></span>
+                            ));
+                        } else if (oldDisplay !== undefined) {
+                            oldDisplay = JSON.stringify(oldDisplay);
+                        } else {
+                            oldDisplay = <span className="text-slate-400">(vazio)</span>;
+                        }
+
+                        if (typeof newDisplay === 'string') {
+                            newDisplay = newDisplay.split('\n').map((line, i) => (
+                                <span key={i}>{line}<br /></span>
+                            ));
+                        } else if (newDisplay !== undefined) {
+                            newDisplay = JSON.stringify(newDisplay);
+                        } else {
+                            newDisplay = <span className="text-slate-400">(vazio)</span>;
+                        }
+
+                        return (
+                            <div key={field} className="mb-3">
+                                <span className="font-bold text-slate-700">{label}:</span>
+                                <div className="ml-4 text-sm">
+                                    <div className="text-red-500 line-through">{oldDisplay}</div>
+                                    <div className="text-green-600">{newDisplay}</div>
+                                </div>
+                            </div>
+                        );
+                    }
+                });
         };
 
-        const solutionItems = [
-            ...(order.manualSolutionsList || []),
-            ...(order.benchRepairList || []),
-            ...(order.solutionsList?.map(s => s.text) || []),
-            ...(order.notRepairableDetail ? [order.notRepairableDetail] : [])
-        ].filter(Boolean);
+        if (!isOpen || !order) return null;
 
         return (
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
                 <div className="bg-white rounded-3xl p-8 max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200 animate-in zoom-in-95">
                     <div className="flex justify-between items-start mb-6">
                         <div>
-                            <h2 className="text-2xl font-black text-slate-900">Histórico da OS</h2>
+                            <h2 className="text-2xl font-black text-slate-900">Histórico de Alterações</h2>
                             <p className="text-slate-500 text-sm">{order.osNumber} - {order.client}</p>
                         </div>
                         <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 transition-colors">
@@ -2516,94 +2720,36 @@ export default function MainApp() {
                         </button>
                     </div>
 
-                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 mb-6">
-                        <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div>
-                                <span className="text-[10px] font-bold text-slate-400 uppercase block">Equipamento</span>
-                                <span className="font-bold text-slate-800">{order.item || '---'}</span>
-                            </div>
-                            <div>
-                                <span className="text-[10px] font-bold text-slate-400 uppercase block">Status atual</span>
-                                <span className="inline-block px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-bold">
-                                    {order.status}
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="mb-6">
-                        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-                            <Clock size={14} /> Movimentações de status
-                        </h3>
-                        <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
-                            {order.statusHistory && order.statusHistory.length > 0 ? (
-                                order.statusHistory.map((entry, idx) => (
-                                    <div key={idx} className="flex items-start gap-3 p-3 bg-white border border-slate-100 rounded-xl">
-                                        <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center flex-shrink-0 mt-0.5">
-                                            <Check size={12} />
-                                        </div>
-                                        <div className="flex-1">
-                                            <div className="flex justify-between items-center">
-                                                <span className="font-bold text-slate-800">{entry.status}</span>
-                                                <span className="text-[10px] font-medium text-slate-400">
-                                                    {formatDateBR(entry.date)}
-                                                </span>
+                    {loading ? (
+                        <div className="text-center py-10"><Loader2 className="animate-spin mx-auto text-blue-600" size={32} /></div>
+                    ) : grouped.length === 0 ? (
+                        <p className="text-center py-10 text-slate-400">Nenhum histórico encontrado.</p>
+                    ) : (
+                        <div className="space-y-4">
+                            {grouped.map(({ date, entries }) => (
+                                <details key={date} className="bg-slate-50 rounded-xl border border-slate-200 group open:bg-white transition-all">
+                                    <summary className="p-4 font-bold text-slate-800 cursor-pointer list-none flex items-center justify-between">
+                                        <span>{date}</span>
+                                        <ChevronDown size={18} className="transition-transform group-open:rotate-180" />
+                                    </summary>
+                                    <div className="p-4 border-t border-slate-100 space-y-4">
+                                        {entries.map(entry => (
+                                            <div key={entry.id} className="border-l-4 border-blue-400 pl-4 py-2 bg-white rounded shadow-sm">
+                                                <div className="flex justify-between text-xs text-slate-500 mb-2">
+                                                    <span>{new Date(entry.timestamp).toLocaleString('pt-BR')}</span>
+                                                    <span className="font-bold text-slate-700">por {entry.user.name}</span>
+                                                </div>
+                                                {renderChanges(entry.changes, entry.action)}
                                             </div>
-                                            {entry.user && (
-                                                <p className="text-xs text-slate-500 mt-1">
-                                                    <span className="font-medium">Por:</span> {entry.user}
-                                                </p>
-                                            )}
-                                            {entry.timestamp && (
-                                                <p className="text-[9px] text-slate-400 mt-0.5">
-                                                    {new Date(entry.timestamp).toLocaleString('pt-BR')}
-                                                </p>
-                                            )}
-                                        </div>
+                                        ))}
                                     </div>
-                                ))
-                            ) : (
-                                <p className="text-slate-400 text-xs italic">Nenhuma movimentação registrada.</p>
-                            )}
-                        </div>
-                    </div>
-
-                    <div className="mb-6">
-                        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Defeitos relatados</h3>
-                        {renderList(order.defectsList || (order.defect ? [order.defect] : []), "Nenhum defeito registrado.")}
-                    </div>
-
-                    <div className="mb-6">
-                        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Soluções aplicadas</h3>
-                        {renderList(solutionItems, "Nenhuma solução registrada.")}
-                    </div>
-
-                    {order.photos && order.photos.length > 0 && (
-                        <div className="mb-6">
-                            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-                                <Camera size={14} /> Fotos ({order.photos.length})
-                            </h3>
-                            <div className="grid grid-cols-4 gap-2">
-                                {order.photos.map((url, idx) => (
-                                    <a
-                                        key={idx}
-                                        href={url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="block aspect-square rounded-lg overflow-hidden border border-slate-200 hover:opacity-80 transition"
-                                    >
-                                        <img src={url} alt={`Foto ${idx + 1}`} className="w-full h-full object-cover" />
-                                    </a>
-                                ))}
-                            </div>
+                                </details>
+                            ))}
                         </div>
                     )}
 
-                    <div className="flex justify-end">
-                        <button
-                            onClick={onClose}
-                            className="px-6 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition"
-                        >
+                    <div className="flex justify-end mt-6">
+                        <button onClick={onClose} className="px-6 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition">
                             Fechar
                         </button>
                     </div>
@@ -3210,21 +3356,36 @@ export default function MainApp() {
         try {
             const cleanData = prepareDataForSave();
 
-            let newDocRef = null;
+            let oldData = null;
+            let orderId = editingOrder?.firestoreId;
+
             if (editingOrder) {
-                await updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', editingOrder.firestoreId), cleanData);
+                // Buscar dados antigos antes de atualizar
+                const docRef = doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', editingOrder.firestoreId);
+                const docSnap = await getDoc(docRef);
+                oldData = docSnap.data();
+
+                await updateDoc(docRef, cleanData);
                 showNotification("OS atualizada com sucesso!", 'success');
             } else {
                 const docRef = await addDoc(collection(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders'), cleanData);
-                newDocRef = docRef; // Guarda a referência da nova OS
+                orderId = docRef.id;
                 showNotification("OS criada com sucesso!", 'success');
             }
 
+            // Salvar histórico
+            await saveHistoryEntry(
+                orderId,
+                editingOrder ? 'update' : 'create',
+                oldData,
+                cleanData
+            );
+
             // Se estamos criando uma OS associada a outra, atualizar a OS de origem
-            if (creatingLinkedToOrder && newDocRef) {
+            if (creatingLinkedToOrder && !editingOrder) {
                 const originOrder = ordersForUser.find(o => o.firestoreId === creatingLinkedToOrder);
                 if (originOrder) {
-                    const updatedLinked = [...(originOrder.linkedOS || []), newDocRef.id];
+                    const updatedLinked = [...(originOrder.linkedOS || []), orderId];
                     await updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', creatingLinkedToOrder), {
                         linkedOS: updatedLinked
                     });
@@ -4143,7 +4304,7 @@ export default function MainApp() {
                 });
             } catch (e) {
                 console.warn('Não foi possível carregar o logo:', e);
-                logoBase64 = ''; 
+                logoBase64 = '';
             }
 
             // Montar HTML com as imagens embutidas e estilos ajustados
