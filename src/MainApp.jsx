@@ -56,7 +56,7 @@ const useOutsideClick = (ref, callback) => {
 
 const EMPTY_FORM_DATA = {
     client: '', cnpj: '', contactPerson: '', address: '', email: '',
-    billingType: 'Avulso', maintenanceVisit: '',
+    billingType: '', maintenanceVisit: '',
     item: '', manufacturer: '', model: '', serial: '',
     equipmentObservation: '',
     quantity: '1',
@@ -929,6 +929,88 @@ const OrderActionsDropdown = ({ order, openModal, openViewModal, openNewWithClie
     );
 };
 
+const SuggestionInput = ({
+        value,
+        onChange,
+        suggestions,
+        placeholder,
+        className = "",
+        disabled = false,
+        onRemoveSuggestion, // nova prop
+        userRole // para saber se é admin
+    }) => {
+        const [showSuggestions, setShowSuggestions] = useState(false);
+        const dropdownRef = useRef(null);
+        const inputRef = useRef(null);
+
+        useOutsideClick(dropdownRef, () => setShowSuggestions(false));
+
+        const filteredSuggestions = suggestions
+            .filter(s => s.toLowerCase().includes(value.toLowerCase()))
+            .slice(0, 5);
+
+        return (
+            <div className="relative w-full">
+                <input
+                    ref={inputRef}
+                    type="text"
+                    className={`w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold ${className} ${disabled ? 'cursor-not-allowed opacity-70' : ''}`}
+                    value={value}
+                    onChange={onChange}
+                    onFocus={() => setShowSuggestions(true)}
+                    onBlur={(e) => {
+                        setTimeout(() => setShowSuggestions(false), 200);
+                        if (onBlur) onBlur(e);
+                    }}
+                    placeholder={placeholder}
+                    disabled={disabled}
+                    autoComplete="off"
+                />
+                {showSuggestions && filteredSuggestions.length > 0 && (
+                    <div
+                        ref={dropdownRef}
+                        className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2"
+                    >
+                        <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400 flex justify-between items-center">
+                            <span>Sugestões</span>
+                        </div>
+                        {filteredSuggestions.map((s, idx) => (
+                            <div
+                                key={idx}
+                                className="flex items-center justify-between p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700 group"
+                            >
+                                <span
+                                    className="flex-1"
+                                    onMouseDown={(e) => {
+                                        e.preventDefault();
+                                        onChange({ target: { value: s } });
+                                        setShowSuggestions(false);
+                                    }}
+                                >
+                                    {s}
+                                </span>
+                                {userRole === 'admin' && onRemoveSuggestion && (
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            e.preventDefault();
+                                            onRemoveSuggestion(s);
+                                        }}
+                                        className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                        title="Remover sugestão"
+                                    >
+                                        <X size={14} />
+                                    </button>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        );
+    };
+
 export default function MainApp() {
     // === AUTENTICAÇÃO ===
     const { user, userData, loading: authLoading, hasPermission, logout } = useAuth();
@@ -1006,11 +1088,13 @@ export default function MainApp() {
         const unsub = onSnapshot(
             collection(db, 'artifacts', finalAppId, 'public', 'data', 'hiddenSuggestions'),
             (snap) => {
-                const hidden = { defects: [], solutions: [] };
+                const hidden = { defects: [], solutions: [], billing: [], visit: [] };
                 snap.docs.forEach(doc => {
                     const data = doc.data();
                     if (data.type === 'defect') hidden.defects.push(data.value);
                     if (data.type === 'solution') hidden.solutions.push(data.value);
+                    if (data.type === 'billing') hidden.billing.push(data.value);
+                    if (data.type === 'visit') hidden.visit.push(data.value);
                 });
                 setHiddenSuggestions(hidden);
             },
@@ -1067,7 +1151,7 @@ export default function MainApp() {
     // --- ESTADO DO FORMULÁRIO OS (ATUALIZADO) ---
     const [formData, setFormData] = useState({
         client: '', cnpj: '', contactPerson: '', address: '', email: '',
-        billingType: 'Avulso', maintenanceVisit: '',
+        billingType: '', maintenanceVisit: '',
         item: '', manufacturer: '', model: '', serial: '',
         equipmentObservation: '',
         quantity: '1',
@@ -1233,6 +1317,29 @@ export default function MainApp() {
                 return [...prev, ...group];
             }
         });
+    };
+
+    const MaintenanceVisitSelect = ({ value, onChange, uniqueMaintenanceVisits }) => {
+        const defaultOptions = [
+            `1ª Visita de ${MESES[new Date().getMonth()]}`,
+            `2ª Visita de ${MESES[new Date().getMonth()]}`,
+            `3ª Visita de ${MESES[new Date().getMonth()]}`,
+            `4ª Visita de ${MESES[new Date().getMonth()]}`
+        ];
+
+        const suggestions = useMemo(() => {
+            const combined = [...new Set([...defaultOptions, ...(uniqueMaintenanceVisits || [])])];
+            return combined.sort();
+        }, [uniqueMaintenanceVisits, defaultOptions]);
+
+        return (
+            <SuggestionInput
+                value={value}
+                onChange={onChange}
+                suggestions={suggestions}
+                placeholder="Selecione ou digite a visita"
+            />
+        );
     };
 
     const SelectLinkedOS = ({ currentOSId, selectedIds, onChange }) => {
@@ -1702,7 +1809,29 @@ export default function MainApp() {
         setFieldErrors(prev => ({ ...prev, [field]: hasError }));
     };
 
+    const uniqueBillingTypes = useMemo(() => {
+        return billingOptions.filter(option => !hiddenSuggestions.billing?.includes(option));
+    }, [hiddenSuggestions.billing]);
+
+    const currentMonthVisits = useMemo(() => {
+        const monthName = MESES[new Date().getMonth()];
+        return [
+            `1ª Visita de ${monthName}`,
+            `2ª Visita de ${monthName}`,
+            `3ª Visita de ${monthName}`,
+            `4ª Visita de ${monthName}`
+        ].filter(visit => !hiddenSuggestions.visit?.includes(visit));
+    }, [hiddenSuggestions.visit]);
+
     // --- AUTOCOMPLETE: DADOS ÚNICOS (COM PADRONIZAÇÃO) ---
+
+    const uniqueMaintenanceVisits = useMemo(() => {
+        return [...new Set(orders
+            .filter(o => o.maintenanceVisit) // apenas OS que têm visita preenchida
+            .map(o => o.maintenanceVisit)
+        )].sort();
+    }, [orders]);
+
     const uniqueClients = useMemo(() => {
         const map = new Map();
         contracts.forEach(c => {
@@ -2307,7 +2436,7 @@ export default function MainApp() {
             setEditingOrder(null);
             setFormData({
                 client: '', cnpj: '', contactPerson: '', address: '', email: '',
-                billingType: 'Avulso', maintenanceVisit: '', item: '', manufacturer: '', model: '', serial: '',
+                billingType: '', maintenanceVisit: '', item: '', manufacturer: '', model: '', serial: '',
                 equipmentObservation: '',
                 quantity: '1',
                 defect: '', defectsList: [],
@@ -3495,7 +3624,7 @@ export default function MainApp() {
                     hiddenBy: user.uid
                 }
             );
-            showNotification(`Sugestão "${value}" removida da lista.`, 'success');
+            showNotification(`Sugestão "${value}" removida.`, 'success');
         } catch (error) {
             console.error('Erro ao ocultar sugestão:', error);
             showNotification('Erro ao remover sugestão.', 'error');
@@ -4744,7 +4873,7 @@ export default function MainApp() {
                                                                 openNewWithClient={handleNewOSWithClient}
                                                                 confirmDelete={confirmDelete}
                                                                 userData={userData}
-                                                                handleNewAssociatedOS={handleNewAssociatedOS} 
+                                                                handleNewAssociatedOS={handleNewAssociatedOS}
                                                                 hasPermission={hasPermission}
                                                                 isOpen={dropdownOpen === o.firestoreId}
                                                                 onOpenChange={(id) => setDropdownOpen(id)}
@@ -5591,33 +5720,35 @@ export default function MainApp() {
                                         </div>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             {isViewMode ? (
-                                                <div className={`w-full p-4 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-white'} border border-slate-200 rounded-2xl font-bold`}>
+                                                <div className="w-full p-4 bg-slate-50 cursor-not-allowed border border-slate-200 rounded-2xl font-bold">
                                                     {formData.billingType}
                                                 </div>
                                             ) : (
-                                                <AccessibleSelect
+                                                <SuggestionInput
                                                     value={formData.billingType}
-                                                    onChange={(e) => setFormData({ ...formData, billingType: e.target.value, maintenanceVisit: '' })}
-                                                    options={billingOptions}
-                                                    variant="default"
-                                                    label="Tipo de atendimento"
+                                                    onChange={(e) => setFormData({ ...formData, billingType: e.target.value })}
+                                                    suggestions={uniqueBillingTypes}
+                                                    placeholder="Selecione ou digite o tipo de atendimento"
+                                                    userRole={userData?.role}
+                                                    onRemoveSuggestion={(value) => handleHideSuggestion('billing', value)}
                                                 />
                                             )}
 
-                                            {formData.billingType === "Contrato de manutenção" && (
-                                                isViewMode ? (
-                                                    formData.maintenanceVisit && (
-                                                        <div className={`w-full p-4 ${isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-white'} border border-slate-200 rounded-2xl font-bold`}>
-                                                            {formData.maintenanceVisit}
-                                                        </div>
-                                                    )
-                                                ) : (
-                                                    <MaintenanceVisitSelect
-                                                        value={formData.maintenanceVisit}
-                                                        onChange={(e) => setFormData({ ...formData, maintenanceVisit: e.target.value })}
-                                                        billingType={formData.billingType}
-                                                    />
+                                            {isViewMode ? (
+                                                formData.maintenanceVisit && (
+                                                    <div className="w-full p-4 bg-slate-50 cursor-not-allowed border border-slate-200 rounded-2xl font-bold">
+                                                        {formData.maintenanceVisit}
+                                                    </div>
                                                 )
+                                            ) : (
+                                                <SuggestionInput
+                                                    value={formData.maintenanceVisit}
+                                                    onChange={(e) => setFormData({ ...formData, maintenanceVisit: e.target.value })}
+                                                    suggestions={currentMonthVisits}
+                                                    placeholder="Selecione ou digite a visita"
+                                                    userRole={userData?.role}
+                                                    onRemoveSuggestion={(value) => handleHideSuggestion('visit', value)}
+                                                />
                                             )}
                                         </div>
                                     </div>
