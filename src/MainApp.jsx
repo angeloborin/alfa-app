@@ -1286,6 +1286,19 @@ export default function MainApp() {
         { value: "Em rota de entrega", label: "Entrega", color: "#a855f7" }, // violeta
         { value: "Finalizado", label: "Finalizado", color: "#10b981" }     // verde esmeralda
     ];
+
+    const statusColors = {
+        'Recebido': '#4ea5d3',
+        'Em inspeção': '#8b5cf6',
+        'Em orçamento': '#f8ca55',
+        'Aguardando aprovação do orçamento': '#1e40af',
+        'Em manutenção': '#6b8e23',
+        'Em rota de entrega': '#a855f7',
+        'Finalizado': '#10b981',
+        'Orçamento recusado': '#ef4444',
+    };
+
+
     const statusOptions = [...TIMELINE_STEPS.map(s => s.value), "Orçamento recusado"];
     const billingOptions = ["Avulso", "Cortesia (visita sem custo)", "Contrato de manutenção"];
     const currentMonthName = MESES[new Date().getMonth()];
@@ -4968,10 +4981,14 @@ export default function MainApp() {
                                                         <div className="text-xs font-bold text-slate-500 uppercase tracking-tighter">{o.billingType}</div>
                                                     </td>
                                                     <td className="px-8 py-6">
-                                                        <div className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase inline-block border ${o.status === 'Orçamento recusado'
-                                                            ? 'bg-red-100 text-red-600 border-red-200'
-                                                            : 'bg-slate-100 text-slate-600 border-slate-200'
-                                                            }`}>
+                                                        <div
+                                                            className="px-4 py-2 rounded-xl text-[10px] font-black uppercase inline-block border"
+                                                            style={{
+                                                                backgroundColor: statusColors[o.status] + '20', // 12% opacity
+                                                                borderColor: statusColors[o.status] + '40',    // 25% opacity
+                                                                color: statusColors[o.status]
+                                                            }}
+                                                        >
                                                             {o.status}
                                                         </div>
                                                         <div className="text-[9px] text-slate-400 mt-1 font-medium">
@@ -6820,8 +6837,8 @@ export default function MainApp() {
                                                         >
                                                             <div
                                                                 className={`w-8 h-8 rounded-full flex items-center justify-center border-2 transition-all duration-300 shadow-sm ${isCompleted
-                                                                        ? 'text-white scale-110'
-                                                                        : 'bg-white border-slate-300 text-slate-300 group-hover:border-blue-300'
+                                                                    ? 'text-white scale-110'
+                                                                    : 'bg-white border-slate-300 text-slate-300 group-hover:border-blue-300'
                                                                     }`}
                                                                 style={isCompleted ? { backgroundColor: step.color, borderColor: step.color } : {}}
                                                             >
