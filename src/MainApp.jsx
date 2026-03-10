@@ -1278,15 +1278,14 @@ export default function MainApp() {
     const [uploadingPhotos, setUploadingPhotos] = useState(false);
 
     const TIMELINE_STEPS = [
-        { value: "Recebido", label: "Recebido" },
-        { value: "Em inspeção", label: "Inspeção" },
-        { value: "Em orçamento", label: "Orçamento" },
-        { value: "Aguardando aprovação do orçamento", label: "Aprovação" },
-        { value: "Em manutenção", label: "Manutenção" },
-        { value: "Em rota de entrega", label: "Entrega" },
-        { value: "Finalizado", label: "Finalizado" }
+        { value: "Recebido", label: "Recebido", color: "#4ea5d3" },       // azul claro
+        { value: "Em inspeção", label: "Inspeção", color: "#8b5cf6" },    // roxo
+        { value: "Em orçamento", label: "Orçamento", color: "#f8ca55" },  // amarelo
+        { value: "Aguardando aprovação do orçamento", label: "Aprovação", color: "#1e40af" }, // azul escuro
+        { value: "Em manutenção", label: "Manutenção", color: "#6b8e23" }, // verde musgo
+        { value: "Em rota de entrega", label: "Entrega", color: "#a855f7" }, // violeta
+        { value: "Finalizado", label: "Finalizado", color: "#10b981" }     // verde esmeralda
     ];
-
     const statusOptions = [...TIMELINE_STEPS.map(s => s.value), "Orçamento recusado"];
     const billingOptions = ["Avulso", "Cortesia (visita sem custo)", "Contrato de manutenção"];
     const currentMonthName = MESES[new Date().getMonth()];
@@ -6819,7 +6818,13 @@ export default function MainApp() {
                                                             className="relative z-10 flex flex-col items-center gap-3 cursor-pointer group min-w-[80px]"
                                                             onClick={isViewMode ? undefined : () => setFormData({ ...formData, status: step.value, statusDate: new Date().toISOString().split('T')[0] })}
                                                         >
-                                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 transition-all duration-300 shadow-sm ${isCompleted ? 'bg-blue-600 border-blue-600 text-white scale-110' : 'bg-white border-slate-300 text-slate-300 group-hover:border-blue-300'}`}>
+                                                            <div
+                                                                className={`w-8 h-8 rounded-full flex items-center justify-center border-2 transition-all duration-300 shadow-sm ${isCompleted
+                                                                        ? 'text-white scale-110'
+                                                                        : 'bg-white border-slate-300 text-slate-300 group-hover:border-blue-300'
+                                                                    }`}
+                                                                style={isCompleted ? { backgroundColor: step.color, borderColor: step.color } : {}}
+                                                            >
                                                                 {isCompleted ? <Check size={14} strokeWidth={4} /> : <div className="w-2 h-2 rounded-full bg-slate-200" />}
                                                             </div>
                                                             <div className="text-center flex flex-col items-center">
