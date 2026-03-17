@@ -1157,7 +1157,8 @@ export default function MainApp() {
     const [clients, setClients] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
-    const [sortOrder, setSortOrder] = useState('desc');
+    const [sortField, setSortField] = useState('osNumber');
+    const [sortDirection, setSortDirection] = useState('desc');
 
     const [rangeInput, setRangeInput] = useState('');
     const [showRangeInput, setShowRangeInput] = useState(false);
@@ -2065,13 +2066,24 @@ export default function MainApp() {
     // --- ORDENAÇÃO DE OS ---
     const sortedOrders = useMemo(() => {
         return [...ordersForUser].sort((a, b) => {
-            if (sortOrder === 'desc') {
-                return b.osNumber?.localeCompare(a.osNumber);
-            } else {
-                return a.osNumber?.localeCompare(b.osNumber);
+            let aVal = a[sortField];
+            let bVal = b[sortField];
+
+            // Tratar valores nulos ou indefinidos
+            if (aVal == null) aVal = '';
+            if (bVal == null) bVal = '';
+
+            // Para campos de texto, comparar sem diferenciar maiúsculas
+            if (typeof aVal === 'string' && typeof bVal === 'string') {
+                aVal = aVal.toLowerCase();
+                bVal = bVal.toLowerCase();
             }
+
+            if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+            if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
+            return 0;
         });
-    }, [ordersForUser, sortOrder]);
+    }, [ordersForUser, sortField, sortDirection]);
 
 
     // --- CÁLCULO FINANCEIRO GLOBAL ---
@@ -4619,6 +4631,7 @@ export default function MainApp() {
             <main className="flex-1 p-4 md:p-8 overflow-y-auto h-screen">
                 {currentPage === 'os' && canAccessPage() && (
                     <div className="space-y-8 animate-in fade-in duration-500 max-w-7xl mx-auto">
+                        {/* Cabeçalho fixo da página (não rola) */}
                         <div className="flex flex-col">
                             <h2 className="text-3xl font-black text-slate-900 tracking-tighter">Gestão de OS</h2>
                             <p className="text-slate-500 text-sm font-medium">Fluxo operacional hospitalar</p>
@@ -4769,8 +4782,8 @@ export default function MainApp() {
                                     <button
                                         onClick={() => setShowRangeInput(!showRangeInput)}
                                         className={`p-5 rounded-2xl font-bold flex items-center justify-center gap-2 transition-colors ${showRangeInput
-                                            ? 'bg-blue-600 text-white shadow-xl shadow-blue-200'
-                                            : 'bg-white text-slate-600 shadow-xl shadow-slate-200/50 hover:bg-slate-50'
+                                                ? 'bg-blue-600 text-white shadow-xl shadow-blue-200'
+                                                : 'bg-white text-slate-600 shadow-xl shadow-slate-200/50 hover:bg-slate-50'
                                             }`}
                                         title="Seleção por intervalo"
                                     >
@@ -4779,7 +4792,7 @@ export default function MainApp() {
                                     </button>
 
                                     {showRangeInput && (
-                                        <div className="fixed inset-x-4 top-20 sm:absolute sm:inset-x-auto sm:top-full sm:right-0 sm:mt-2 bg-white rounded-2xl shadow-2xl border border-slate-100 p-4 w-auto sm:w-80 animate-in slide-in-from-top-2 z-50    max-h-[80vh] overflow-y-auto">
+                                        <div className="fixed inset-x-4 top-20 sm:absolute sm:inset-x-auto sm:top-full sm:right-0 sm:mt-2 bg-white rounded-2xl shadow-2xl border border-slate-100 p-4 w-auto sm:w-80 animate-in slide-in-from-top-2 z-50 max-h-[80vh] overflow-y-auto">
                                             <div className="space-y-3">
                                                 <div className="flex items-center justify-between">
                                                     <h4 className="text-sm font-bold text-slate-700">Seleção por Intervalo</h4>
@@ -4843,8 +4856,15 @@ export default function MainApp() {
                                     )}
                                 </div>
 
-                                <button onClick={() => setSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')} className="bg-white p-5 rounded-2xl shadow-xl shadow-slate-200/50 border-none hover:bg-slate-50 transition-colors text-slate-600" title={sortOrder === 'desc' ? "Mais Recentes Primeiro" : "Mais Antigos Primeiro"}>
-                                    {sortOrder === 'desc' ? <ArrowDownWideNarrow size={24} /> : <ArrowUpNarrowWide size={24} />}
+                                <button
+                                    onClick={() => {
+                                        setSortField('osNumber');
+                                        setSortDirection(prev => (prev === 'desc' ? 'asc' : 'desc'));
+                                    }}
+                                    className="bg-white p-5 rounded-2xl shadow-xl shadow-slate-200/50 border-none hover:bg-slate-50 transition-colors text-slate-600"
+                                    title={sortDirection === 'desc' ? 'Mais Recentes Primeiro' : 'Mais Antigos Primeiro'}
+                                >
+                                    {sortDirection === 'desc' ? <ArrowDownWideNarrow size={24} /> : <ArrowUpNarrowWide size={24} />}
                                 </button>
 
                                 {selectedOrders.length === 0 && hasPermission('canEditOS') && (
@@ -4858,12 +4878,13 @@ export default function MainApp() {
                             </div>
                         </div>
 
-                        <div className="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden overflow-x-auto relative z-0">
-                            <div className="overflow-x-auto">
+                        {/* Container da tabela com altura máxima e rolagem */}
+                        <div className="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden">
+                            <div className="max-h-[calc(100vh-280px)] overflow-y-auto">
                                 <table className="w-full text-left min-w-[900px]">
-                                    <thead className="bg-slate-50/50 border-b text-[10px] font-black uppercase text-slate-400 tracking-widest">
-                                        <tr>
-                                            <th className="px-6 py-6 text-center w-12">
+                                    <thead className="bg-white sticky top-0 z-10 shadow-sm">
+                                        <tr className="border-b text-[10px] font-black uppercase text-slate-400 tracking-widest">
+                                            <th className="px-6 py-6 text-center w-12 bg-white">
                                                 <input
                                                     type="checkbox"
                                                     className="w-4 h-4 rounded border-slate-300 text-blue-600"
@@ -4881,7 +4902,6 @@ export default function MainApp() {
                                                         });
 
                                                         if (e.target.checked) {
-                                                            // Selecionar todas as visíveis E suas linked
                                                             const ids = new Set();
                                                             visibleOrders.forEach(o => {
                                                                 ids.add(o.firestoreId);
@@ -4891,7 +4911,6 @@ export default function MainApp() {
                                                             });
                                                             setSelectedOrders(Array.from(ids));
                                                         } else {
-                                                            // Desselecionar apenas as visíveis (as linked de outras podem permanecer)
                                                             const visibleIds = visibleOrders.map(o => o.firestoreId);
                                                             setSelectedOrders(prev => prev.filter(id => !visibleIds.includes(id)));
                                                         }
@@ -4911,12 +4930,77 @@ export default function MainApp() {
                                                     }
                                                 />
                                             </th>
-                                            <th className="px-8 py-6">OS</th>
-                                            <th className="px-8 py-6">Cliente</th>
-                                            <th className="px-8 py-6">Equipamento</th>
-                                            <th className="px-8 py-6">Tipo</th>
-                                            <th className="px-8 py-6">Status</th>
-                                            <th className="px-8 py-6 text-right">Ações</th>
+                                            <th className="px-8 py-6 bg-white">
+                                                <button
+                                                    onClick={() => {
+                                                        setSortField('osNumber');
+                                                        setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
+                                                    }}
+                                                    className="flex items-center gap-1 hover:text-blue-600"
+                                                >
+                                                    OS
+                                                    {sortField === 'osNumber' && (
+                                                        sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
+                                                    )}
+                                                </button>
+                                            </th>
+                                            <th className="px-8 py-6 bg-white">
+                                                <button
+                                                    onClick={() => {
+                                                        setSortField('client');
+                                                        setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
+                                                    }}
+                                                    className="flex items-center gap-1 hover:text-blue-600"
+                                                >
+                                                    Cliente
+                                                    {sortField === 'client' && (
+                                                        sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
+                                                    )}
+                                                </button>
+                                            </th>
+                                            <th className="px-8 py-6 bg-white">
+                                                <button
+                                                    onClick={() => {
+                                                        setSortField('item');
+                                                        setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
+                                                    }}
+                                                    className="flex items-center gap-1 hover:text-blue-600"
+                                                >
+                                                    Equipamento
+                                                    {sortField === 'item' && (
+                                                        sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
+                                                    )}
+                                                </button>
+                                            </th>
+                                            <th className="px-8 py-6 bg-white">
+                                                <button
+                                                    onClick={() => {
+                                                        setSortField('billingType');
+                                                        setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
+                                                    }}
+                                                    className="flex items-center gap-1 hover:text-blue-600"
+                                                >
+                                                    Tipo
+                                                    {sortField === 'billingType' && (
+                                                        sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
+                                                    )}
+                                                </button>
+                                            </th>
+                                            <th className="px-8 py-6 bg-white">
+                                                <button
+                                                    onClick={() => {
+                                                        setSortField('status');
+                                                        setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
+                                                    }}
+                                                    className="flex items-center gap-1 hover:text-blue-600"
+                                                >
+                                                    Status
+                                                    {sortField === 'status' && (
+                                                        sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
+                                                    )}
+                                                </button>
+                                            </th>
+                                            <th className="px-8 py-6 text-right bg-white">Ações</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-50">
@@ -4946,14 +5030,14 @@ export default function MainApp() {
                                                 <tr
                                                     key={o.firestoreId}
                                                     className={`hover:bg-blue-50/30 transition-colors group cursor-pointer ${selectedOrders.includes(o.firestoreId) ? 'bg-blue-50/50' : ''}`}
-                                                    onClick={() => toggleOrderSelectionWithLinked(o.firestoreId)} // ✅ função atualizada
+                                                    onClick={() => toggleOrderSelectionWithLinked(o.firestoreId)}
                                                 >
                                                     <td className="px-6 py-4 text-center">
                                                         <input
                                                             type="checkbox"
                                                             className="w-4 h-4 rounded border-slate-300 text-blue-600"
                                                             checked={selectedOrders.includes(o.firestoreId)}
-                                                            onChange={() => toggleOrderSelectionWithLinked(o.firestoreId)} // ✅ função atualizada
+                                                            onChange={() => toggleOrderSelectionWithLinked(o.firestoreId)}
                                                             onClick={(e) => e.stopPropagation()}
                                                         />
                                                     </td>
@@ -4984,8 +5068,8 @@ export default function MainApp() {
                                                         <div
                                                             className="px-4 py-2 rounded-xl text-[10px] font-black uppercase inline-block border"
                                                             style={{
-                                                                backgroundColor: statusColors[o.status] + '20', // 12% opacity
-                                                                borderColor: statusColors[o.status] + '40',    // 25% opacity
+                                                                backgroundColor: statusColors[o.status] + '20',
+                                                                borderColor: statusColors[o.status] + '40',
                                                                 color: statusColors[o.status]
                                                             }}
                                                         >
@@ -4997,7 +5081,6 @@ export default function MainApp() {
                                                     </td>
                                                     <td className="px-8 py-6 text-right">
                                                         <div className="flex justify-end items-center gap-2">
-                                                            {/* Botões de aprovação/recusa para clientes */}
                                                             {userData?.role === 'client' &&
                                                                 (o.status === 'Em orçamento' || o.status === 'Aguardando aprovação do orçamento') && (
                                                                     <>
