@@ -9,8 +9,16 @@ import {
     Font,
     Link,
 } from '@react-pdf/renderer';
+
+import Hypher from "hypher";
+import pt from "hyphenation.pt";
+
 import logo from '../assets/logo.png';
 import assinatura from '../assets/assinatura.jpg';
+
+
+// cria o hifenizador em português
+const hypher = new Hypher(pt);
 
 try {
     Font.register({
@@ -22,6 +30,12 @@ try {
             { src: 'https://cdnjs.cloudflare.com/ajax/libs/ink/3.1.10/fonts/Roboto/roboto-bold-webfont.ttf', fontWeight: 700 },
         ],
     });
+
+    // separação silábica automática
+    Font.registerHyphenationCallback((word) => {
+        return hypher.hyphenate(word);
+    });
+
 } catch (e) {
     console.log('Font registration failed:', e);
 }
@@ -110,6 +124,7 @@ const styles = StyleSheet.create({
         fontSize: 7,
         lineHeight: 1.4,
         marginTop: 1,
+        hyphenationFactor: 1,
     },
     itemsTable: {
         width: '100%',
@@ -248,6 +263,7 @@ const styles = StyleSheet.create({
         lineHeight: 1.2,
         minHeight: 35,
         flex: 1,
+        hyphenationFactor: 1,
     },
     defectSolutionItem: {
         marginBottom: 1,
@@ -532,7 +548,7 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
 
                                         <View style={[styles.tableCell, mostrarValor ? styles.cellObs : styles.cellObs_noValor]}>
                                             <View style={styles.observationBox}>
-                                                <Text>{observation || 'Sem observações'}</Text>
+                                                <Text wrap>{observation || 'Sem observações'}</Text>
                                             </View>
                                         </View>
 
