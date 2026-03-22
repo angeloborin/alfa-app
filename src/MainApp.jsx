@@ -11,7 +11,7 @@ import {
     ArrowUpRight, ArrowDownRight, Percent, FileSignature,
     CheckSquare, CalendarDays, Receipt, Eye, EyeOff, Shield, LogOut,
     ArrowDownWideNarrow, ArrowUpNarrowWide, Check, ArrowRight,
-    FileText, Upload, Image as ImageIcon, Camera, MoreVertical, Link2
+    FileText, Upload, Image as ImageIcon, Camera, MoreVertical, Link2, History
 } from 'lucide-react';
 import {
     collection, addDoc, updateDoc, deleteDoc,
@@ -1064,6 +1064,13 @@ export default function MainApp() {
     const [showAddBoletoInput, setShowAddBoletoInput] = useState(false);
     const [newBoletoOption, setNewBoletoOption] = useState('');
 
+    const [historySearchSerial, setHistorySearchSerial] = useState('');
+    const [historyFilteredOrders, setHistoryFilteredOrders] = useState([]);
+    const [historyDropdownOpen, setHistoryDropdownOpen] = useState(null);
+    const [showHistorySerialSuggestions, setShowHistorySerialSuggestions] = useState(false);
+    const historySerialInputRef = useRef(null);
+
+
     const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
     const [selectedOrderForHistory, setSelectedOrderForHistory] = useState(null);
 
@@ -1089,6 +1096,8 @@ export default function MainApp() {
     const [showStatusSearchDropdown, setShowStatusSearchDropdown] = useState(false);
 
     // Adicione estes hooks junto com os outros hooks
+    useOutsideClick(historySerialInputRef, () => setShowHistorySerialSuggestions(false));
+    
     useOutsideClick(searchDropdownRef, () => {
         if (showSearchDropdown) {
             setShowSearchDropdown(false);
@@ -1492,6 +1501,22 @@ export default function MainApp() {
         const [year, month, day] = dateString.split('-');
         if (!year || !month || !day) return dateString; // fallback
         return `${day}/${month}/${year}`;
+    };
+
+    const handleHistorySearch = (e) => {
+        e.preventDefault();
+        if (!historySearchSerial.trim()) {
+            showNotification('Digite um número de série para buscar', 'warning');
+            return;
+        }
+
+        const filtered = orders.filter(o =>
+            o.serial && o.serial.toLowerCase().includes(historySearchSerial.trim().toLowerCase())
+        );
+        setHistoryFilteredOrders(filtered);
+        if (filtered.length === 0) {
+            showNotification('Nenhuma OS encontrada com esse número de série', 'info');
+        }
     };
 
     const handleNewAssociatedOS = (order) => {
@@ -4568,11 +4593,13 @@ export default function MainApp() {
                         <>
                             <NavItem icon={<LayoutDashboard size={isSidebarOpen ? 20 : 22} />} label="Painel de OS" active={currentPage === 'os'} onClick={() => setCurrentPage('os')} isSidebarOpen={isSidebarOpen} />
                             <NavItem icon={<PieChart size={isSidebarOpen ? 20 : 22} />} label="Painel de Status" active={currentPage === 'status'} onClick={() => setCurrentPage('status')} isSidebarOpen={isSidebarOpen} />
+
                         </>
                     ) : (
                         <>
                             <NavItem icon={<LayoutDashboard size={isSidebarOpen ? 20 : 22} />} label="Painel de OS" active={currentPage === 'os'} onClick={() => setCurrentPage('os')} isSidebarOpen={isSidebarOpen} />
                             <NavItem icon={<PieChart size={isSidebarOpen ? 20 : 22} />} label="Painel de Status" active={currentPage === 'status'} onClick={() => setCurrentPage('status')} isSidebarOpen={isSidebarOpen} />
+                            <NavItem icon={<History size={isSidebarOpen ? 20 : 22} />} label="Histórico do produto" active={currentPage === 'product-history'} onClick={() => setCurrentPage('product-history')} isSidebarOpen={isSidebarOpen} />
                             <NavItem icon={<DollarSign size={isSidebarOpen ? 20 : 22} />} label="Financeiro" active={currentPage === 'financial'} onClick={() => setCurrentPage('financial')} isSidebarOpen={isSidebarOpen} />
                             <NavItem icon={<FileSignature size={isSidebarOpen ? 20 : 22} />} label="Contratos" active={currentPage === 'contracts'} onClick={() => setCurrentPage('contracts')} isSidebarOpen={isSidebarOpen} />
                             <NavItem icon={<Boxes size={isSidebarOpen ? 20 : 22} />} label="Inventário" active={currentPage === 'inventory'} onClick={() => setCurrentPage('inventory')} isSidebarOpen={isSidebarOpen} />
@@ -4782,8 +4809,8 @@ export default function MainApp() {
                                     <button
                                         onClick={() => setShowRangeInput(!showRangeInput)}
                                         className={`p-5 rounded-2xl font-bold flex items-center justify-center gap-2 transition-colors ${showRangeInput
-                                                ? 'bg-blue-600 text-white shadow-xl shadow-blue-200'
-                                                : 'bg-white text-slate-600 shadow-xl shadow-slate-200/50 hover:bg-slate-50'
+                                            ? 'bg-blue-600 text-white shadow-xl shadow-blue-200'
+                                            : 'bg-white text-slate-600 shadow-xl shadow-slate-200/50 hover:bg-slate-50'
                                             }`}
                                         title="Seleção por intervalo"
                                     >
@@ -5697,6 +5724,156 @@ export default function MainApp() {
                                         </p>
                                     </div>
                                 )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {currentPage === 'product-history' && userData?.role === 'admin' && (
+                    <div className="space-y-8 animate-in fade-in duration-500 max-w-7xl mx-auto">
+                        <div className="flex flex-col">
+                            <h2 className="text-3xl font-black text-slate-900 tracking-tighter">Histórico do produto</h2>
+                            <p className="text-slate-500 text-sm font-medium">Busque um equipamento pelo número de série</p>
+                        </div>
+
+                        {/* Formulário de busca */}
+                        <div className="bg-white rounded-2xl shadow-xl border border-slate-100 p-6">
+                            <form onSubmit={handleHistorySearch} className="flex flex-col sm:flex-row gap-4">
+                                <div className="flex-1">
+                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Número de Série (NS)</label>
+                                    <div className="relative" ref={historySerialInputRef}>
+                                        <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400" size={20} />
+                                        <input
+                                            type="text"
+                                            placeholder="Digite o número de série do equipamento..."
+                                            className="w-full pl-12 pr-4 py-4 rounded-2xl border border-slate-200 focus:ring-4 focus:ring-blue-500/10 outline-none font-medium"
+                                            value={historySearchSerial}
+                                            onChange={(e) => {
+                                                setHistorySearchSerial(e.target.value);
+                                                setShowHistorySerialSuggestions(true);
+                                            }}
+                                            onFocus={() => setShowHistorySerialSuggestions(true)}
+                                            onBlur={() => setTimeout(() => setShowHistorySerialSuggestions(false), 200)}
+                                        />
+                                        {showHistorySerialSuggestions && historySearchSerial && uniqueSerials.filter(s => s.toLowerCase().includes(historySearchSerial.toLowerCase())).length > 0 && (
+                                            <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
+                                                <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400">Sugestões de NS</div>
+                                                {uniqueSerials
+                                                    .filter(s => s.toLowerCase().includes(historySearchSerial.toLowerCase()))
+                                                    .slice(0, 8)
+                                                    .map((s, idx) => {
+                                                        // Busca o equipamento associado para mostrar detalhes adicionais
+                                                        const orderWithSerial = orders.find(o => o.serial === s);
+                                                        return (
+                                                            <div
+                                                                key={idx}
+                                                                className="p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700 font-mono font-bold"
+                                                                onMouseDown={(e) => {
+                                                                    e.preventDefault();
+                                                                    setHistorySearchSerial(s);
+                                                                    setShowHistorySerialSuggestions(false);
+                                                                    // (Opcional) Executar busca automaticamente ao selecionar
+                                                                    // handleHistorySearch();
+                                                                }}
+                                                            >
+                                                                {s}
+                                                                {orderWithSerial && (
+                                                                    <div className="text-xs text-slate-400 font-normal mt-1">
+                                                                        {orderWithSerial.item} - {orderWithSerial.manufacturer} {orderWithSerial.model}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="flex items-end">
+                                    <button
+                                        type="submit"
+                                        className="bg-blue-600 text-white px-8 py-4 rounded-2xl font-bold hover:bg-blue-700 transition-colors shadow-xl shadow-blue-200 flex items-center gap-2"
+                                    >
+                                        <Search size={20} /> Buscar
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+
+                        {/* Tabela de resultados */}
+                        <div className="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden">
+                            <div className="max-h-[calc(100vh-280px)] overflow-y-auto">
+                                <table className="w-full text-left min-w-[900px]">
+                                    <thead className="bg-white sticky top-0 z-10 shadow-sm">
+                                        <tr className="border-b text-[10px] font-black uppercase text-slate-400 tracking-widest">
+                                            <th className="px-8 py-6 bg-white">OS</th>
+                                            <th className="px-8 py-6 bg-white">Data</th>
+                                            <th className="px-8 py-6 bg-white">Tipo</th>
+                                            <th className="px-8 py-6 bg-white">Status</th>
+                                            <th className="px-8 py-6 text-right bg-white">Ações</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-50">
+                                        {historyFilteredOrders.length === 0 ? (
+                                            <tr>
+                                                <td colSpan="5" className="p-20 text-center text-slate-400">
+                                                    Nenhum resultado encontrado. Digite um número de série e clique em Buscar.
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            historyFilteredOrders.map((o) => (
+                                                <tr
+                                                    key={o.firestoreId}
+                                                    className="hover:bg-blue-50/30 transition-colors group"
+                                                >
+                                                    <td className="px-8 py-6">
+                                                        <div className="font-black text-blue-700 text-lg">{o.osNumber}</div>
+                                                    </td>
+                                                    <td className="px-8 py-6">
+                                                        <div className="text-sm font-medium text-slate-700">
+                                                            {formatDateBR(o.statusDate)}
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-8 py-6">
+                                                        <div className="text-xs font-bold text-slate-500 uppercase tracking-tighter">
+                                                            {o.billingType}
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-8 py-6">
+                                                        <div
+                                                            className="px-4 py-2 rounded-xl text-[10px] font-black uppercase inline-block border"
+                                                            style={{
+                                                                backgroundColor: statusColors[o.status] + '20',
+                                                                borderColor: statusColors[o.status] + '40',
+                                                                color: statusColors[o.status]
+                                                            }}
+                                                        >
+                                                            {o.status}
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-8 py-6 text-right">
+                                                        <OrderActionsDropdown
+                                                            order={o}
+                                                            openModal={openModal}
+                                                            openViewModal={openViewModal}
+                                                            openNewWithClient={handleNewOSWithClient}
+                                                            confirmDelete={confirmDelete}
+                                                            userData={userData}
+                                                            handleNewAssociatedOS={handleNewAssociatedOS}
+                                                            hasPermission={hasPermission}
+                                                            isOpen={historyDropdownOpen === o.firestoreId}
+                                                            onOpenChange={(id) => setHistoryDropdownOpen(id)}
+                                                            openHistoryModal={(order) => {
+                                                                setSelectedOrderForHistory(order);
+                                                                setIsHistoryModalOpen(true);
+                                                            }}
+                                                        />
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                     </div>
