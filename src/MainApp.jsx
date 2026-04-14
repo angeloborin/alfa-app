@@ -1,32 +1,31 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
-    Plus, Search, Edit2, Trash2, Save, X, FileSpreadsheet,
-    AlertCircle, Clock, Truck, Package, Building2, User,
-    MapPin, Loader2, ExternalLink, CalendarCheck,
-    Wrench, RefreshCw, Printer, Mail, Globe, Calendar,
+    Plus, Search, Trash2, Save, X,
+    AlertCircle, Clock, Truck, Package, User,
+    Loader2, ExternalLink, CalendarCheck,
+    Wrench, RefreshCw, Printer,
     DollarSign, ListPlus, ChevronRight, LayoutDashboard,
     Boxes, Users, Info, Menu, ShieldAlert, PieChart,
-    BarChart3, TrendingUp, Wallet, CheckCircle2, Calculator,
+    BarChart3, TrendingUp, CheckCircle2, Calculator,
     ChevronDown, ChevronUp, Filter, MousePointerClick,
     ArrowUpRight, ArrowDownRight, Percent, FileSignature,
-    CheckSquare, CalendarDays, Receipt, Eye, EyeOff, Shield, LogOut,
+    CheckSquare, CalendarDays, Eye, EyeOff, Shield, LogOut,
     ArrowDownWideNarrow, ArrowUpNarrowWide, Check, ArrowRight,
-    FileText, Upload, Image as ImageIcon, Camera, MoreVertical, Link2, History
+    FileText, Upload, Image as ImageIcon, MoreVertical, Link2, History, Edit2
 } from 'lucide-react';
 import {
     collection, addDoc, updateDoc, deleteDoc,
     doc, onSnapshot, setDoc, getDoc, query, orderBy
 } from 'firebase/firestore';
-import { auth, db, storage } from "./firebase/firebase";
+import { db, storage } from "./firebase/firebase";
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { useAuth } from "./auth/AuthContext";
 import UserManagement from './components/UserManagement';
 import Login from './components/Login';
 import logo from './assets/logo.png';
 import { saveAs } from 'file-saver';
-import { PDFDownloadLink, PDFViewer, BlobProvider } from '@react-pdf/renderer';
-import DocumentoPDF from './components/DocumentoPDF';
 import { pdf } from '@react-pdf/renderer';
+import DocumentoPDF from './components/DocumentoPDF';
 
 const finalAppId = 'alfa-tecnologia-hospitalar-prod';
 
@@ -37,10 +36,11 @@ const MESES = [
 
 // Hook para detectar cliques fora do elemento
 const useOutsideClick = (ref, callback) => {
+    const stableCallback = useCallback(callback, [callback]);
     useEffect(() => {
         const handleClickOutside = (event) => {
             if (ref.current && !ref.current.contains(event.target)) {
-                callback();
+                stableCallback();
             }
         };
 
@@ -51,7 +51,7 @@ const useOutsideClick = (ref, callback) => {
             document.removeEventListener('mousedown', handleClickOutside);
             document.removeEventListener('touchstart', handleClickOutside);
         };
-    }, [ref, callback]);
+    }, [ref, stableCallback]);
 };
 
 const EMPTY_FORM_DATA = {
@@ -61,7 +61,7 @@ const EMPTY_FORM_DATA = {
     equipmentObservation: '',
     quantity: '1',
     defect: '', defectsList: [],
-    solutionTypeF: 'Preenchimento manual',
+    solutionType: 'Preenchimento manual',
     solution: '', manualSolutionsList: [],
     benchRepairList: [],
     solutionsList: [],
@@ -818,11 +818,11 @@ const PaymentConditionsModal = ({
 const OrderActionsDropdown = ({ order, openModal, openViewModal, openNewWithClient, handleNewAssociatedOS, confirmDelete, userData, hasPermission, isOpen, onOpenChange, openHistoryModal }) => {
     const dropdownRef = useRef(null);
 
-    useOutsideClick(dropdownRef, () => {
-        if (isOpen) {
-            onOpenChange(null);
-        }
-    });
+    const handleOutside = useCallback(() => {
+        if (isOpen) onOpenChange(null);
+    }, [isOpen, onOpenChange]);
+
+    useOutsideClick(dropdownRef, handleOutside);
 
     return (
         <div className="relative" ref={dropdownRef}>
@@ -838,11 +838,11 @@ const OrderActionsDropdown = ({ order, openModal, openViewModal, openNewWithClie
             </button>
 
             {isOpen && (
-                <div className="absolute right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-50 min-w-[160px] animate-in fade-in slide-in-from-top-2">
-                    {/* Item: Exibir */}
+                <div className="absolute right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-[200] min-w-[160px] animate-in fade-in slide-in-from-top-2">
                     <button
-                        onClick={(e) => {
+                        onMouseDown={(e) => {
                             e.stopPropagation();
+                            e.preventDefault();
                             onOpenChange(null);
                             openViewModal(order);
                         }}
@@ -852,13 +852,12 @@ const OrderActionsDropdown = ({ order, openModal, openViewModal, openNewWithClie
                         Exibir
                     </button>
 
-                    {/* Itens apenas para ADMIN */}
                     {userData?.role !== 'client' && (
                         <>
-                            {/* Item: Histórico */}
                             <button
-                                onClick={(e) => {
+                                onMouseDown={(e) => {
                                     e.stopPropagation();
+                                    e.preventDefault();
                                     onOpenChange(null);
                                     openHistoryModal(order);
                                 }}
@@ -869,8 +868,9 @@ const OrderActionsDropdown = ({ order, openModal, openViewModal, openNewWithClie
                             </button>
 
                             <button
-                                onClick={(e) => {
+                                onMouseDown={(e) => {
                                     e.stopPropagation();
+                                    e.preventDefault();
                                     onOpenChange(null);
                                     openNewWithClient(order);
                                 }}
@@ -883,10 +883,11 @@ const OrderActionsDropdown = ({ order, openModal, openViewModal, openNewWithClie
                             </button>
 
                             <button
-                                onClick={(e) => {
+                                onMouseDown={(e) => {
                                     e.stopPropagation();
+                                    e.preventDefault();
                                     onOpenChange(null);
-                                    handleNewAssociatedOS(order); // <-- você precisará passar essa função como prop
+                                    handleNewAssociatedOS(order);
                                 }}
                                 className="w-full flex items-start gap-3 px-4 py-3 text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors text-sm font-medium"
                             >
@@ -897,8 +898,9 @@ const OrderActionsDropdown = ({ order, openModal, openViewModal, openNewWithClie
                             </button>
 
                             <button
-                                onClick={(e) => {
+                                onMouseDown={(e) => {
                                     e.stopPropagation();
+                                    e.preventDefault();
                                     onOpenChange(null);
                                     openModal(order, false);
                                 }}
@@ -910,8 +912,9 @@ const OrderActionsDropdown = ({ order, openModal, openViewModal, openNewWithClie
 
                             {hasPermission('canDeleteOS') && (
                                 <button
-                                    onClick={(e) => {
+                                    onMouseDown={(e) => {
                                         e.stopPropagation();
+                                        e.preventDefault();
                                         onOpenChange(null);
                                         confirmDelete(order);
                                     }}
@@ -936,8 +939,9 @@ const SuggestionInput = ({
     placeholder,
     className = "",
     disabled = false,
-    onRemoveSuggestion, // nova prop
-    userRole // para saber se é admin
+    onBlur,
+    onRemoveSuggestion,
+    userRole
 }) => {
     const [showSuggestions, setShowSuggestions] = useState(false);
     const dropdownRef = useRef(null);
@@ -1291,7 +1295,7 @@ export default function MainApp() {
         { value: "Recebido", label: "Recebido", color: "#4ea5d3" },       // azul claro
         { value: "Em inspeção", label: "Inspeção", color: "#8b5cf6" },    // roxo
         { value: "Em orçamento", label: "Orçamento", color: "#f8ca55" },  // amarelo
-        { value: "Aguardando aprovação do orçamento", label: "Aprovação", color: "#1e40af" }, // azul escuro
+        { value: "Aguardando aprovação", label: "Aprovação", color: "#1e40af" }, // azul escuro
         { value: "Em manutenção", label: "Manutenção", color: "#6b8e23" }, // verde musgo
         { value: "Em rota de entrega", label: "Entrega", color: "#a855f7" }, // violeta
         { value: "Finalizado", label: "Finalizado", color: "#10b981" }     // verde esmeralda
@@ -1301,7 +1305,7 @@ export default function MainApp() {
         'Recebido': '#4ea5d3',
         'Em inspeção': '#8b5cf6',
         'Em orçamento': '#f8ca55',
-        'Aguardando aprovação do orçamento': '#1e40af',
+        'Aguardando aprovação': '#1e40af',
         'Em manutenção': '#6b8e23',
         'Em rota de entrega': '#a855f7',
         'Finalizado': '#10b981',
@@ -1311,7 +1315,6 @@ export default function MainApp() {
 
     const statusOptions = [...TIMELINE_STEPS.map(s => s.value), "Orçamento recusado"];
     const billingOptions = ["Avulso", "Cortesia (visita sem custo)", "Contrato de manutenção"];
-    const currentMonthName = MESES[new Date().getMonth()];
 
     const solutionOptions = [
         "Preenchimento manual",
@@ -1335,57 +1338,57 @@ export default function MainApp() {
 
     // === FUNÇÕES UTILITÁRIAS ===
 
-    // Função para encontrar todas as OS no mesmo grupo (componente conexo)
-    // Função para encontrar todas as OS no mesmo grupo (componente conexo) considerando grafo não-direcionado
-    const findLinkedGroup = (orderId) => {
-        // Construir um mapa de adjacência com base em todas as OS que têm linkedOS
-        const graph = new Map();
-        ordersForUser.forEach(o => {
-            if (o.linkedOS && o.linkedOS.length > 0) {
-                const neighbors = graph.get(o.firestoreId) || new Set();
-                o.linkedOS.forEach(linkedId => {
-                    neighbors.add(linkedId);
-                    // Adicionar aresta de volta para garantir simetria na busca
-                    const backNeighbors = graph.get(linkedId) || new Set();
-                    backNeighbors.add(o.firestoreId);
-                    graph.set(linkedId, backNeighbors);
-                });
-                graph.set(o.firestoreId, neighbors);
-            }
-        });
-
-        // BFS/DFS para encontrar todos os nós conectados
-        const visited = new Set();
-        const stack = [orderId];
-        while (stack.length) {
-            const current = stack.pop();
-            if (visited.has(current)) continue;
-            visited.add(current);
-            const neighbors = graph.get(current) || new Set();
-            neighbors.forEach(neighbor => {
-                if (!visited.has(neighbor)) {
-                    stack.push(neighbor);
-                }
+    // Encontra todas as OS no mesmo grupo de vínculos (grafo não-direcionado via BFS)
+    // Encontra todas as OS no mesmo grupo de vínculos (grafo não-direcionado via BFS)
+const findLinkedGroup = useCallback((orderId) => {
+    // Construir um mapa de adjacência com base em todas as OS que têm linkedOS
+    const graph = new Map();
+    
+    // Usar orders diretamente, não ordersForUser, para evitar dependência circular
+    orders.forEach(o => {
+        if (o.linkedOS && o.linkedOS.length > 0) {
+            const neighbors = graph.get(o.firestoreId) || new Set();
+            o.linkedOS.forEach(linkedId => {
+                neighbors.add(linkedId);
+                // Adicionar aresta de volta para garantir simetria na busca
+                const backNeighbors = graph.get(linkedId) || new Set();
+                backNeighbors.add(o.firestoreId);
+                graph.set(linkedId, backNeighbors);
             });
+            graph.set(o.firestoreId, neighbors);
         }
-        return Array.from(visited);
-    };
+    });
 
-    // Função atualizada para selecionar/desselecionar todo o grupo
-    const toggleOrderSelectionWithLinked = (orderId) => {
-        setSelectedOrders(prev => {
-            const group = findLinkedGroup(orderId);
-            const isSelected = group.some(id => prev.includes(id));
-
-            if (isSelected) {
-                // Se algum do grupo está selecionado, remover todos do grupo
-                return prev.filter(id => !group.includes(id));
-            } else {
-                // Se nenhum está selecionado, adicionar todos do grupo
-                return [...prev, ...group];
+    // BFS/DFS para encontrar todos os nós conectados
+    const visited = new Set();
+    const stack = [orderId];
+    while (stack.length) {
+        const current = stack.pop();
+        if (visited.has(current)) continue;
+        visited.add(current);
+        const neighbors = graph.get(current) || new Set();
+        neighbors.forEach(neighbor => {
+            if (!visited.has(neighbor)) {
+                stack.push(neighbor);
             }
         });
-    };
+    }
+    return Array.from(visited);
+}, [orders]);
+
+// Função atualizada para selecionar/desselecionar todo o grupo
+const toggleOrderSelectionWithLinked = useCallback((orderId) => {
+    setSelectedOrders(prev => {
+        if (prev.includes(orderId)) {
+            // Desseleciona apenas o item clicado
+            return prev.filter(id => id !== orderId);
+        } else {
+            // Seleciona todos do grupo
+            const group = findLinkedGroup(orderId);
+            return [...new Set([...prev, ...group])];
+        }
+    });
+}, [findLinkedGroup]);
 
     const MaintenanceVisitSelect = ({ value, onChange, uniqueMaintenanceVisits }) => {
         const defaultOptions = [
@@ -1411,9 +1414,6 @@ export default function MainApp() {
     };
 
     const SelectLinkedOS = ({ currentOSId, selectedIds, onChange }) => {
-        console.log('SelectLinkedOS - currentOSId:', currentOSId);
-        console.log('SelectLinkedOS - ordersForUser length:', ordersForUser?.length);
-        console.log('SelectLinkedOS - selectedIds:', selectedIds);
         const [search, setSearch] = useState('');
         const [isOpen, setIsOpen] = useState(false);
         const dropdownRef = useRef(null);
@@ -1520,7 +1520,6 @@ export default function MainApp() {
     };
 
     const handleNewAssociatedOS = (order) => {
-        // Preencher formulário com dados do cliente
         setFormData({
             ...EMPTY_FORM_DATA,
             client: order.client,
@@ -1529,11 +1528,17 @@ export default function MainApp() {
             email: order.email || '',
             address: order.address || '',
             osNumber: generateNextOsNumber(ordersForUser),
-            // Já vincula à OS de referência
-            linkedOS: [order.firestoreId]
+            linkedOS: [order.firestoreId],
+            statusDate: new Date().toISOString().split('T')[0],
+            statusHistory: [{
+                status: 'Recebido',
+                date: new Date().toISOString().split('T')[0],
+                timestamp: Date.now(),
+                user: userData?.displayName || user?.email || 'Sistema'
+            }]
         });
         setEditingOrder(null);
-        setCreatingLinkedToOrder(order.firestoreId); // Guarda a OS de referência para atualização posterior
+        setCreatingLinkedToOrder(order.firestoreId);
         setIsModalOpen(true);
         setDropdownOpen(null);
     };
@@ -1542,12 +1547,12 @@ export default function MainApp() {
         if (!order) return;
 
         try {
-            // Atualizar status para "Aguardando aprovação do orçamento"
+            // Atualizar status para "Aguardando aprovação"
             await updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', order.firestoreId), {
-                status: 'Aguardando aprovação do orçamento',
+                status: 'Aguardando aprovação',
                 statusDate: new Date().toISOString().split('T')[0],
                 statusHistory: [...(order.statusHistory || []), {
-                    status: 'Aguardando aprovação do orçamento',
+                    status: 'Aguardando aprovação',
                     date: new Date().toISOString().split('T')[0],
                     timestamp: Date.now(),
                     user: userData?.displayName || user?.email || 'Sistema'
@@ -1596,32 +1601,6 @@ export default function MainApp() {
             console.error('Erro ao recusar orçamento:', error);
             showNotification('Erro ao recusar orçamento. Tente novamente.', 'error');
         }
-    };
-
-    // Função para abrir modal de pagamento para uma única OS
-    const openPaymentModalForOrder = (order) => {
-        // Este modal agora é apenas para ADMIN imprimir
-        if (userData?.role === 'client') {
-            // Cliente não deve usar esse modal - redireciona para o modal correto
-            openClientPaymentModal(order);
-            return;
-        }
-
-        if (!order) return;
-
-        const totalOriginalValue = parseCurrency(order.chargedAmount);
-
-        setPaymentModalData({
-            totalOriginalValue,
-            paymentCondition: order.paymentCondition || 'À vista',
-            installments: order.installments || '',
-            discount5Days: order.discount5Days || false,
-            finalChargedAmount: order.finalChargedAmount || totalOriginalValue,
-            selectedOrderId: order.firestoreId,
-            orderNumber: order.osNumber
-        });
-
-        setIsPaymentModalOpen(true);
     };
 
     const openClientPaymentModal = (order) => {
@@ -2163,7 +2142,7 @@ export default function MainApp() {
                 email: savedData?.email || latestOS?.email || '',
                 startDate: savedData?.startDate || '',
                 endDate: savedData?.endDate || '',
-                monthlyValue: savedData?.monthualValue || '',
+                monthlyValue: savedData?.monthlyValue || '',
                 annualValue: savedData?.annualValue || '',
                 coveredItems: savedData?.coveredItems || {
                     videoSurgeryInstruments: false,
@@ -2210,7 +2189,7 @@ export default function MainApp() {
     useEffect(() => {
         if (!isModalOpen) {
             setIsViewMode(false);
-            setCreatingLinkedToOrder(null); // <-- adicionar esta linha
+            setCreatingLinkedToOrder(null);
         }
     }, [isModalOpen]);
 
@@ -2247,12 +2226,6 @@ export default function MainApp() {
     }, [user, authLoading]);
 
     useEffect(() => {
-        if (!isModalOpen) {
-            setIsViewMode(false);
-        }
-    }, [isModalOpen]);
-
-    useEffect(() => {
         if (formData.discount5Days && formData.chargedAmount) {
             const charged = parseCurrency(formData.chargedAmount);
             const discount = charged * 0.05;
@@ -2274,7 +2247,7 @@ export default function MainApp() {
 
     // Efeito para preservar prazo de entrega
     useEffect(() => {
-        if ((formData.status === "Em orçamento" || formData.status === "Aguardando aprovação do orçamento") &&
+        if ((formData.status === "Em orçamento" || formData.status === "Aguardando aprovação") &&
             !formData.deliveryDeadline) {
             const savedOrder = orders.find(o => o.firestoreId === editingOrder?.firestoreId);
             if (savedOrder?.deliveryDeadline) {
@@ -2465,52 +2438,19 @@ export default function MainApp() {
         setTempManualSolution('');
         setTempBenchRepair('');
         setIsFinancialOpen(false);
-        setIsViewMode(viewMode);  // Definir o modo baseado no parâmetro
-
+        setIsViewMode(viewMode);
         setFieldErrors({
-            client: false,
-            item: false,
-            defect: false,
-            solution: false,
-            notRepairableDetail: false,
-            solutionsList: false,
-            benchRepairList: false
+            client: false, item: false, defect: false, solution: false,
+            notRepairableDetail: false, solutionsList: false, benchRepairList: false
         });
-
-
-        if (!order) {
-            setEditingOrder(null);
-            setFormData({
-                ...EMPTY_FORM_DATA,
-                osNumber: generateNextOsNumber(ordersForUser)
-            });
-        }
-
-        if (!order) {
-            setEditingOrder(null);
-            setFormData({
-                ...EMPTY_FORM_DATA,
-                osNumber: generateNextOsNumber(ordersForUser),
-                statusHistory: [{
-                    status: 'Recebido',
-                    date: new Date().toISOString().split('T')[0],
-                    timestamp: Date.now(),
-                    user: userData?.displayName || user?.email || 'Sistema'
-                }]
-            });
-        }
 
         if (order) {
             setEditingOrder(order);
-
             let deliveryDeadlineValue = '';
             if (order.deliveryDeadline) {
                 const match = order.deliveryDeadline.match(/^(\d+)/);
-                if (match) {
-                    deliveryDeadlineValue = match[1];
-                }
+                if (match) deliveryDeadlineValue = match[1];
             }
-
             setFormData({
                 ...order,
                 equipmentObservation: order.equipmentObservation || '',
@@ -2525,41 +2465,28 @@ export default function MainApp() {
                 discount5Days: order.discount5Days || false,
                 discountAmount: order.discountAmount || 0,
                 finalChargedAmount: order.finalChargedAmount || parseCurrency(order.chargedAmount),
-                photos: order.photos || []
+                photos: order.photos || [],
+                linkedOS: order.linkedOS || []
             });
         } else {
             setEditingOrder(null);
             setFormData({
-                client: '', cnpj: '', contactPerson: '', address: '', email: '',
-                billingType: '', maintenanceVisit: '', item: '', manufacturer: '', model: '', serial: '',
-                equipmentObservation: '',
-                quantity: '1',
-                defect: '', defectsList: [],
-                solutionType: 'Preenchimento manual',
-                solution: '', manualSolutionsList: [],
-                benchRepairList: [],
-                solutionsList: [],
-                notRepairableDetail: '',
-                costThirdPartyName: '', costThirdPartyShipping: '', costClientShipping: '', costParts: '',
-                chargedAmount: '', paymentCondition: 'À vista', installments: '',
-                status: 'Recebido',
-                statusDate: new Date().toISOString().split('T')[0],
-                statusHistory: [],
-                trackingCode: '', sentToThirdParty: 'Não',
-                thirdPartyInfo: '', thirdPartyTracking: '', thirdPartyDate: '',
+                ...EMPTY_FORM_DATA,
                 osNumber: generateNextOsNumber(ordersForUser),
-                deliveryDeadline: '',
-                discount5Days: false,
-                discountAmount: 0,
-                finalChargedAmount: 0,
-                photos: []
+                statusDate: new Date().toISOString().split('T')[0],
+                statusHistory: [{
+                    status: 'Recebido',
+                    date: new Date().toISOString().split('T')[0],
+                    timestamp: Date.now(),
+                    user: userData?.displayName || user?.email || 'Sistema'
+                }]
             });
         }
+
         setIsModalOpen(true);
     };
 
     const handleNewOSWithClient = (order) => {
-        const newOSNumber = generateNextOsNumber(ordersForUser);
         setFormData({
             ...EMPTY_FORM_DATA,
             client: order.client,
@@ -2567,7 +2494,14 @@ export default function MainApp() {
             contactPerson: order.contactPerson || '',
             email: order.email || '',
             address: order.address || '',
-            osNumber: newOSNumber,
+            osNumber: generateNextOsNumber(ordersForUser),
+            statusDate: new Date().toISOString().split('T')[0],
+            statusHistory: [{
+                status: 'Recebido',
+                date: new Date().toISOString().split('T')[0],
+                timestamp: Date.now(),
+                user: userData?.displayName || user?.email || 'Sistema'
+            }]
         });
         setEditingOrder(null);
         setIsModalOpen(true);
@@ -3023,42 +2957,7 @@ export default function MainApp() {
 
 
     const openViewModal = (order) => {
-        setTempSolution('');
-        setTempCost('');
-        setTempDefect('');
-        setTempManualSolution('');
-        setTempBenchRepair('');
-        setIsFinancialOpen(false);
         openModal(order, true);
-
-        let deliveryDeadlineValue = '';
-        if (order.deliveryDeadline) {
-            const match = order.deliveryDeadline.match(/^(\d+)/);
-            if (match) {
-                deliveryDeadlineValue = match[1];
-            }
-        }
-
-        setFormData({
-            ...order,
-            equipmentObservation: order.equipmentObservation || '',
-            quantity: order.quantity || '1',
-            solutionsList: order.solutionsList || [],
-            defectsList: order.defectsList || (order.defect ? [order.defect] : []),
-            manualSolutionsList: order.manualSolutionsList || [],
-            benchRepairList: order.benchRepairList || [],
-            statusDate: order.statusDate || new Date().toISOString().split('T')[0],
-            statusHistory: order.statusHistory || [],
-            deliveryDeadline: deliveryDeadlineValue,
-            discount5Days: order.discount5Days || false,
-            discountAmount: order.discountAmount || 0,
-            finalChargedAmount: order.finalChargedAmount || parseCurrency(order.chargedAmount),
-            photos: order.photos || []
-        });
-
-        setEditingOrder(order);
-        setIsModalOpen(true);
-        setIsViewMode(true);
     };
 
     const handleClientSelect = (clientData) => {
@@ -3354,7 +3253,7 @@ export default function MainApp() {
                 status: cleanData.status,
                 date: currentStatusDate,
                 timestamp: Date.now(),
-                user: userData?.displayName || user?.email || 'Sistema'   // ✅ CORRIGIDO
+                user: userData?.displayName || user?.email || 'Sistema'
             });
         } else {
             history[history.length - 1].date = currentStatusDate;
@@ -3364,35 +3263,6 @@ export default function MainApp() {
         cleanData.statusDate = currentStatusDate;
 
         return cleanData;
-    };
-
-    const handleShowSuggestions = (field) => {
-        if (isViewMode) return false; // Nunca mostrar sugestões em modo visualização
-
-        switch (field) {
-            case 'client': return showClientSuggestions;
-            case 'defect': return showDefectSuggestions;
-            case 'solution': return showSolutionSuggestions;
-            case 'item': return showItemSuggestions;
-            case 'manufacturer': return showManufacturerSuggestions;
-            case 'model': return showModelSuggestions;
-            case 'serial': return showSerialSuggestions;
-            default: return false;
-        }
-    };
-
-    const handleSetSuggestions = (field, value) => {
-        if (isViewMode) return; // Não fazer nada em modo visualização
-
-        switch (field) {
-            case 'client': setShowClientSuggestions(value); break;
-            case 'defect': setShowDefectSuggestions(value); break;
-            case 'solution': setShowSolutionSuggestions(value); break;
-            case 'item': setShowItemSuggestions(value); break;
-            case 'manufacturer': setShowManufacturerSuggestions(value); break;
-            case 'model': setShowModelSuggestions(value); break;
-            case 'serial': setShowSerialSuggestions(value); break;
-        }
     };
 
     const handleSubmit = async (e) => {
@@ -3482,136 +3352,9 @@ export default function MainApp() {
         }
     };
 
-    const cleanupAllConcatenatedSuggestions = async () => {
-        if (!window.confirm('ATENÇÃO: Esta ação irá limpar TODAS as sugestões concatenadas do banco de dados. Pode demorar alguns minutos. Continuar?')) {
-            return;
-        }
-
-        setIsSaving(true);
-        try {
-            // Importar as funções do Firestore necessárias
-            const { getDocs, updateDoc } = await import('firebase/firestore');
-
-            // Buscar todas as OS
-            const ordersRef = collection(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders');
-            const ordersSnapshot = await getDocs(ordersRef);
-
-            let updatedCount = 0;
-            let errors = [];
-
-            // Processar cada OS
-            for (const doc of ordersSnapshot.docs) {
-                try {
-                    const data = doc.data();
-                    let needsUpdate = false;
-                    const updatedData = { ...data };
-
-                    // Função auxiliar para processar arrays
-                    const processArray = (array) => {
-                        if (!Array.isArray(array)) return array;
-
-                        const result = [];
-                        array.forEach(item => {
-                            if (typeof item === 'string') {
-                                // Dividir strings compostas
-                                const parts = item
-                                    .replace(/([a-zà-ú])([A-ZÀ-Ú])/g, '$1\n$2')
-                                    .split(/[\n\r,.;!?]+/)
-                                    .map(p => p.trim())
-                                    .filter(p => p.length > 2);
-
-                                result.push(...parts);
-                            } else {
-                                result.push(item);
-                            }
-                        });
-
-                        // Remover duplicatas
-                        return [...new Set(result)];
-                    };
-
-                    // Processar cada lista
-                    const lists = [
-                        'defectsList',
-                        'manualSolutionsList',
-                        'benchRepairList'
-                    ];
-
-                    lists.forEach(listName => {
-                        if (updatedData[listName] && Array.isArray(updatedData[listName])) {
-                            const cleaned = processArray(updatedData[listName]);
-                            if (JSON.stringify(cleaned) !== JSON.stringify(updatedData[listName])) {
-                                updatedData[listName] = cleaned;
-                                needsUpdate = true;
-                            }
-                        }
-                    });
-
-                    // Processar solutionsList (array de objetos)
-                    if (updatedData.solutionsList && Array.isArray(updatedData.solutionsList)) {
-                        const cleaned = updatedData.solutionsList.map(item => {
-                            if (item && item.text && typeof item.text === 'string') {
-                                const parts = item.text
-                                    .replace(/([a-zà-ú])([A-ZÀ-Ú])/g, '$1\n$2')
-                                    .split(/[\n\r,.;!?]+/)
-                                    .map(p => p.trim())
-                                    .filter(p => p.length > 2);
-
-                                // Se dividiu em múltiplas partes, criar múltiplos itens
-                                if (parts.length > 1) {
-                                    return parts.map((part, index) => ({
-                                        id: item.id ? `${item.id}_${index}` : Date.now() + index,
-                                        text: part,
-                                        cost: item.cost || "0,00"
-                                    }));
-                                } else if (parts.length === 1) {
-                                    return { ...item, text: parts[0] };
-                                }
-                            }
-                            return item;
-                        }).flat(); // Achatar array se houve divisão
-
-                        if (JSON.stringify(cleaned) !== JSON.stringify(updatedData.solutionsList)) {
-                            updatedData.solutionsList = cleaned;
-                            needsUpdate = true;
-                        }
-                    }
-
-                    if (needsUpdate) {
-                        await updateDoc(doc.ref, updatedData);
-                        updatedCount++;
-                        console.log(`OS ${doc.id} atualizada`);
-                    }
-
-                } catch (error) {
-                    console.error(`Erro ao processar OS ${doc.id}:`, error);
-                    errors.push({ id: doc.id, error: error.message });
-                }
-            }
-
-            if (errors.length > 0) {
-                showNotification(`Limpou ${updatedCount} OS(s). Erros em ${errors.length} OS(s). Verifique console.`, 'warning');
-                console.log('Erros detalhados:', errors);
-            } else {
-                showNotification(`Todas as ${updatedCount} OS(s) foram limpas com sucesso!`, 'success');
-            }
-
-        } catch (error) {
-            console.error('Erro geral na limpeza:', error);
-            showNotification('Erro na limpeza: ' + error.message, 'error');
-        } finally {
-            setIsSaving(false);
-        }
-    };
-
     const handleSaveAndNewWithSameClient = async () => {
-
-        const cleanData = prepareDataForSave(userData || user);
-
         const hasErrors = validateForm();
-        if (hasErrors) {
-            return;
-        }
+        if (hasErrors) return;
 
         setIsSaving(true);
         try {
@@ -3622,44 +3365,24 @@ export default function MainApp() {
                 await addDoc(collection(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders'), cleanData);
             }
             showNotification("OS salva e nova em branco criada!", 'success');
-            setFormData({
-                ...formData,
-                osNumber: generateNextOsNumber([...ordersForUser, formData]),
-                item: '',
-                manufacturer: '',
-                model: '',
-                serial: '',
-                equipmentObservation: '',
-                quantity: '1',
-                defect: '',
-                defectsList: [],
-                solutionType: 'Preenchimento manual',
-                solution: '',
-                manualSolutionsList: [],
-                benchRepairList: [],
-                solutionsList: [],
-                notRepairableDetail: '',
-                costThirdPartyName: '',
-                costThirdPartyShipping: '',
-                costClientShipping: '',
-                costParts: '',
-                chargedAmount: '',
-                paymentCondition: 'À vista',
-                installments: '',
-                status: 'Recebido',
+            setFormData(prev => ({
+                ...EMPTY_FORM_DATA,
+                client: prev.client,
+                cnpj: prev.cnpj,
+                contactPerson: prev.contactPerson,
+                email: prev.email,
+                address: prev.address,
+                billingType: prev.billingType,
+                maintenanceVisit: prev.maintenanceVisit,
+                osNumber: generateNextOsNumber([...ordersForUser, prev]),
                 statusDate: new Date().toISOString().split('T')[0],
-                statusHistory: [],
-                trackingCode: '',
-                sentToThirdParty: 'Não',
-                thirdPartyInfo: '',
-                thirdPartyTracking: '',
-                thirdPartyDate: '',
-                deliveryDeadline: '',
-                discount5Days: false,
-                discountAmount: 0,
-                finalChargedAmount: 0,
-                photos: [] // Resetar fotos também
-            });
+                statusHistory: [{
+                    status: 'Recebido',
+                    date: new Date().toISOString().split('T')[0],
+                    timestamp: Date.now(),
+                    user: userData?.displayName || user?.email || 'Sistema'
+                }]
+            }));
             setEditingOrder(null);
         } catch (err) {
             console.error(err);
@@ -3744,7 +3467,7 @@ export default function MainApp() {
         }
 
         const hasBudgetStage = selectedData.some(os =>
-            os.status === 'Em orçamento' || os.status === 'Aguardando aprovação do orçamento'
+            os.status === 'Em orçamento' || os.status === 'Aguardando aprovação'
         );
 
         if (!hasBudgetStage && printType === 'client') {
@@ -3841,131 +3564,101 @@ export default function MainApp() {
         }
     };
 
-    // Atualize a função handleConfirmPrintWithPayment para lidar com OS única
-    const handleConfirmPrintWithPayment = (paymentData) => {
+    const handleConfirmPrintWithPayment = async (paymentData) => {
         const { selectedOrderId } = paymentData;
 
-        // Se houver um ID de OS específico (aprovada individualmente), atualizar apenas ela
         if (selectedOrderId) {
             const orderToUpdate = ordersForUser.find(o => o.firestoreId === selectedOrderId);
-            if (orderToUpdate) {
-                // Atualizar a OS específica
-                updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', selectedOrderId), {
+            if (!orderToUpdate) return;
+
+            try {
+                await updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', selectedOrderId), {
                     paymentCondition: paymentData.paymentCondition,
                     installments: paymentData.installments,
                     discount5Days: paymentData.paymentCondition === 'Boleto' &&
                         paymentData.installments === "5 dias (5% de desconto)",
                     finalChargedAmount: paymentData.finalChargedAmount,
-                    status: 'Em manutenção', // Atualizar status para em manutenção
+                    status: 'Em manutenção',
                     statusDate: new Date().toISOString().split('T')[0],
                     statusHistory: [...(orderToUpdate.statusHistory || []), {
                         status: 'Em manutenção',
                         date: new Date().toISOString().split('T')[0],
-                        timestamp: Date.now()
+                        timestamp: Date.now(),
+                        user: userData?.displayName || user?.email || 'Sistema'
                     }]
-                }).then(() => {
-                    setIsPaymentModalOpen(false);
-                    showNotification('Orçamento aprovado e pagamento configurado! OS agora está em manutenção.', 'success');
-
-                    // Imprimir relatório para o cliente
-                    const groups = {
-                        [orderToUpdate.client]: {
-                            header: {
-                                client: orderToUpdate.client,
-                                cnpj: orderToUpdate.cnpj,
-                                contactPerson: orderToUpdate.contactPerson,
-                                email: orderToUpdate.email,
-                                address: orderToUpdate.address,
-                                billingType: orderToUpdate.billingType,
-                                maintenanceVisit: orderToUpdate.maintenanceVisit
-                            },
-                            items: [{
-                                ...orderToUpdate,
-                                paymentCondition: paymentData.paymentCondition,
-                                installments: paymentData.installments,
-                                discount5Days: paymentData.paymentCondition === 'Boleto' &&
-                                    paymentData.installments === "5 dias (5% de desconto)",
-                                finalChargedAmount: paymentData.finalChargedAmount
-                            }]
-                        }
-                    };
-
-                    // Chame a função de impressão com os dados atualizados
-                    handlePrintForSingleOrder(groups, paymentData);
-                }).catch(error => {
-                    console.error('Erro ao atualizar condições de pagamento:', error);
-                    showNotification('Erro ao processar aprovação. Tente novamente.', 'error');
                 });
+
+                setIsPaymentModalOpen(false);
+                showNotification('Orçamento aprovado e pagamento configurado! OS agora está em manutenção.', 'success');
+
+                const groups = {
+                    [orderToUpdate.client]: {
+                        header: {
+                            client: orderToUpdate.client,
+                            cnpj: orderToUpdate.cnpj,
+                            contactPerson: orderToUpdate.contactPerson,
+                            email: orderToUpdate.email,
+                            address: orderToUpdate.address,
+                            billingType: orderToUpdate.billingType,
+                            maintenanceVisit: orderToUpdate.maintenanceVisit
+                        },
+                        items: [{
+                            ...orderToUpdate,
+                            paymentCondition: paymentData.paymentCondition,
+                            installments: paymentData.installments,
+                            discount5Days: paymentData.paymentCondition === 'Boleto' &&
+                                paymentData.installments === "5 dias (5% de desconto)",
+                            finalChargedAmount: paymentData.finalChargedAmount
+                        }]
+                    }
+                };
+
+                handlePrintForSingleOrder(groups, paymentData);
+            } catch (error) {
+                console.error('Erro ao atualizar condições de pagamento:', error);
+                showNotification('Erro ao processar aprovação. Tente novamente.', 'error');
             }
         } else {
-            // Processamento original para múltiplas OSs (mantido para compatibilidade)
             const selectedData = ordersForUser.filter(o => selectedOrders.includes(o.firestoreId));
 
-            const updatePromises = selectedData.map(async (os) => {
-                try {
-                    await updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', os.firestoreId), {
+            try {
+                await Promise.all(selectedData.map(os =>
+                    updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', os.firestoreId), {
                         paymentCondition: paymentData.paymentCondition,
                         installments: paymentData.installments,
                         discount5Days: paymentData.paymentCondition === 'Boleto' &&
                             paymentData.installments === "5 dias (5% de desconto)",
                         finalChargedAmount: paymentData.finalChargedAmount
-                    });
-                } catch (error) {
-                    console.error('Erro ao atualizar condições de pagamento:', error);
-                }
-            });
-
-            Promise.all(updatePromises).then(() => {
+                    })
+                ));
                 setIsPaymentModalOpen(false);
                 handlePrint('client', paymentData);
-            });
+            } catch (error) {
+                console.error('Erro ao atualizar condições de pagamento:', error);
+                showNotification('Erro ao atualizar condições de pagamento.', 'error');
+            }
         }
     };
 
-    // Função auxiliar para imprimir OS única
-    const handlePrintForSingleOrder = (groups, paymentConditions = null) => {
+    const handlePrintForSingleOrder = async (groups, paymentConditions = null) => {
         const title = 'Proposta de orçamento';
-
         try {
-            showNotification('Gerando PDF...', 'info');
-
-            const pdfDoc = (
+            await openPdfBlob(
                 <DocumentoPDF
                     groups={groups}
                     printType='client'
                     title={title}
                     customPaymentConditions={paymentConditions}
-                />
+                />,
+                title
             );
-
-            // Gerar o blob do PDF
-            pdf(pdfDoc).toBlob().then(pdfBlob => {
-                const pdfUrl = URL.createObjectURL(pdfBlob);
-
-                // Abrir em nova janela
-                const printWindow = window.open(pdfUrl, '_blank');
-                if (!printWindow) {
-                    showNotification('Permita pop-ups para visualizar o documento', 'error');
-                    const link = document.createElement('a');
-                    link.href = pdfUrl;
-                    link.download = `${title.toLowerCase().replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                }
-
-                setTimeout(() => {
-                    URL.revokeObjectURL(pdfUrl);
-                }, 30000);
-
-                showNotification('PDF gerado com sucesso!', 'success');
-            });
-
         } catch (error) {
             console.error('Erro ao gerar PDF:', error);
             showNotification('Erro ao gerar PDF: ' + error.message, 'error');
         }
     };
+
+    const handlePrintSupplier = () => handlePrint('supplier');
 
     const handlePrint = async (printType, customPaymentConditions = null) => {
         const selectedData = ordersForUser.filter(o => selectedOrders.includes(o.firestoreId));
@@ -3995,56 +3688,29 @@ export default function MainApp() {
         });
 
         const hasBudgetStage = selectedData.some(os =>
-            os.status === 'Em orçamento' || os.status === 'Aguardando aprovação do orçamento'
+            os.status === 'Em orçamento' || os.status === 'Aguardando aprovação'
         );
 
         const title = printType === 'internal' ?
             'Relatório INTERNO' :
+            printType === 'supplier' ?
+            'Relatório' :
             (hasBudgetStage ? 'Proposta de orçamento' : 'Relatório de atendimento');
 
         try {
-            showNotification('Gerando PDF...', 'info');
-
-            // Criar o documento PDF
-            const pdfDoc = (
+            await openPdfBlob(
                 <DocumentoPDF
                     groups={groups}
                     printType={printType}
                     title={title}
                     customPaymentConditions={customPaymentConditions}
-                />
+                />,
+                title
             );
-
-            // Gerar o blob do PDF
-            const pdfBlob = await pdf(pdfDoc).toBlob();
-            const pdfUrl = URL.createObjectURL(pdfBlob);
-
-            // Abrir em nova janela
-            const printWindow = window.open(pdfUrl, '_blank');
-            if (!printWindow) {
-                showNotification('Permita pop-ups para visualizar o documento', 'error');
-                // Fallback: download direto
-                const link = document.createElement('a');
-                link.href = pdfUrl;
-                link.download = `${title.toLowerCase().replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-            }
-
-            // Limpar memória após 30 segundos
-            setTimeout(() => {
-                URL.revokeObjectURL(pdfUrl);
-            }, 30000);
-
-            showNotification('PDF gerado com sucesso!', 'success');
-
         } catch (error) {
             console.error('Erro ao gerar PDF:', error);
             showNotification('Erro ao gerar PDF: ' + error.message, 'error');
         }
-
-        console.log('Selected orders for print:', selectedData.map(o => ({ osNumber: o.osNumber, chargedAmount: o.chargedAmount, quantity: o.quantity })));
     };
 
     // Funções para lidar com filtros no painel de status
@@ -4147,96 +3813,66 @@ export default function MainApp() {
 
     const handleLogout = async () => {
         try {
-            localStorage.removeItem('adminRestoreToken');
-            localStorage.removeItem('adminEmail');
             await logout();
-            window.location.href = '/';
-            setTimeout(() => {
-                window.location.reload();
-            }, 100);
         } catch (error) {
             console.error("Erro ao fazer logout:", error);
-            window.location.reload();
         }
     };
 
-    const getFieldClasses = (isViewMode, hasError = false) => {
-        const base = "w-full p-4 rounded-2xl outline-none font-bold";
-        const viewModeClass = isViewMode ? 'bg-slate-50 cursor-not-allowed' : 'bg-white';
-        const borderClass = hasError ? 'border-red-500' : 'border-slate-200';
-        const focusClass = isViewMode ? '' : 'focus:ring-4 focus:ring-blue-500/10';
-
-        return `${base} ${viewModeClass} border ${borderClass} ${focusClass} transition-all`;
-    };
-
-    // Adicione após as outras funções auxiliares
     const getInputClasses = (fieldName) => {
         const baseClass = "w-full p-4 bg-white border rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-bold";
         const errorClass = fieldErrors[fieldName] ? 'border-red-500' : 'border-slate-200';
         const viewModeClass = isViewMode ? 'bg-slate-50 cursor-not-allowed' : '';
-
         return `${baseClass} ${errorClass} ${viewModeClass}`;
+    };
+
+    // Helper compartilhado para abrir/baixar um blob de PDF
+    const openPdfBlob = async (pdfDoc, title) => {
+        showNotification('Gerando PDF...', 'info');
+        const pdfBlob = await pdf(pdfDoc).toBlob();
+        const pdfUrl = URL.createObjectURL(pdfBlob);
+        const printWindow = window.open(pdfUrl, '_blank');
+        if (!printWindow) {
+            showNotification('Permita pop-ups para visualizar o documento', 'error');
+            const link = document.createElement('a');
+            link.href = pdfUrl;
+            link.download = `${title.toLowerCase().replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+        setTimeout(() => URL.revokeObjectURL(pdfUrl), 30000);
+        showNotification('PDF gerado com sucesso!', 'success');
     };
 
     const handleModalPrint = async (printType) => {
         const printData = prepareDataForSave();
         const isBudgetStage = printData.status === 'Em orçamento' ||
-            printData.status === 'Aguardando aprovação do orçamento';
-
+            printData.status === 'Aguardando aprovação';
         const title = printType === 'internal' ?
             'Relatório INTERNO' :
             (isBudgetStage ? 'Proposta de orçamento' : 'Relatório de atendimento');
 
-        try {
-            showNotification('Gerando PDF...', 'info');
-
-            // Criar grupo para uma única OS
-            const groups = {
-                [printData.client]: {
-                    header: {
-                        client: printData.client,
-                        cnpj: printData.cnpj,
-                        contactPerson: printData.contactPerson,
-                        email: printData.email,
-                        address: printData.address,
-                        billingType: printData.billingType,
-                        maintenanceVisit: printData.maintenanceVisit
-                    },
-                    items: [printData]
-                }
-            };
-
-            // Criar o documento PDF
-            const pdfDoc = (
-                <DocumentoPDF
-                    groups={groups}
-                    printType={printType}
-                    title={title}
-                />
-            );
-
-            // Gerar o blob do PDF
-            const pdfBlob = await pdf(pdfDoc).toBlob();
-            const pdfUrl = URL.createObjectURL(pdfBlob);
-
-            // Abrir em nova janela
-            const printWindow = window.open(pdfUrl, '_blank');
-            if (!printWindow) {
-                showNotification('Permita pop-ups para visualizar o documento', 'error');
-                // Fallback: download direto
-                const link = document.createElement('a');
-                link.href = pdfUrl;
-                link.download = `${title.toLowerCase().replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
+        const groups = {
+            [printData.client]: {
+                header: {
+                    client: printData.client,
+                    cnpj: printData.cnpj,
+                    contactPerson: printData.contactPerson,
+                    email: printData.email,
+                    address: printData.address,
+                    billingType: printData.billingType,
+                    maintenanceVisit: printData.maintenanceVisit
+                },
+                items: [printData]
             }
+        };
 
-            // Limpar memória após 30 segundos
-            setTimeout(() => {
-                URL.revokeObjectURL(pdfUrl);
-            }, 30000);
-
+        try {
+            await openPdfBlob(
+                <DocumentoPDF groups={groups} printType={printType} title={title} />,
+                title
+            );
         } catch (error) {
             console.error('Erro ao gerar PDF:', error);
             showNotification('Erro ao gerar PDF: ' + error.message, 'error');
@@ -4678,7 +4314,7 @@ export default function MainApp() {
                                     </button>
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
                                     {userData?.role !== 'client' && (
                                         <button
                                             onClick={() => setIsMoveModalOpen(true)}
@@ -4705,6 +4341,13 @@ export default function MainApp() {
                                             >
                                                 <ShieldAlert size={20} />
                                                 <span className="text-sm">Imprimir Interno</span>
+                                            </button>
+                                            <button
+                                                onClick={handlePrintSupplier}
+                                                className="bg-teal-600 text-white p-4 rounded-xl font-bold flex flex-col items-center justify-center gap-2 shadow hover:bg-teal-700 transition-colors h-24"
+                                            >
+                                                <Truck size={20} />
+                                                <span className="text-sm">Imprimir Fornecedor</span>
                                             </button>
                                             <button
                                                 onClick={exportToWord}
@@ -4897,7 +4540,7 @@ export default function MainApp() {
                                 {selectedOrders.length === 0 && hasPermission('canEditOS') && (
                                     <button
                                         onClick={handleOpenNewOS}
-                                        className="bg-blue-600 text-white px-8 py-5 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-2xl shadow-blue-200 hover:bg-blue-700 transition-colors min-w-[200px]"
+                                        className="hidden sm:flex bg-blue-600 text-white px-8 py-5 rounded-2xl font-bold items-center justify-center gap-3 shadow-2xl shadow-blue-200 hover:bg-blue-700 transition-colors min-w-[200px]"
                                     >
                                         <Plus size={24} /> Abrir Nova OS
                                     </button>
@@ -4905,259 +4548,377 @@ export default function MainApp() {
                             </div>
                         </div>
 
-                        {/* Container da tabela com altura máxima e rolagem */}
-                        <div className="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden">
-                            <div className="max-h-[calc(100vh-280px)] overflow-y-auto">
-                                <table className="w-full text-left min-w-[900px]">
-                                    <thead className="bg-white sticky top-0 z-10 shadow-sm">
-                                        <tr className="border-b text-[10px] font-black uppercase text-slate-400 tracking-widest">
-                                            <th className="px-6 py-6 text-center w-12 bg-white">
-                                                <input
-                                                    type="checkbox"
-                                                    className="w-4 h-4 rounded border-slate-300 text-blue-600"
-                                                    onChange={(e) => {
-                                                        const visibleOrders = sortedOrders.filter(o => {
-                                                            const normalizedSearchTerm = searchTerm.toLowerCase().trim();
-                                                            return (
-                                                                (o.client && o.client.toLowerCase().trim().includes(normalizedSearchTerm)) ||
-                                                                (o.osNumber && o.osNumber.includes(searchTerm)) ||
-                                                                (o.item && o.item.toLowerCase().trim().includes(normalizedSearchTerm)) ||
-                                                                (o.manufacturer && o.manufacturer.toLowerCase().trim().includes(normalizedSearchTerm)) ||
-                                                                (o.model && o.model.toLowerCase().trim().includes(normalizedSearchTerm)) ||
-                                                                (o.serial && o.serial.toLowerCase().trim().includes(normalizedSearchTerm))
-                                                            );
-                                                        });
+                        {/* ── LISTA DE OS ── */}
+                        {isLoading ? (
+                            <div className="flex items-center justify-center py-20">
+                                <Loader2 className="animate-spin text-blue-600" size={36} />
+                            </div>
+                        ) : (() => {
+                            const filteredOrders = sortedOrders.filter(o => {
+                                const q = searchTerm.toLowerCase().trim();
+                                if (!q) return true;
+                                const [year, month, day] = (o.statusDate ?? '').split('-');
+                                const dateBR = `${day}/${month}/${year}`;
+                                return (
+                                    o.client?.toLowerCase().includes(q) ||
+                                    o.osNumber?.includes(searchTerm) ||
+                                    o.item?.toLowerCase().includes(q) ||
+                                    o.manufacturer?.toLowerCase().includes(q) ||
+                                    o.model?.toLowerCase().includes(q) ||
+                                    o.serial?.toLowerCase().includes(q) ||
+                                    dateBR.includes(q) ||
+                                    (o.statusDate ?? '').includes(q)
+                                );
+                            });
 
-                                                        if (e.target.checked) {
-                                                            const ids = new Set();
-                                                            visibleOrders.forEach(o => {
-                                                                ids.add(o.firestoreId);
-                                                                if (o.linkedOS && o.linkedOS.length > 0) {
-                                                                    o.linkedOS.forEach(id => ids.add(id));
-                                                                }
-                                                            });
-                                                            setSelectedOrders(Array.from(ids));
-                                                        } else {
-                                                            const visibleIds = visibleOrders.map(o => o.firestoreId);
-                                                            setSelectedOrders(prev => prev.filter(id => !visibleIds.includes(id)));
-                                                        }
-                                                    }}
-                                                    checked={
-                                                        sortedOrders
-                                                            .filter(o =>
-                                                                o.client?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                                                o.osNumber?.includes(searchTerm)
-                                                            )
-                                                            .every(o => selectedOrders.includes(o.firestoreId)) &&
-                                                        sortedOrders
-                                                            .filter(o =>
-                                                                o.client?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                                                o.osNumber?.includes(searchTerm)
-                                                            ).length > 0
-                                                    }
+                            return (
+                                <>
+                                {/* ── CARDS (mobile) ── */}
+                                <div className="lg:hidden space-y-3">
+                                    {filteredOrders.length === 0 && (
+                                        <div className="text-center py-16 text-slate-400 font-medium">
+                                            Nenhuma OS encontrada.
+                                        </div>
+                                    )}
+                                    {filteredOrders.map(o => {
+                                        const isSelected = selectedOrders.includes(o.firestoreId);
+                                        const isBudget = o.status === 'Em orçamento' || o.status === 'Aguardando aprovação';
+                                        return (
+                                            <div
+                                                key={o.firestoreId}
+                                                onClick={() => toggleOrderSelectionWithLinked(o.firestoreId)}
+                                                className={`relative bg-white rounded-2xl border shadow-sm transition-all cursor-pointer select-none
+                                                    ${isSelected
+                                                        ? 'border-blue-400 ring-2 ring-blue-200 shadow-blue-100'
+                                                        : 'border-slate-100 hover:border-slate-200 hover:shadow-md'
+                                                    }`}
+                                            >
+                                                {/* Barra colorida de status à esquerda */}
+                                                <div
+                                                    className="absolute left-0 top-0 bottom-0 w-1 rounded-l-2xl"
+                                                    style={{ backgroundColor: statusColors[o.status] ?? '#94a3b8' }}
                                                 />
-                                            </th>
-                                            <th className="px-8 py-6 bg-white">
-                                                <button
-                                                    onClick={() => {
-                                                        setSortField('osNumber');
-                                                        setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
-                                                    }}
-                                                    className="flex items-center gap-1 hover:text-blue-600"
-                                                >
-                                                    OS
-                                                    {sortField === 'osNumber' && (
-                                                        sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
-                                                    )}
-                                                </button>
-                                            </th>
-                                            <th className="px-8 py-6 bg-white">
-                                                <button
-                                                    onClick={() => {
-                                                        setSortField('client');
-                                                        setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
-                                                    }}
-                                                    className="flex items-center gap-1 hover:text-blue-600"
-                                                >
-                                                    Cliente
-                                                    {sortField === 'client' && (
-                                                        sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
-                                                    )}
-                                                </button>
-                                            </th>
-                                            <th className="px-8 py-6 bg-white">
-                                                <button
-                                                    onClick={() => {
-                                                        setSortField('item');
-                                                        setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
-                                                    }}
-                                                    className="flex items-center gap-1 hover:text-blue-600"
-                                                >
-                                                    Equipamento
-                                                    {sortField === 'item' && (
-                                                        sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
-                                                    )}
-                                                </button>
-                                            </th>
-                                            <th className="px-8 py-6 bg-white">
-                                                <button
-                                                    onClick={() => {
-                                                        setSortField('billingType');
-                                                        setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
-                                                    }}
-                                                    className="flex items-center gap-1 hover:text-blue-600"
-                                                >
-                                                    Tipo
-                                                    {sortField === 'billingType' && (
-                                                        sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
-                                                    )}
-                                                </button>
-                                            </th>
-                                            <th className="px-8 py-6 bg-white">
-                                                <button
-                                                    onClick={() => {
-                                                        setSortField('status');
-                                                        setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
-                                                    }}
-                                                    className="flex items-center gap-1 hover:text-blue-600"
-                                                >
-                                                    Status
-                                                    {sortField === 'status' && (
-                                                        sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
-                                                    )}
-                                                </button>
-                                            </th>
-                                            <th className="px-8 py-6 text-right bg-white">Ações</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-50">
-                                        {isLoading ? (
-                                            <tr><td colSpan="7" className="p-20 text-center"><Loader2 className="animate-spin mx-auto text-blue-600" size={32} /></td></tr>
-                                        ) : (
-                                            sortedOrders.filter(o => {
-                                                const normalizedSearchTerm = searchTerm.toLowerCase().trim();
 
-                                                const clientMatch = o.client?.toLowerCase().includes(normalizedSearchTerm);
-                                                const osNumberMatch = o.osNumber?.includes(searchTerm);
-                                                const itemMatch = o.item?.toLowerCase().includes(normalizedSearchTerm);
-                                                const manufacturerMatch = o.manufacturer?.toLowerCase().includes(normalizedSearchTerm);
-                                                const modelMatch = o.model?.toLowerCase().includes(normalizedSearchTerm);
-                                                const serialMatch = o.serial?.toLowerCase().includes(normalizedSearchTerm);
+                                                <div className="pl-4 pr-4 pt-4 pb-3">
+                                                    {/* Linha 1: OS + badge status + checkbox */}
+                                                    <div className="flex items-start justify-between gap-2 mb-2">
+                                                        <div className="flex items-center gap-2 min-w-0">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={isSelected}
+                                                                onChange={() => toggleOrderSelectionWithLinked(o.firestoreId)}
+                                                                onClick={e => e.stopPropagation()}
+                                                                className="w-4 h-4 rounded border-slate-300 text-blue-600 flex-shrink-0"
+                                                            />
+                                                            <span className="font-black text-blue-700 text-base leading-tight">
+                                                                {o.osNumber}
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2 flex-shrink-0">
+                                                            <span
+                                                                className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase border"
+                                                                style={{
+                                                                    backgroundColor: (statusColors[o.status] ?? '#94a3b8') + '20',
+                                                                    borderColor: (statusColors[o.status] ?? '#94a3b8') + '40',
+                                                                    color: statusColors[o.status] ?? '#94a3b8'
+                                                                }}
+                                                            >
+                                                                {o.status}
+                                                            </span>
+                                                            <div onClick={e => e.stopPropagation()}>
+                                                                <OrderActionsDropdown
+                                                                    order={o}
+                                                                    openModal={openModal}
+                                                                    openViewModal={openViewModal}
+                                                                    openNewWithClient={handleNewOSWithClient}
+                                                                    confirmDelete={confirmDelete}
+                                                                    userData={userData}
+                                                                    handleNewAssociatedOS={handleNewAssociatedOS}
+                                                                    hasPermission={hasPermission}
+                                                                    isOpen={dropdownOpen === o.firestoreId}
+                                                                    onOpenChange={id => setDropdownOpen(id)}
+                                                                    openHistoryModal={order => {
+                                                                        setSelectedOrderForHistory(order);
+                                                                        setIsHistoryModalOpen(true);
+                                                                    }}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    </div>
 
-                                                let statusDateMatch = false;
-                                                if (o.statusDate) {
-                                                    const [year, month, day] = o.statusDate.split('-');
-                                                    const formattedDate = `${day}/${month}/${year}`;
-                                                    statusDateMatch = formattedDate.includes(normalizedSearchTerm) || o.statusDate.includes(normalizedSearchTerm);
-                                                }
+                                                    {/* Linha 2: Cliente */}
+                                                    <div className="font-bold text-slate-900 text-sm leading-tight mb-1 truncate">
+                                                        {o.client}
+                                                    </div>
 
-                                                return clientMatch || osNumberMatch || itemMatch ||
-                                                    manufacturerMatch || modelMatch || serialMatch || statusDateMatch;
-                                            }).map(o => (
-                                                <tr
-                                                    key={o.firestoreId}
-                                                    className={`hover:bg-blue-50/30 transition-colors group cursor-pointer ${selectedOrders.includes(o.firestoreId) ? 'bg-blue-50/50' : ''}`}
-                                                    onClick={() => toggleOrderSelectionWithLinked(o.firestoreId)}
-                                                >
-                                                    <td className="px-6 py-4 text-center">
+                                                    {/* Linha 3: Equipamento */}
+                                                    <div className="flex items-baseline gap-1.5 mb-2">
+                                                        <span className="text-sm text-slate-700 font-medium truncate">{o.item}</span>
+                                                        {(o.manufacturer || o.model) && (
+                                                            <span className="text-xs text-slate-400 truncate flex-shrink-0">
+                                                                {[o.manufacturer, o.model].filter(Boolean).join(' ')}
+                                                            </span>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Linha 4: Meta-info */}
+                                                    <div className="flex items-center justify-between text-[11px] text-slate-400 font-medium">
+                                                        <div className="flex items-center gap-3">
+                                                            {o.serial && (
+                                                                <span className="font-mono">NS: {o.serial}</span>
+                                                            )}
+                                                            {o.quantity && parseInt(o.quantity) > 1 && (
+                                                                <span className="text-blue-500 font-bold">x{o.quantity}</span>
+                                                            )}
+                                                            {o.billingType && (
+                                                                <span className="uppercase tracking-tight">{o.billingType}</span>
+                                                            )}
+                                                        </div>
+                                                        <span>{formatDateBR(o.statusDate)}</span>
+                                                    </div>
+
+                                                    {/* Botões de aprovação/recusa para cliente */}
+                                                    {userData?.role === 'client' && isBudget && (
+                                                        <div className="flex gap-2 mt-3 pt-3 border-t border-slate-100">
+                                                            <button
+                                                                onClick={e => { e.stopPropagation(); handleApproveBudget(o); }}
+                                                                className="flex-1 py-2 bg-green-600 text-white rounded-xl font-bold text-xs hover:bg-green-700 transition-colors flex items-center justify-center gap-1"
+                                                            >
+                                                                <Check size={14} /> Aprovar
+                                                            </button>
+                                                            <button
+                                                                onClick={e => { e.stopPropagation(); handleRejectBudget(o); }}
+                                                                className="flex-1 py-2 bg-red-600 text-white rounded-xl font-bold text-xs hover:bg-red-700 transition-colors flex items-center justify-center gap-1"
+                                                            >
+                                                                <X size={14} /> Recusar
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+
+                                {/* ── TABELA (desktop) ── */}
+                                <div className="hidden lg:block bg-white rounded-[2rem] shadow-xl border border-slate-100">
+                                    <div className="max-h-[calc(100vh-280px)] overflow-y-auto overflow-x-auto rounded-[2rem]">
+                                        <table className="w-full text-left min-w-[900px]">
+                                            <thead className="bg-white sticky top-0 z-10 shadow-sm">
+                                                <tr className="border-b text-[10px] font-black uppercase text-slate-400 tracking-widest">
+                                                    <th className="px-6 py-6 text-center w-12 bg-white">
                                                         <input
                                                             type="checkbox"
                                                             className="w-4 h-4 rounded border-slate-300 text-blue-600"
-                                                            checked={selectedOrders.includes(o.firestoreId)}
-                                                            onChange={() => toggleOrderSelectionWithLinked(o.firestoreId)}
-                                                            onClick={(e) => e.stopPropagation()}
-                                                        />
-                                                    </td>
-                                                    <td className="px-8 py-6">
-                                                        <div className="font-black text-blue-700 text-lg">{o.osNumber}</div>
-                                                    </td>
-                                                    <td className="px-8 py-6">
-                                                        <div className="font-bold text-slate-900 text-sm">{o.client}</div>
-                                                    </td>
-                                                    <td className="px-8 py-6">
-                                                        <div className="font-bold text-slate-900 text-sm">{o.item}</div>
-                                                        {(o.manufacturer || o.model) && (
-                                                            <div className="text-xs text-slate-500 font-medium mb-0.5">
-                                                                {o.manufacturer || ''} {o.model || ''}
-                                                            </div>
-                                                        )}
-                                                        <div className="text-[10px] text-slate-400 font-mono">NS: {o.serial || 'N/D'}</div>
-                                                        {o.quantity && parseInt(o.quantity) > 1 && (
-                                                            <div className="text-[10px] text-blue-600 font-bold mt-0.5">
-                                                                Quantidade: {o.quantity}
-                                                            </div>
-                                                        )}
-                                                    </td>
-                                                    <td className="px-8 py-6">
-                                                        <div className="text-xs font-bold text-slate-500 uppercase tracking-tighter">{o.billingType}</div>
-                                                    </td>
-                                                    <td className="px-8 py-6">
-                                                        <div
-                                                            className="px-4 py-2 rounded-xl text-[10px] font-black uppercase inline-block border"
-                                                            style={{
-                                                                backgroundColor: statusColors[o.status] + '20',
-                                                                borderColor: statusColors[o.status] + '40',
-                                                                color: statusColors[o.status]
+                                                            onChange={(e) => {
+                                                                if (e.target.checked) {
+                                                                    const ids = new Set();
+                                                                    filteredOrders.forEach(o => {
+                                                                        ids.add(o.firestoreId);
+                                                                        (o.linkedOS ?? []).forEach(id => ids.add(id));
+                                                                    });
+                                                                    setSelectedOrders(Array.from(ids));
+                                                                } else {
+                                                                    const visibleIds = filteredOrders.map(o => o.firestoreId);
+                                                                    setSelectedOrders(prev => prev.filter(id => !visibleIds.includes(id)));
+                                                                }
                                                             }}
-                                                        >
-                                                            {o.status}
-                                                        </div>
-                                                        <div className="text-[9px] text-slate-400 mt-1 font-medium">
-                                                            {formatDateBR(o.statusDate)}
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-8 py-6 text-right">
-                                                        <div className="flex justify-end items-center gap-2">
-                                                            {userData?.role === 'client' &&
-                                                                (o.status === 'Em orçamento' || o.status === 'Aguardando aprovação do orçamento') && (
-                                                                    <>
-                                                                        <button
-                                                                            onClick={(e) => {
-                                                                                e.stopPropagation();
-                                                                                handleApproveBudget(o);
-                                                                            }}
-                                                                            className="px-4 py-2 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 transition-colors text-sm shadow-md"
-                                                                            title="Aprovar orçamento"
-                                                                        >
-                                                                            <Check size={16} className="inline mr-1" /> Aprovar
-                                                                        </button>
-                                                                        <button
-                                                                            onClick={(e) => {
-                                                                                e.stopPropagation();
-                                                                                handleRejectBudget(o);
-                                                                            }}
-                                                                            className="px-4 py-2 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-colors text-sm shadow-md"
-                                                                            title="Recusar orçamento"
-                                                                        >
-                                                                            <X size={16} className="inline mr-1" /> Recusar
-                                                                        </button>
-                                                                    </>
-                                                                )}
-                                                            <OrderActionsDropdown
-                                                                order={o}
-                                                                openModal={openModal}
-                                                                openViewModal={openViewModal}
-                                                                openNewWithClient={handleNewOSWithClient}
-                                                                confirmDelete={confirmDelete}
-                                                                userData={userData}
-                                                                handleNewAssociatedOS={handleNewAssociatedOS}
-                                                                hasPermission={hasPermission}
-                                                                isOpen={dropdownOpen === o.firestoreId}
-                                                                onOpenChange={(id) => setDropdownOpen(id)}
-                                                                openHistoryModal={(order) => {
-                                                                    setSelectedOrderForHistory(order);
-                                                                    setIsHistoryModalOpen(true);
+                                                            checked={
+                                                                filteredOrders.length > 0 &&
+                                                                filteredOrders.every(o => selectedOrders.includes(o.firestoreId))
+                                                            }
+                                                        />
+                                                    </th>
+                                                    {[
+                                                        { label: 'OS', field: 'osNumber' },
+                                                        { label: 'Cliente', field: 'client' },
+                                                        { label: 'Equipamento', field: 'item' },
+                                                        { label: 'Tipo', field: 'billingType' },
+                                                        { label: 'Status', field: 'status' },
+                                                    ].map(col => (
+                                                        <th key={col.field} className="px-8 py-6 bg-white">
+                                                            <button
+                                                                onClick={() => {
+                                                                    setSortField(col.field);
+                                                                    setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
                                                                 }}
-                                                            />
-                                                        </div>
-                                                    </td>
+                                                                className="flex items-center gap-1 hover:text-blue-600"
+                                                            >
+                                                                {col.label}
+                                                                {sortField === col.field && (
+                                                                    sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
+                                                                )}
+                                                            </button>
+                                                        </th>
+                                                    ))}
+                                                    <th className="px-8 py-6 text-right bg-white">Ações</th>
                                                 </tr>
-                                            ))
-                                        )}
-                                    </tbody>
-                                </table>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-50">
+                                                {filteredOrders.length === 0 && (
+                                                    <tr>
+                                                        <td colSpan="7" className="p-20 text-center text-slate-400">
+                                                            Nenhuma OS encontrada.
+                                                        </td>
+                                                    </tr>
+                                                )}
+                                                {filteredOrders.map(o => (
+                                                    <tr
+                                                        key={o.firestoreId}
+                                                        className={`hover:bg-blue-50/30 transition-colors group cursor-pointer ${selectedOrders.includes(o.firestoreId) ? 'bg-blue-50/50' : ''}`}
+                                                        onClick={() => toggleOrderSelectionWithLinked(o.firestoreId)}
+                                                    >
+                                                        <td className="px-6 py-4 text-center">
+                                                            <input
+                                                                type="checkbox"
+                                                                className="w-4 h-4 rounded border-slate-300 text-blue-600"
+                                                                checked={selectedOrders.includes(o.firestoreId)}
+                                                                onChange={() => toggleOrderSelectionWithLinked(o.firestoreId)}
+                                                                onClick={e => e.stopPropagation()}
+                                                            />
+                                                        </td>
+                                                        <td className="px-8 py-6">
+                                                            <div className="font-black text-blue-700 text-lg">{o.osNumber}</div>
+                                                        </td>
+                                                        <td className="px-8 py-6">
+                                                            <div className="font-bold text-slate-900 text-sm">{o.client}</div>
+                                                        </td>
+                                                        <td className="px-8 py-6">
+                                                            <div className="font-bold text-slate-900 text-sm">{o.item}</div>
+                                                            {(o.manufacturer || o.model) && (
+                                                                <div className="text-xs text-slate-500 font-medium mb-0.5">
+                                                                    {o.manufacturer} {o.model}
+                                                                </div>
+                                                            )}
+                                                            <div className="text-[10px] text-slate-400 font-mono">NS: {o.serial || 'N/D'}</div>
+                                                            {o.quantity && parseInt(o.quantity) > 1 && (
+                                                                <div className="text-[10px] text-blue-600 font-bold mt-0.5">
+                                                                    Quantidade: {o.quantity}
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-8 py-6">
+                                                            <div className="text-xs font-bold text-slate-500 uppercase tracking-tighter">{o.billingType}</div>
+                                                        </td>
+                                                        <td className="px-8 py-6">
+                                                            <div
+                                                                className="px-4 py-2 rounded-xl text-[10px] font-black uppercase inline-block border"
+                                                                style={{
+                                                                    backgroundColor: (statusColors[o.status] ?? '#94a3b8') + '20',
+                                                                    borderColor: (statusColors[o.status] ?? '#94a3b8') + '40',
+                                                                    color: statusColors[o.status] ?? '#94a3b8'
+                                                                }}
+                                                            >
+                                                                {o.status}
+                                                            </div>
+                                                            <div className="text-[9px] text-slate-400 mt-1 font-medium">
+                                                                {formatDateBR(o.statusDate)}
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-8 py-6 text-right">
+                                                            <div className="flex justify-end items-center gap-2">
+                                                                {userData?.role === 'client' &&
+                                                                    (o.status === 'Em orçamento' || o.status === 'Aguardando aprovação') && (
+                                                                        <>
+                                                                            <button
+                                                                                onClick={e => { e.stopPropagation(); handleApproveBudget(o); }}
+                                                                                className="px-4 py-2 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 transition-colors text-sm shadow-md"
+                                                                            >
+                                                                                <Check size={16} className="inline mr-1" /> Aprovar
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={e => { e.stopPropagation(); handleRejectBudget(o); }}
+                                                                                className="px-4 py-2 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-colors text-sm shadow-md"
+                                                                            >
+                                                                                <X size={16} className="inline mr-1" /> Recusar
+                                                                            </button>
+                                                                        </>
+                                                                    )}
+                                                                <OrderActionsDropdown
+                                                                    order={o}
+                                                                    openModal={openModal}
+                                                                    openViewModal={openViewModal}
+                                                                    openNewWithClient={handleNewOSWithClient}
+                                                                    confirmDelete={confirmDelete}
+                                                                    userData={userData}
+                                                                    handleNewAssociatedOS={handleNewAssociatedOS}
+                                                                    hasPermission={hasPermission}
+                                                                    isOpen={dropdownOpen === o.firestoreId}
+                                                                    onOpenChange={id => setDropdownOpen(id)}
+                                                                    openHistoryModal={order => {
+                                                                        setSelectedOrderForHistory(order);
+                                                                        setIsHistoryModalOpen(true);
+                                                                    }}
+                                                                />
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                                </>
+                            );
+                        })()}
+
+                        {/* ── FAB Nova OS (mobile only) ── */}
+                        {selectedOrders.length === 0 && hasPermission('canEditOS') && (
+                            <button
+                                onClick={handleOpenNewOS}
+                                className="sm:hidden fixed bottom-6 right-6 z-40 w-14 h-14 bg-blue-600 text-white rounded-full shadow-2xl shadow-blue-300 flex items-center justify-center hover:bg-blue-700 transition-colors"
+                                title="Abrir Nova OS"
+                            >
+                                <Plus size={26} />
+                            </button>
+                        )}
+
+                        {/* ── Barra de ações flutuante mobile (quando há seleção) ── */}
+                        {selectedOrders.length > 0 && (
+                            <div className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 shadow-2xl px-4 pt-3 pb-5 animate-in slide-in-from-bottom-4">
+                                <div className="flex items-center justify-between mb-3">
+                                    <span className="text-sm font-black text-slate-800">
+                                        {selectedOrders.length} OS(s) selecionada(s)
+                                    </span>
+                                    <button
+                                        onClick={() => setSelectedOrders([])}
+                                        className="text-xs text-red-500 font-bold flex items-center gap-1"
+                                    >
+                                        <X size={14} /> Limpar
+                                    </button>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <button
+                                        onClick={() => handleOpenPaymentModal('client')}
+                                        className="bg-indigo-600 text-white py-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5"
+                                    >
+                                        <Printer size={16} /> Imprimir Cliente
+                                    </button>
+                                    {userData?.role !== 'client' && (
+                                        <>
+                                            <button
+                                                onClick={() => setIsMoveModalOpen(true)}
+                                                className="bg-green-600 text-white py-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5"
+                                            >
+                                                <ArrowRight size={16} /> Movimentar
+                                            </button>
+                                            <button
+                                                onClick={() => handlePrint('internal')}
+                                                className="bg-slate-800 text-white py-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5"
+                                            >
+                                                <ShieldAlert size={16} /> Imprimir Interno
+                                            </button>
+                                            <button
+                                                onClick={handlePrintSupplier}
+                                                className="bg-teal-600 text-white py-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5"
+                                            >
+                                                <Truck size={16} /> Fornecedor
+                                            </button>
+                                        </>
+                                    )}
+                                </div>
                             </div>
-                        </div>
+                        )}
                     </div>
                 )}
 
@@ -5195,7 +4956,7 @@ export default function MainApp() {
                                     </button>
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
                                     {userData?.role !== 'client' && (
                                         <button
                                             onClick={() => setIsMoveModalOpen(true)}
@@ -5222,6 +4983,13 @@ export default function MainApp() {
                                             >
                                                 <ShieldAlert size={20} />
                                                 <span className="text-sm">Imprimir Interno</span>
+                                            </button>
+                                            <button
+                                                onClick={handlePrintSupplier}
+                                                className="bg-teal-600 text-white p-4 rounded-xl font-bold flex flex-col items-center justify-center gap-2 shadow hover:bg-teal-700 transition-colors h-24"
+                                            >
+                                                <Truck size={20} />
+                                                <span className="text-sm">Imprimir Fornecedor</span>
                                             </button>
                                             <button
                                                 onClick={exportToWord}
@@ -5562,7 +5330,7 @@ export default function MainApp() {
                                                     </div>
 
                                                     {userData?.role === 'client' &&
-                                                        (o.status === 'Em orçamento' || o.status === 'Aguardando aprovação do orçamento') && (
+                                                        (o.status === 'Em orçamento' || o.status === 'Aguardando aprovação') && (
                                                             <div className="flex gap-1 mt-2">
                                                                 <button
                                                                     onClick={(e) => {
@@ -7152,7 +6920,7 @@ export default function MainApp() {
                                             </div>
                                         </div>
 
-                                        {(formData.status === "Em orçamento" || formData.status === "Aguardando aprovação do orçamento") && (
+                                        {(formData.status === "Em orçamento" || formData.status === "Aguardando aprovação") && (
                                             <div className="space-y-1 animate-in fade-in">
                                                 <label className="text-[10px] font-black text-slate-400 uppercase">Prazo de Entrega</label>
                                                 <div className="flex items-center">
@@ -7165,7 +6933,6 @@ export default function MainApp() {
                                                     />
                                                     <div className="p-4 bg-slate-100 border border-slate-200 rounded-r-2xl font-bold text-slate-600">dias úteis</div>
                                                 </div>
-                                                <p className="text-[10px] text-slate-400 mt-1 ml-4">Esta informação será exibida na proposta de orçamento</p>
                                             </div>
                                         )}
                                     </div>

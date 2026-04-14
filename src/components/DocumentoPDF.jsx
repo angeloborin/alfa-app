@@ -342,7 +342,7 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
     const isOrcamento = title.toLowerCase().includes('orçamento') ||
         Object.values(groups).some(group =>
             group.items.some(item =>
-                item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento'
+                item.status === 'Em orçamento' || item.status === 'Aguardando aprovação'
             )
         );
 
@@ -353,7 +353,7 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
 
         Object.values(groups).forEach(group => {
             group.items.forEach(item => {
-                const isBudget = item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento';
+                const isBudget = item.status === 'Em orçamento' || item.status === 'Aguardando aprovação';
                 if (isBudget) {
                     const original = parseCurrency(item.chargedAmount);
                     const final = parseCurrency(item.finalChargedAmount) || original;
@@ -404,7 +404,7 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
     const headerData = firstGroup?.header || {};
 
     const primeiroItemOrcamento = allItems.find(item =>
-        item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento'
+        item.status === 'Em orçamento' || item.status === 'Aguardando aprovação'
     );
 
     const paymentCondition = customPaymentConditions?.paymentCondition ||
@@ -497,7 +497,7 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                             const defects = item.defect ? item.defect.split('\n').filter(d => d.trim()) : [];
                             const solutions = item.solution ? item.solution.split('\n').filter(s => s.trim()) : [];
                             const observation = item.equipmentObservation || '';
-                            const isBudgetItem = item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento';
+                            const isBudgetItem = item.status === 'Em orçamento' || item.status === 'Aguardando aprovação';
                             const validPhotos = item.photos
                                 ? item.photos.filter(url => url && typeof url === 'string' && url.trim() !== '')
                                 : [];
