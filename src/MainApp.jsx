@@ -840,9 +840,8 @@ const OrderActionsDropdown = ({ order, openModal, openViewModal, openNewWithClie
             {isOpen && (
                 <div className="absolute right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-[200] min-w-[160px] animate-in fade-in slide-in-from-top-2">
                     <button
-                        onMouseDown={(e) => {
+                        onClick={(e) => {
                             e.stopPropagation();
-                            e.preventDefault();
                             onOpenChange(null);
                             openViewModal(order);
                         }}
@@ -855,9 +854,8 @@ const OrderActionsDropdown = ({ order, openModal, openViewModal, openNewWithClie
                     {userData?.role !== 'client' && (
                         <>
                             <button
-                                onMouseDown={(e) => {
+                                onClick={(e) => {
                                     e.stopPropagation();
-                                    e.preventDefault();
                                     onOpenChange(null);
                                     openHistoryModal(order);
                                 }}
@@ -868,9 +866,8 @@ const OrderActionsDropdown = ({ order, openModal, openViewModal, openNewWithClie
                             </button>
 
                             <button
-                                onMouseDown={(e) => {
+                                onClick={(e) => {
                                     e.stopPropagation();
-                                    e.preventDefault();
                                     onOpenChange(null);
                                     openNewWithClient(order);
                                 }}
@@ -883,9 +880,8 @@ const OrderActionsDropdown = ({ order, openModal, openViewModal, openNewWithClie
                             </button>
 
                             <button
-                                onMouseDown={(e) => {
+                                onClick={(e) => {
                                     e.stopPropagation();
-                                    e.preventDefault();
                                     onOpenChange(null);
                                     handleNewAssociatedOS(order);
                                 }}
@@ -898,9 +894,8 @@ const OrderActionsDropdown = ({ order, openModal, openViewModal, openNewWithClie
                             </button>
 
                             <button
-                                onMouseDown={(e) => {
+                                onClick={(e) => {
                                     e.stopPropagation();
-                                    e.preventDefault();
                                     onOpenChange(null);
                                     openModal(order, false);
                                 }}
@@ -912,9 +907,8 @@ const OrderActionsDropdown = ({ order, openModal, openViewModal, openNewWithClie
 
                             {hasPermission('canDeleteOS') && (
                                 <button
-                                    onMouseDown={(e) => {
+                                    onClick={(e) => {
                                         e.stopPropagation();
-                                        e.preventDefault();
                                         onOpenChange(null);
                                         confirmDelete(order);
                                     }}
@@ -4301,7 +4295,7 @@ const toggleOrderSelectionWithLinked = useCallback((orderId) => {
                         </div>
 
                         {selectedOrders.length > 0 && (
-                            <div className="bg-white rounded-2xl shadow-xl border border-slate-100 p-6">
+                            <div className="hidden sm:block bg-white rounded-2xl shadow-xl border border-slate-100 p-6">
                                 <div className="flex justify-between items-center mb-4">
                                     <h3 className="text-lg font-black text-slate-800">
                                         Ações para {selectedOrders.length} OS(s) selecionada(s):
@@ -4625,7 +4619,10 @@ const toggleOrderSelectionWithLinked = useCallback((orderId) => {
                                                             >
                                                                 {o.status}
                                                             </span>
-                                                            <div onClick={e => e.stopPropagation()}>
+                                                            <div
+                                                                onClick={e => e.stopPropagation()}
+                                                                onPointerDown={e => e.stopPropagation()}
+                                                            >
                                                                 <OrderActionsDropdown
                                                                     order={o}
                                                                     openModal={openModal}
@@ -6579,7 +6576,8 @@ const toggleOrderSelectionWithLinked = useCallback((orderId) => {
                                     {/* Botão de upload – aparece apenas em modo de edição */}
                                     {!isViewMode && (
                                         <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                                            <div className="flex flex-wrap gap-4 items-center">
+                                            <div className="flex flex-wrap gap-3 items-center">
+                                                {/* Upload de arquivo */}
                                                 <label className="flex items-center gap-2 px-4 py-3 bg-white border border-slate-200 rounded-xl cursor-pointer hover:bg-blue-50 transition-colors">
                                                     <Upload size={20} className="text-blue-600" />
                                                     <span className="text-sm font-bold">Adicionar Fotos</span>
@@ -6592,6 +6590,21 @@ const toggleOrderSelectionWithLinked = useCallback((orderId) => {
                                                         disabled={uploadingPhotos}
                                                     />
                                                 </label>
+
+                                                {/* Câmera – abre câmera traseira no mobile, webcam no desktop */}
+                                                <label className="flex items-center gap-2 px-4 py-3 bg-white border border-slate-200 rounded-xl cursor-pointer hover:bg-purple-50 transition-colors">
+                                                    <ImageIcon size={20} className="text-purple-600" />
+                                                    <span className="text-sm font-bold">Usar Câmera</span>
+                                                    <input
+                                                        type="file"
+                                                        accept="image/*"
+                                                        capture="environment"
+                                                        className="hidden"
+                                                        onChange={handlePhotoUpload}
+                                                        disabled={uploadingPhotos}
+                                                    />
+                                                </label>
+
                                                 {uploadingPhotos && (
                                                     <div className="flex items-center gap-2 text-blue-600">
                                                         <Loader2 size={20} className="animate-spin" />
@@ -6933,6 +6946,7 @@ const toggleOrderSelectionWithLinked = useCallback((orderId) => {
                                                     />
                                                     <div className="p-4 bg-slate-100 border border-slate-200 rounded-r-2xl font-bold text-slate-600">dias úteis</div>
                                                 </div>
+                                                <p className="text-[10px] text-slate-400 mt-1 ml-4">Esta informação será exibida na proposta de orçamento</p>
                                             </div>
                                         )}
                                     </div>
