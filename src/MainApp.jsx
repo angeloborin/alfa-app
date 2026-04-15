@@ -1316,75 +1316,51 @@ export default function MainApp() {
 
     // Encontra todas as OS no mesmo grupo de vínculos (grafo não-direcionado via BFS)
     // Encontra todas as OS no mesmo grupo de vínculos (grafo não-direcionado via BFS)
-    const findLinkedGroup = useCallback((orderId) => {
-        // Construir um mapa de adjacência com base em todas as OS que têm linkedOS
-        const graph = new Map();
-
-        // Usar orders diretamente, não ordersForUser, para evitar dependência circular
-        orders.forEach(o => {
-            if (o.linkedOS && o.linkedOS.length > 0) {
-                const neighbors = graph.get(o.firestoreId) || new Set();
-                o.linkedOS.forEach(linkedId => {
-                    neighbors.add(linkedId);
-                    // Adicionar aresta de volta para garantir simetria na busca
-                    const backNeighbors = graph.get(linkedId) || new Set();
-                    backNeighbors.add(o.firestoreId);
-                    graph.set(linkedId, backNeighbors);
-                });
-                graph.set(o.firestoreId, neighbors);
+const findLinkedGroup = useCallback((orderId) => {
+    const visited = new Set();
+    const queue = [orderId];
+    
+    while (queue.length > 0) {
+        const currentId = queue.shift();
+        if (visited.has(currentId)) continue;
+        visited.add(currentId);
+        
+        // Links diretos da OS atual
+        const currentOrder = orders.find(o => o.firestoreId === currentId);
+        const directLinks = currentOrder?.linkedOS || [];
+        
+        // Links inversos: OSs que têm o currentId em seu linkedOS
+        const inverseLinks = orders
+            .filter(o => o.linkedOS && o.linkedOS.includes(currentId))
+            .map(o => o.firestoreId);
+        
+        // Une todos os vizinhos (sem duplicatas)
+        const allNeighbors = [...new Set([...directLinks, ...inverseLinks])];
+        
+        for (const neighborId of allNeighbors) {
+            if (!visited.has(neighborId)) {
+                queue.push(neighborId);
             }
-        });
-
-        // BFS/DFS para encontrar todos os nós conectados
-        const visited = new Set();
-        const stack = [orderId];
-        while (stack.length) {
-            const current = stack.pop();
-            if (visited.has(current)) continue;
-            visited.add(current);
-            const neighbors = graph.get(current) || new Set();
-            neighbors.forEach(neighbor => {
-                if (!visited.has(neighbor)) {
-                    stack.push(neighbor);
-                }
-            });
         }
-        return Array.from(visited);
-    }, [orders]);
+    }
+    return Array.from(visited);
+}, [orders]);
 
-    // Função atualizada para selecionar/desselecionar todo o grupo
-    // Definição CORRIGIDA
+    // Alterna seleção de uma OS e todo seu grupo de vínculos
     const toggleOrderSelectionWithLinked = useCallback((orderId) => {
         setSelectedOrders(prev => {
-            const isSelected = prev.includes(orderId);
+            const group = findLinkedGroup(orderId);
+            const isAnySelected = group.some(id => prev.includes(id));
 
-            if (isSelected) {
-                // Desseleciona apenas o item clicado
-                return prev.filter(id => id !== orderId);
+            if (isAnySelected) {
+                // Remove todo o grupo da seleção
+                return prev.filter(id => !group.includes(id));
             } else {
-                // Encontra o grupo de OS vinculadas
-                const group = new Set([orderId]);
-
-                // Busca recursivamente todas as OS vinculadas
-                const findLinkedRecursive = (currentId) => {
-                    const currentOrder = orders.find(o => o.firestoreId === currentId);
-                    if (currentOrder?.linkedOS && currentOrder.linkedOS.length > 0) {
-                        currentOrder.linkedOS.forEach(linkedId => {
-                            if (!group.has(linkedId)) {
-                                group.add(linkedId);
-                                findLinkedRecursive(linkedId);
-                            }
-                        });
-                    }
-                };
-
-                findLinkedRecursive(orderId);
-
-                // Retorna união das seleções anteriores com o novo grupo
-                return [...new Set([...prev, ...Array.from(group)])];
+                // Adiciona todo o grupo à seleção
+                return [...new Set([...prev, ...group])];
             }
         });
-    }, [orders]); // Adiciona orders como dependência
+    }, [findLinkedGroup]);
 
     const MaintenanceVisitSelect = ({ value, onChange, uniqueMaintenanceVisits }) => {
         const defaultOptions = [
@@ -4582,7 +4558,7 @@ export default function MainApp() {
                                             return (
                                                 <div
                                                     key={o.firestoreId}
-                                                    onClick={() => toggleOrderSelection(o.firestoreId)}
+                                                    onClick={() => toggleOrderSelectionWithLinked(o.firestoreId)}
                                                     className={`relative bg-white rounded-2xl border shadow-sm transition-all cursor-pointer select-none
                                                     ${isSelected
                                                             ? 'border-blue-400 ring-2 ring-blue-200 shadow-blue-100'
@@ -4763,7 +4739,7 @@ export default function MainApp() {
                                                         <tr
                                                             key={o.firestoreId}
                                                             className={`hover:bg-blue-50/30 transition-colors group cursor-pointer ${selectedOrders.includes(o.firestoreId) ? 'bg-blue-50/50' : ''}`}
-                                                            onClick={() => toggleOrderSelection(o.firestoreId)}
+                                                            onClick={() => toggleOrderSelectionWithLinked(o.firestoreId)}
                                                         >
                                                             <td className="px-6 py-4 text-center">
                                                                 <input
