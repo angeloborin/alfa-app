@@ -815,22 +815,36 @@ const PaymentConditionsModal = ({
     );
 };
 
-const OrderActionsDropdown = ({ order, openModal, openViewModal, openNewWithClient, handleNewAssociatedOS, confirmDelete, userData, hasPermission, isOpen, onOpenChange, openHistoryModal }) => {
+const OrderActionsDropdown = ({ order, openModal, openViewModal, openNewWithClient, handleNewAssociatedOS, confirmDelete, userData, hasPermission, openHistoryModal }) => {
+    const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef(null);
 
-    const handleOutside = useCallback(() => {
-        if (isOpen) onOpenChange(null);
-    }, [isOpen, onOpenChange]);
+    // Fecha ao clicar fora
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
 
-    useOutsideClick(dropdownRef, handleOutside);
+    const toggleDropdown = (e) => {
+        e.stopPropagation(); // Impede propagação para a linha da tabela
+        setIsOpen(prev => !prev);
+    };
+
+    const handleAction = (callback, ...args) => (e) => {
+        e.stopPropagation();
+        setIsOpen(false);
+        if (callback) callback(...args);
+    };
 
     return (
         <div className="relative" ref={dropdownRef}>
             <button
-                onClick={(e) => {
-                    e.stopPropagation();
-                    onOpenChange(isOpen ? null : order.firestoreId);
-                }}
+                onClick={toggleDropdown}
                 className="p-2.5 bg-white border shadow-sm hover:bg-slate-50 rounded-xl transition-all"
                 title="Ações"
             >
@@ -840,82 +854,50 @@ const OrderActionsDropdown = ({ order, openModal, openViewModal, openNewWithClie
             {isOpen && (
                 <div className="absolute right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-[200] min-w-[160px] animate-in fade-in slide-in-from-top-2">
                     <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onOpenChange(null);
-                            openViewModal(order);
-                        }}
+                        onClick={handleAction(openViewModal, order)}
                         className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors text-sm font-medium"
                     >
-                        <Eye size={18} />
-                        Exibir
+                        <Eye size={18} /> Exibir
                     </button>
 
                     {userData?.role !== 'client' && (
                         <>
                             <button
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onOpenChange(null);
-                                    openHistoryModal(order);
-                                }}
+                                onClick={handleAction(openHistoryModal, order)}
                                 className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors text-sm font-medium"
                             >
-                                <Clock size={18} />
-                                Histórico
+                                <Clock size={18} /> Histórico
                             </button>
 
                             <button
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onOpenChange(null);
-                                    openNewWithClient(order);
-                                }}
+                                onClick={handleAction(openNewWithClient, order)}
                                 className="w-full flex items-start gap-3 px-4 py-3 text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors text-sm font-medium"
                             >
                                 <Plus size={18} className="flex-shrink-0 mt-0.5" />
-                                <span className="flex-1 text-left leading-tight">
-                                    OS com mesmo cliente
-                                </span>
+                                <span className="flex-1 text-left leading-tight">OS com mesmo cliente</span>
                             </button>
 
                             <button
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onOpenChange(null);
-                                    handleNewAssociatedOS(order);
-                                }}
+                                onClick={handleAction(handleNewAssociatedOS, order)}
                                 className="w-full flex items-start gap-3 px-4 py-3 text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors text-sm font-medium"
                             >
                                 <Link2 size={18} className="flex-shrink-0 mt-0.5" />
-                                <span className="flex-1 text-left leading-tight">
-                                    OS associada
-                                </span>
+                                <span className="flex-1 text-left leading-tight">OS associada</span>
                             </button>
 
                             <button
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onOpenChange(null);
-                                    openModal(order, false);
-                                }}
+                                onClick={handleAction(openModal, order, false)}
                                 className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors text-sm font-medium"
                             >
-                                <Edit2 size={18} />
-                                Editar
+                                <Edit2 size={18} /> Editar
                             </button>
 
                             {hasPermission('canDeleteOS') && (
                                 <button
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        onOpenChange(null);
-                                        confirmDelete(order);
-                                    }}
+                                    onClick={handleAction(confirmDelete, order)}
                                     className="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 transition-colors text-sm font-medium"
                                 >
-                                    <Trash2 size={18} />
-                                    Excluir
+                                    <Trash2 size={18} /> Excluir
                                 </button>
                             )}
                         </>
@@ -1095,7 +1077,7 @@ export default function MainApp() {
 
     // Adicione estes hooks junto com os outros hooks
     useOutsideClick(historySerialInputRef, () => setShowHistorySerialSuggestions(false));
-    
+
     useOutsideClick(searchDropdownRef, () => {
         if (showSearchDropdown) {
             setShowSearchDropdown(false);
@@ -1334,55 +1316,75 @@ export default function MainApp() {
 
     // Encontra todas as OS no mesmo grupo de vínculos (grafo não-direcionado via BFS)
     // Encontra todas as OS no mesmo grupo de vínculos (grafo não-direcionado via BFS)
-const findLinkedGroup = useCallback((orderId) => {
-    // Construir um mapa de adjacência com base em todas as OS que têm linkedOS
-    const graph = new Map();
-    
-    // Usar orders diretamente, não ordersForUser, para evitar dependência circular
-    orders.forEach(o => {
-        if (o.linkedOS && o.linkedOS.length > 0) {
-            const neighbors = graph.get(o.firestoreId) || new Set();
-            o.linkedOS.forEach(linkedId => {
-                neighbors.add(linkedId);
-                // Adicionar aresta de volta para garantir simetria na busca
-                const backNeighbors = graph.get(linkedId) || new Set();
-                backNeighbors.add(o.firestoreId);
-                graph.set(linkedId, backNeighbors);
-            });
-            graph.set(o.firestoreId, neighbors);
-        }
-    });
+    const findLinkedGroup = useCallback((orderId) => {
+        // Construir um mapa de adjacência com base em todas as OS que têm linkedOS
+        const graph = new Map();
 
-    // BFS/DFS para encontrar todos os nós conectados
-    const visited = new Set();
-    const stack = [orderId];
-    while (stack.length) {
-        const current = stack.pop();
-        if (visited.has(current)) continue;
-        visited.add(current);
-        const neighbors = graph.get(current) || new Set();
-        neighbors.forEach(neighbor => {
-            if (!visited.has(neighbor)) {
-                stack.push(neighbor);
+        // Usar orders diretamente, não ordersForUser, para evitar dependência circular
+        orders.forEach(o => {
+            if (o.linkedOS && o.linkedOS.length > 0) {
+                const neighbors = graph.get(o.firestoreId) || new Set();
+                o.linkedOS.forEach(linkedId => {
+                    neighbors.add(linkedId);
+                    // Adicionar aresta de volta para garantir simetria na busca
+                    const backNeighbors = graph.get(linkedId) || new Set();
+                    backNeighbors.add(o.firestoreId);
+                    graph.set(linkedId, backNeighbors);
+                });
+                graph.set(o.firestoreId, neighbors);
             }
         });
-    }
-    return Array.from(visited);
-}, [orders]);
 
-// Função atualizada para selecionar/desselecionar todo o grupo
-const toggleOrderSelectionWithLinked = useCallback((orderId) => {
-    setSelectedOrders(prev => {
-        if (prev.includes(orderId)) {
-            // Desseleciona apenas o item clicado
-            return prev.filter(id => id !== orderId);
-        } else {
-            // Seleciona todos do grupo
-            const group = findLinkedGroup(orderId);
-            return [...new Set([...prev, ...group])];
+        // BFS/DFS para encontrar todos os nós conectados
+        const visited = new Set();
+        const stack = [orderId];
+        while (stack.length) {
+            const current = stack.pop();
+            if (visited.has(current)) continue;
+            visited.add(current);
+            const neighbors = graph.get(current) || new Set();
+            neighbors.forEach(neighbor => {
+                if (!visited.has(neighbor)) {
+                    stack.push(neighbor);
+                }
+            });
         }
-    });
-}, [findLinkedGroup]);
+        return Array.from(visited);
+    }, [orders]);
+
+    // Função atualizada para selecionar/desselecionar todo o grupo
+    // Definição CORRIGIDA
+    const toggleOrderSelectionWithLinked = useCallback((orderId) => {
+        setSelectedOrders(prev => {
+            const isSelected = prev.includes(orderId);
+
+            if (isSelected) {
+                // Desseleciona apenas o item clicado
+                return prev.filter(id => id !== orderId);
+            } else {
+                // Encontra o grupo de OS vinculadas
+                const group = new Set([orderId]);
+
+                // Busca recursivamente todas as OS vinculadas
+                const findLinkedRecursive = (currentId) => {
+                    const currentOrder = orders.find(o => o.firestoreId === currentId);
+                    if (currentOrder?.linkedOS && currentOrder.linkedOS.length > 0) {
+                        currentOrder.linkedOS.forEach(linkedId => {
+                            if (!group.has(linkedId)) {
+                                group.add(linkedId);
+                                findLinkedRecursive(linkedId);
+                            }
+                        });
+                    }
+                };
+
+                findLinkedRecursive(orderId);
+
+                // Retorna união das seleções anteriores com o novo grupo
+                return [...new Set([...prev, ...Array.from(group)])];
+            }
+        });
+    }, [orders]); // Adiciona orders como dependência
 
     const MaintenanceVisitSelect = ({ value, onChange, uniqueMaintenanceVisits }) => {
         const defaultOptions = [
@@ -3688,8 +3690,8 @@ const toggleOrderSelectionWithLinked = useCallback((orderId) => {
         const title = printType === 'internal' ?
             'Relatório INTERNO' :
             printType === 'supplier' ?
-            'Relatório' :
-            (hasBudgetStage ? 'Proposta de orçamento' : 'Relatório de atendimento');
+                'Relatório' :
+                (hasBudgetStage ? 'Proposta de orçamento' : 'Relatório de atendimento');
 
         try {
             await openPdfBlob(
@@ -4567,294 +4569,290 @@ const toggleOrderSelectionWithLinked = useCallback((orderId) => {
 
                             return (
                                 <>
-                                {/* ── CARDS (mobile) ── */}
-                                <div className="lg:hidden space-y-3">
-                                    {filteredOrders.length === 0 && (
-                                        <div className="text-center py-16 text-slate-400 font-medium">
-                                            Nenhuma OS encontrada.
-                                        </div>
-                                    )}
-                                    {filteredOrders.map(o => {
-                                        const isSelected = selectedOrders.includes(o.firestoreId);
-                                        const isBudget = o.status === 'Em orçamento' || o.status === 'Aguardando aprovação';
-                                        return (
-                                            <div
-                                                key={o.firestoreId}
-                                                onClick={() => toggleOrderSelectionWithLinked(o.firestoreId)}
-                                                className={`relative bg-white rounded-2xl border shadow-sm transition-all cursor-pointer select-none
-                                                    ${isSelected
-                                                        ? 'border-blue-400 ring-2 ring-blue-200 shadow-blue-100'
-                                                        : 'border-slate-100 hover:border-slate-200 hover:shadow-md'
-                                                    }`}
-                                            >
-                                                {/* Barra colorida de status à esquerda */}
+                                    {/* ── CARDS (mobile) ── */}
+                                    <div className="lg:hidden space-y-3">
+                                        {filteredOrders.length === 0 && (
+                                            <div className="text-center py-16 text-slate-400 font-medium">
+                                                Nenhuma OS encontrada.
+                                            </div>
+                                        )}
+                                        {filteredOrders.map(o => {
+                                            const isSelected = selectedOrders.includes(o.firestoreId);
+                                            const isBudget = o.status === 'Em orçamento' || o.status === 'Aguardando aprovação';
+                                            return (
                                                 <div
-                                                    className="absolute left-0 top-0 bottom-0 w-1 rounded-l-2xl"
-                                                    style={{ backgroundColor: statusColors[o.status] ?? '#94a3b8' }}
-                                                />
+                                                    key={o.firestoreId}
+                                                    onClick={() => toggleOrderSelection(o.firestoreId)}
+                                                    className={`relative bg-white rounded-2xl border shadow-sm transition-all cursor-pointer select-none
+                                                    ${isSelected
+                                                            ? 'border-blue-400 ring-2 ring-blue-200 shadow-blue-100'
+                                                            : 'border-slate-100 hover:border-slate-200 hover:shadow-md'
+                                                        }`}
+                                                >
+                                                    {/* Barra colorida de status à esquerda */}
+                                                    <div
+                                                        className="absolute left-0 top-0 bottom-0 w-1 rounded-l-2xl"
+                                                        style={{ backgroundColor: statusColors[o.status] ?? '#94a3b8' }}
+                                                    />
 
-                                                <div className="pl-4 pr-4 pt-4 pb-3">
-                                                    {/* Linha 1: OS + badge status + checkbox */}
-                                                    <div className="flex items-start justify-between gap-2 mb-2">
-                                                        <div className="flex items-center gap-2 min-w-0">
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={isSelected}
-                                                                onChange={() => toggleOrderSelectionWithLinked(o.firestoreId)}
-                                                                onClick={e => e.stopPropagation()}
-                                                                className="w-4 h-4 rounded border-slate-300 text-blue-600 flex-shrink-0"
-                                                            />
-                                                            <span className="font-black text-blue-700 text-base leading-tight">
-                                                                {o.osNumber}
-                                                            </span>
-                                                        </div>
-                                                        <div className="flex items-center gap-2 flex-shrink-0">
-                                                            <span
-                                                                className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase border"
-                                                                style={{
-                                                                    backgroundColor: (statusColors[o.status] ?? '#94a3b8') + '20',
-                                                                    borderColor: (statusColors[o.status] ?? '#94a3b8') + '40',
-                                                                    color: statusColors[o.status] ?? '#94a3b8'
-                                                                }}
-                                                            >
-                                                                {o.status}
-                                                            </span>
-                                                            <div
-                                                                onClick={e => e.stopPropagation()}
-                                                                onPointerDown={e => e.stopPropagation()}
-                                                            >
-                                                                <OrderActionsDropdown
-                                                                    order={o}
-                                                                    openModal={openModal}
-                                                                    openViewModal={openViewModal}
-                                                                    openNewWithClient={handleNewOSWithClient}
-                                                                    confirmDelete={confirmDelete}
-                                                                    userData={userData}
-                                                                    handleNewAssociatedOS={handleNewAssociatedOS}
-                                                                    hasPermission={hasPermission}
-                                                                    isOpen={dropdownOpen === o.firestoreId}
-                                                                    onOpenChange={id => setDropdownOpen(id)}
-                                                                    openHistoryModal={order => {
-                                                                        setSelectedOrderForHistory(order);
-                                                                        setIsHistoryModalOpen(true);
-                                                                    }}
+                                                    <div className="pl-4 pr-4 pt-4 pb-3">
+                                                        {/* Linha 1: OS + badge status + checkbox */}
+                                                        <div className="flex items-start justify-between gap-2 mb-2">
+                                                            <div className="flex items-center gap-2 min-w-0">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={isSelected}
+                                                                    onChange={() => toggleOrderSelectionWithLinked(o.firestoreId)}
+                                                                    onClick={e => e.stopPropagation()}
+                                                                    className="w-4 h-4 rounded border-slate-300 text-blue-600 flex-shrink-0"
                                                                 />
+                                                                <span className="font-black text-blue-700 text-base leading-tight">
+                                                                    {o.osNumber}
+                                                                </span>
+                                                            </div>
+                                                            <div className="flex items-center gap-2 flex-shrink-0">
+                                                                <span
+                                                                    className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase border"
+                                                                    style={{
+                                                                        backgroundColor: (statusColors[o.status] ?? '#94a3b8') + '20',
+                                                                        borderColor: (statusColors[o.status] ?? '#94a3b8') + '40',
+                                                                        color: statusColors[o.status] ?? '#94a3b8'
+                                                                    }}
+                                                                >
+                                                                    {o.status}
+                                                                </span>
+                                                                <div
+                                                                    onClick={e => e.stopPropagation()}
+                                                                    onPointerDown={e => e.stopPropagation()}
+                                                                >
+                                                                    <OrderActionsDropdown
+                                                                        order={o}
+                                                                        openModal={openModal}
+                                                                        openViewModal={openViewModal}
+                                                                        openNewWithClient={handleNewOSWithClient}
+                                                                        confirmDelete={confirmDelete}
+                                                                        userData={userData}
+                                                                        handleNewAssociatedOS={handleNewAssociatedOS}
+                                                                        hasPermission={hasPermission}
+                                                                        openHistoryModal={order => {
+                                                                            setSelectedOrderForHistory(order);
+                                                                            setIsHistoryModalOpen(true);
+                                                                        }}
+                                                                    />
+                                                                </div>
                                                             </div>
                                                         </div>
-                                                    </div>
 
-                                                    {/* Linha 2: Cliente */}
-                                                    <div className="font-bold text-slate-900 text-sm leading-tight mb-1 truncate">
-                                                        {o.client}
-                                                    </div>
+                                                        {/* Linha 2: Cliente */}
+                                                        <div className="font-bold text-slate-900 text-sm leading-tight mb-1 truncate">
+                                                            {o.client}
+                                                        </div>
 
-                                                    {/* Linha 3: Equipamento */}
-                                                    <div className="flex items-baseline gap-1.5 mb-2">
-                                                        <span className="text-sm text-slate-700 font-medium truncate">{o.item}</span>
-                                                        {(o.manufacturer || o.model) && (
-                                                            <span className="text-xs text-slate-400 truncate flex-shrink-0">
-                                                                {[o.manufacturer, o.model].filter(Boolean).join(' ')}
-                                                            </span>
+                                                        {/* Linha 3: Equipamento */}
+                                                        <div className="flex items-baseline gap-1.5 mb-2">
+                                                            <span className="text-sm text-slate-700 font-medium truncate">{o.item}</span>
+                                                            {(o.manufacturer || o.model) && (
+                                                                <span className="text-xs text-slate-400 truncate flex-shrink-0">
+                                                                    {[o.manufacturer, o.model].filter(Boolean).join(' ')}
+                                                                </span>
+                                                            )}
+                                                        </div>
+
+                                                        {/* Linha 4: Meta-info */}
+                                                        <div className="flex items-center justify-between text-[11px] text-slate-400 font-medium">
+                                                            <div className="flex items-center gap-3">
+                                                                {o.serial && (
+                                                                    <span className="font-mono">NS: {o.serial}</span>
+                                                                )}
+                                                                {o.quantity && parseInt(o.quantity) > 1 && (
+                                                                    <span className="text-blue-500 font-bold">x{o.quantity}</span>
+                                                                )}
+                                                                {o.billingType && (
+                                                                    <span className="uppercase tracking-tight">{o.billingType}</span>
+                                                                )}
+                                                            </div>
+                                                            <span>{formatDateBR(o.statusDate)}</span>
+                                                        </div>
+
+                                                        {/* Botões de aprovação/recusa para cliente */}
+                                                        {userData?.role === 'client' && isBudget && (
+                                                            <div className="flex gap-2 mt-3 pt-3 border-t border-slate-100">
+                                                                <button
+                                                                    onClick={e => { e.stopPropagation(); handleApproveBudget(o); }}
+                                                                    className="flex-1 py-2 bg-green-600 text-white rounded-xl font-bold text-xs hover:bg-green-700 transition-colors flex items-center justify-center gap-1"
+                                                                >
+                                                                    <Check size={14} /> Aprovar
+                                                                </button>
+                                                                <button
+                                                                    onClick={e => { e.stopPropagation(); handleRejectBudget(o); }}
+                                                                    className="flex-1 py-2 bg-red-600 text-white rounded-xl font-bold text-xs hover:bg-red-700 transition-colors flex items-center justify-center gap-1"
+                                                                >
+                                                                    <X size={14} /> Recusar
+                                                                </button>
+                                                            </div>
                                                         )}
                                                     </div>
-
-                                                    {/* Linha 4: Meta-info */}
-                                                    <div className="flex items-center justify-between text-[11px] text-slate-400 font-medium">
-                                                        <div className="flex items-center gap-3">
-                                                            {o.serial && (
-                                                                <span className="font-mono">NS: {o.serial}</span>
-                                                            )}
-                                                            {o.quantity && parseInt(o.quantity) > 1 && (
-                                                                <span className="text-blue-500 font-bold">x{o.quantity}</span>
-                                                            )}
-                                                            {o.billingType && (
-                                                                <span className="uppercase tracking-tight">{o.billingType}</span>
-                                                            )}
-                                                        </div>
-                                                        <span>{formatDateBR(o.statusDate)}</span>
-                                                    </div>
-
-                                                    {/* Botões de aprovação/recusa para cliente */}
-                                                    {userData?.role === 'client' && isBudget && (
-                                                        <div className="flex gap-2 mt-3 pt-3 border-t border-slate-100">
-                                                            <button
-                                                                onClick={e => { e.stopPropagation(); handleApproveBudget(o); }}
-                                                                className="flex-1 py-2 bg-green-600 text-white rounded-xl font-bold text-xs hover:bg-green-700 transition-colors flex items-center justify-center gap-1"
-                                                            >
-                                                                <Check size={14} /> Aprovar
-                                                            </button>
-                                                            <button
-                                                                onClick={e => { e.stopPropagation(); handleRejectBudget(o); }}
-                                                                className="flex-1 py-2 bg-red-600 text-white rounded-xl font-bold text-xs hover:bg-red-700 transition-colors flex items-center justify-center gap-1"
-                                                            >
-                                                                <X size={14} /> Recusar
-                                                            </button>
-                                                        </div>
-                                                    )}
                                                 </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
+                                            );
+                                        })}
+                                    </div>
 
-                                {/* ── TABELA (desktop) ── */}
-                                <div className="hidden lg:block bg-white rounded-[2rem] shadow-xl border border-slate-100">
-                                    <div className="max-h-[calc(100vh-280px)] overflow-y-auto overflow-x-auto rounded-[2rem]">
-                                        <table className="w-full text-left min-w-[900px]">
-                                            <thead className="bg-white sticky top-0 z-10 shadow-sm">
-                                                <tr className="border-b text-[10px] font-black uppercase text-slate-400 tracking-widest">
-                                                    <th className="px-6 py-6 text-center w-12 bg-white">
-                                                        <input
-                                                            type="checkbox"
-                                                            className="w-4 h-4 rounded border-slate-300 text-blue-600"
-                                                            onChange={(e) => {
-                                                                if (e.target.checked) {
-                                                                    const ids = new Set();
-                                                                    filteredOrders.forEach(o => {
-                                                                        ids.add(o.firestoreId);
-                                                                        (o.linkedOS ?? []).forEach(id => ids.add(id));
-                                                                    });
-                                                                    setSelectedOrders(Array.from(ids));
-                                                                } else {
-                                                                    const visibleIds = filteredOrders.map(o => o.firestoreId);
-                                                                    setSelectedOrders(prev => prev.filter(id => !visibleIds.includes(id)));
-                                                                }
-                                                            }}
-                                                            checked={
-                                                                filteredOrders.length > 0 &&
-                                                                filteredOrders.every(o => selectedOrders.includes(o.firestoreId))
-                                                            }
-                                                        />
-                                                    </th>
-                                                    {[
-                                                        { label: 'OS', field: 'osNumber' },
-                                                        { label: 'Cliente', field: 'client' },
-                                                        { label: 'Equipamento', field: 'item' },
-                                                        { label: 'Tipo', field: 'billingType' },
-                                                        { label: 'Status', field: 'status' },
-                                                    ].map(col => (
-                                                        <th key={col.field} className="px-8 py-6 bg-white">
-                                                            <button
-                                                                onClick={() => {
-                                                                    setSortField(col.field);
-                                                                    setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
-                                                                }}
-                                                                className="flex items-center gap-1 hover:text-blue-600"
-                                                            >
-                                                                {col.label}
-                                                                {sortField === col.field && (
-                                                                    sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
-                                                                )}
-                                                            </button>
-                                                        </th>
-                                                    ))}
-                                                    <th className="px-8 py-6 text-right bg-white">Ações</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-slate-50">
-                                                {filteredOrders.length === 0 && (
-                                                    <tr>
-                                                        <td colSpan="7" className="p-20 text-center text-slate-400">
-                                                            Nenhuma OS encontrada.
-                                                        </td>
-                                                    </tr>
-                                                )}
-                                                {filteredOrders.map(o => (
-                                                    <tr
-                                                        key={o.firestoreId}
-                                                        className={`hover:bg-blue-50/30 transition-colors group cursor-pointer ${selectedOrders.includes(o.firestoreId) ? 'bg-blue-50/50' : ''}`}
-                                                        onClick={() => toggleOrderSelectionWithLinked(o.firestoreId)}
-                                                    >
-                                                        <td className="px-6 py-4 text-center">
+                                    {/* ── TABELA (desktop) ── */}
+                                    <div className="hidden lg:block bg-white rounded-[2rem] shadow-xl border border-slate-100">
+                                        <div className="max-h-[calc(100vh-280px)] overflow-y-auto overflow-x-auto rounded-[2rem]">
+                                            <table className="w-full text-left min-w-[900px]">
+                                                <thead className="bg-white sticky top-0 z-10 shadow-sm">
+                                                    <tr className="border-b text-[10px] font-black uppercase text-slate-400 tracking-widest">
+                                                        <th className="px-6 py-6 text-center w-12 bg-white">
                                                             <input
                                                                 type="checkbox"
                                                                 className="w-4 h-4 rounded border-slate-300 text-blue-600"
-                                                                checked={selectedOrders.includes(o.firestoreId)}
-                                                                onChange={() => toggleOrderSelectionWithLinked(o.firestoreId)}
-                                                                onClick={e => e.stopPropagation()}
-                                                            />
-                                                        </td>
-                                                        <td className="px-8 py-6">
-                                                            <div className="font-black text-blue-700 text-lg">{o.osNumber}</div>
-                                                        </td>
-                                                        <td className="px-8 py-6">
-                                                            <div className="font-bold text-slate-900 text-sm">{o.client}</div>
-                                                        </td>
-                                                        <td className="px-8 py-6">
-                                                            <div className="font-bold text-slate-900 text-sm">{o.item}</div>
-                                                            {(o.manufacturer || o.model) && (
-                                                                <div className="text-xs text-slate-500 font-medium mb-0.5">
-                                                                    {o.manufacturer} {o.model}
-                                                                </div>
-                                                            )}
-                                                            <div className="text-[10px] text-slate-400 font-mono">NS: {o.serial || 'N/D'}</div>
-                                                            {o.quantity && parseInt(o.quantity) > 1 && (
-                                                                <div className="text-[10px] text-blue-600 font-bold mt-0.5">
-                                                                    Quantidade: {o.quantity}
-                                                                </div>
-                                                            )}
-                                                        </td>
-                                                        <td className="px-8 py-6">
-                                                            <div className="text-xs font-bold text-slate-500 uppercase tracking-tighter">{o.billingType}</div>
-                                                        </td>
-                                                        <td className="px-8 py-6">
-                                                            <div
-                                                                className="px-4 py-2 rounded-xl text-[10px] font-black uppercase inline-block border"
-                                                                style={{
-                                                                    backgroundColor: (statusColors[o.status] ?? '#94a3b8') + '20',
-                                                                    borderColor: (statusColors[o.status] ?? '#94a3b8') + '40',
-                                                                    color: statusColors[o.status] ?? '#94a3b8'
+                                                                onChange={(e) => {
+                                                                    if (e.target.checked) {
+                                                                        const ids = new Set();
+                                                                        filteredOrders.forEach(o => {
+                                                                            ids.add(o.firestoreId);
+                                                                            (o.linkedOS ?? []).forEach(id => ids.add(id));
+                                                                        });
+                                                                        setSelectedOrders(Array.from(ids));
+                                                                    } else {
+                                                                        const visibleIds = filteredOrders.map(o => o.firestoreId);
+                                                                        setSelectedOrders(prev => prev.filter(id => !visibleIds.includes(id)));
+                                                                    }
                                                                 }}
-                                                            >
-                                                                {o.status}
-                                                            </div>
-                                                            <div className="text-[9px] text-slate-400 mt-1 font-medium">
-                                                                {formatDateBR(o.statusDate)}
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-8 py-6 text-right">
-                                                            <div className="flex justify-end items-center gap-2">
-                                                                {userData?.role === 'client' &&
-                                                                    (o.status === 'Em orçamento' || o.status === 'Aguardando aprovação') && (
-                                                                        <>
-                                                                            <button
-                                                                                onClick={e => { e.stopPropagation(); handleApproveBudget(o); }}
-                                                                                className="px-4 py-2 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 transition-colors text-sm shadow-md"
-                                                                            >
-                                                                                <Check size={16} className="inline mr-1" /> Aprovar
-                                                                            </button>
-                                                                            <button
-                                                                                onClick={e => { e.stopPropagation(); handleRejectBudget(o); }}
-                                                                                className="px-4 py-2 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-colors text-sm shadow-md"
-                                                                            >
-                                                                                <X size={16} className="inline mr-1" /> Recusar
-                                                                            </button>
-                                                                        </>
-                                                                    )}
-                                                                <OrderActionsDropdown
-                                                                    order={o}
-                                                                    openModal={openModal}
-                                                                    openViewModal={openViewModal}
-                                                                    openNewWithClient={handleNewOSWithClient}
-                                                                    confirmDelete={confirmDelete}
-                                                                    userData={userData}
-                                                                    handleNewAssociatedOS={handleNewAssociatedOS}
-                                                                    hasPermission={hasPermission}
-                                                                    isOpen={dropdownOpen === o.firestoreId}
-                                                                    onOpenChange={id => setDropdownOpen(id)}
-                                                                    openHistoryModal={order => {
-                                                                        setSelectedOrderForHistory(order);
-                                                                        setIsHistoryModalOpen(true);
+                                                                checked={
+                                                                    filteredOrders.length > 0 &&
+                                                                    filteredOrders.every(o => selectedOrders.includes(o.firestoreId))
+                                                                }
+                                                            />
+                                                        </th>
+                                                        {[
+                                                            { label: 'OS', field: 'osNumber' },
+                                                            { label: 'Cliente', field: 'client' },
+                                                            { label: 'Equipamento', field: 'item' },
+                                                            { label: 'Tipo', field: 'billingType' },
+                                                            { label: 'Status', field: 'status' },
+                                                        ].map(col => (
+                                                            <th key={col.field} className="px-8 py-6 bg-white">
+                                                                <button
+                                                                    onClick={() => {
+                                                                        setSortField(col.field);
+                                                                        setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
                                                                     }}
-                                                                />
-                                                            </div>
-                                                        </td>
+                                                                    className="flex items-center gap-1 hover:text-blue-600"
+                                                                >
+                                                                    {col.label}
+                                                                    {sortField === col.field && (
+                                                                        sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
+                                                                    )}
+                                                                </button>
+                                                            </th>
+                                                        ))}
+                                                        <th className="px-8 py-6 text-right bg-white">Ações</th>
                                                     </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-50">
+                                                    {filteredOrders.length === 0 && (
+                                                        <tr>
+                                                            <td colSpan="7" className="p-20 text-center text-slate-400">
+                                                                Nenhuma OS encontrada.
+                                                            </td>
+                                                        </tr>
+                                                    )}
+                                                    {filteredOrders.map(o => (
+                                                        <tr
+                                                            key={o.firestoreId}
+                                                            className={`hover:bg-blue-50/30 transition-colors group cursor-pointer ${selectedOrders.includes(o.firestoreId) ? 'bg-blue-50/50' : ''}`}
+                                                            onClick={() => toggleOrderSelection(o.firestoreId)}
+                                                        >
+                                                            <td className="px-6 py-4 text-center">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    className="w-4 h-4 rounded border-slate-300 text-blue-600"
+                                                                    checked={selectedOrders.includes(o.firestoreId)}
+                                                                    onChange={() => toggleOrderSelectionWithLinked(o.firestoreId)}
+                                                                    onClick={e => e.stopPropagation()}
+                                                                />
+                                                            </td>
+                                                            <td className="px-8 py-6">
+                                                                <div className="font-black text-blue-700 text-lg">{o.osNumber}</div>
+                                                            </td>
+                                                            <td className="px-8 py-6">
+                                                                <div className="font-bold text-slate-900 text-sm">{o.client}</div>
+                                                            </td>
+                                                            <td className="px-8 py-6">
+                                                                <div className="font-bold text-slate-900 text-sm">{o.item}</div>
+                                                                {(o.manufacturer || o.model) && (
+                                                                    <div className="text-xs text-slate-500 font-medium mb-0.5">
+                                                                        {o.manufacturer} {o.model}
+                                                                    </div>
+                                                                )}
+                                                                <div className="text-[10px] text-slate-400 font-mono">NS: {o.serial || 'N/D'}</div>
+                                                                {o.quantity && parseInt(o.quantity) > 1 && (
+                                                                    <div className="text-[10px] text-blue-600 font-bold mt-0.5">
+                                                                        Quantidade: {o.quantity}
+                                                                    </div>
+                                                                )}
+                                                            </td>
+                                                            <td className="px-8 py-6">
+                                                                <div className="text-xs font-bold text-slate-500 uppercase tracking-tighter">{o.billingType}</div>
+                                                            </td>
+                                                            <td className="px-8 py-6">
+                                                                <div
+                                                                    className="px-4 py-2 rounded-xl text-[10px] font-black uppercase inline-block border"
+                                                                    style={{
+                                                                        backgroundColor: (statusColors[o.status] ?? '#94a3b8') + '20',
+                                                                        borderColor: (statusColors[o.status] ?? '#94a3b8') + '40',
+                                                                        color: statusColors[o.status] ?? '#94a3b8'
+                                                                    }}
+                                                                >
+                                                                    {o.status}
+                                                                </div>
+                                                                <div className="text-[9px] text-slate-400 mt-1 font-medium">
+                                                                    {formatDateBR(o.statusDate)}
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-8 py-6 text-right">
+                                                                <div className="flex justify-end items-center gap-2">
+                                                                    {userData?.role === 'client' &&
+                                                                        (o.status === 'Em orçamento' || o.status === 'Aguardando aprovação') && (
+                                                                            <>
+                                                                                <button
+                                                                                    onClick={e => { e.stopPropagation(); handleApproveBudget(o); }}
+                                                                                    className="px-4 py-2 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 transition-colors text-sm shadow-md"
+                                                                                >
+                                                                                    <Check size={16} className="inline mr-1" /> Aprovar
+                                                                                </button>
+                                                                                <button
+                                                                                    onClick={e => { e.stopPropagation(); handleRejectBudget(o); }}
+                                                                                    className="px-4 py-2 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-colors text-sm shadow-md"
+                                                                                >
+                                                                                    <X size={16} className="inline mr-1" /> Recusar
+                                                                                </button>
+                                                                            </>
+                                                                        )}
+                                                                    <OrderActionsDropdown
+                                                                        order={o}
+                                                                        openModal={openModal}
+                                                                        openViewModal={openViewModal}
+                                                                        openNewWithClient={handleNewOSWithClient}
+                                                                        confirmDelete={confirmDelete}
+                                                                        userData={userData}
+                                                                        handleNewAssociatedOS={handleNewAssociatedOS}
+                                                                        hasPermission={hasPermission}
+                                                                        openHistoryModal={order => {
+                                                                            setSelectedOrderForHistory(order);
+                                                                            setIsHistoryModalOpen(true);
+                                                                        }}
+                                                                    />
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
                                     </div>
-                                </div>
                                 </>
                             );
                         })()}
