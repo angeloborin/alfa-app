@@ -342,7 +342,7 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
     const isOrcamento = title.toLowerCase().includes('orçamento') ||
         Object.values(groups).some(group =>
             group.items.some(item =>
-                item.status === 'Em orçamento' || item.status === 'Aguardando aprovação'
+                item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento'
             )
         );
 
@@ -353,7 +353,7 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
 
         Object.values(groups).forEach(group => {
             group.items.forEach(item => {
-                const isBudget = item.status === 'Em orçamento' || item.status === 'Aguardando aprovação';
+                const isBudget = item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento';
                 if (isBudget) {
                     const original = parseCurrency(item.chargedAmount);
                     const final = parseCurrency(item.finalChargedAmount) || original;
@@ -404,7 +404,7 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
     const headerData = firstGroup?.header || {};
 
     const primeiroItemOrcamento = allItems.find(item =>
-        item.status === 'Em orçamento' || item.status === 'Aguardando aprovação'
+        item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento'
     );
 
     const paymentCondition = customPaymentConditions?.paymentCondition ||
@@ -417,6 +417,14 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
 
     const mostrarValor = isOrcamento && printType === 'client';
 
+    const isSupplier = printType === 'supplier';
+
+    const ALFA_DATA = {
+        client: 'Alfa Tecnologia Hospitalar',
+        cnpj: '50.993.453/0001-34',
+        address: 'Travessa Moreira, 125 - CEP: 97070-540 - Bairro: Duque de Caxias - Santa Maria / RS',
+    };
+
     return (
         <Document>
             <Page size="A4" style={styles.page}>
@@ -428,6 +436,11 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                         {printType === 'internal' && (
                             <Text style={styles.internalBadge}>USO INTERNO - CONFIDENCIAL</Text>
                         )}
+                        {isSupplier && (
+                            <Text style={[styles.internalBadge, { backgroundColor: '#0f766e' }]}>
+                                DOCUMENTO PARA FORNECEDOR
+                            </Text>
+                        )}
                         <Text style={styles.reportTitle}>{title}</Text>
                         <Text style={{ fontSize: 7, color: '#666' }}>
                             Data: {new Date().toLocaleDateString('pt-BR')}
@@ -436,34 +449,46 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                 </View>
 
                 <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Dados do Cliente</Text>
+                    <Text style={styles.sectionTitle}>{isSupplier ? 'Dados' : 'Dados do Cliente'}</Text>
                     <View style={styles.clientGrid}>
                         <View style={styles.clientItem}>
                             <Text style={styles.clientLabel}>Cliente:</Text>
-                            <Text style={styles.clientValue}>{headerData.client || '---'}</Text>
+                            <Text style={styles.clientValue}>
+                                {isSupplier ? ALFA_DATA.client : (headerData.client || '---')}
+                            </Text>
                         </View>
                         <View style={styles.clientItem}>
                             <Text style={styles.clientLabel}>CNPJ:</Text>
-                            <Text style={styles.clientValue}>{headerData.cnpj || '---'}</Text>
-                        </View>
-                        <View style={styles.clientItem}>
-                            <Text style={styles.clientLabel}>Contato:</Text>
-                            <Text style={styles.clientValue}>{headerData.contactPerson || '---'}</Text>
-                        </View>
-                        <View style={styles.clientItem}>
-                            <Text style={styles.clientLabel}>E-mail:</Text>
-                            <Text style={styles.clientValue}>{headerData.email || '---'}</Text>
-                        </View>
-                        <View style={styles.clientItem}>
-                            <Text style={styles.clientLabel}>Endereço:</Text>
-                            <Text style={styles.clientValue}>{headerData.address || '---'}</Text>
-                        </View>
-                        <View style={styles.clientItem}>
-                            <Text style={styles.clientLabel}>Atendimento:</Text>
                             <Text style={styles.clientValue}>
-                                {headerData.billingType} {headerData.maintenanceVisit ? `- ${headerData.maintenanceVisit}` : ''}
+                                {isSupplier ? ALFA_DATA.cnpj : (headerData.cnpj || '---')}
                             </Text>
                         </View>
+                        {!isSupplier && (
+                            <View style={styles.clientItem}>
+                                <Text style={styles.clientLabel}>Contato:</Text>
+                                <Text style={styles.clientValue}>{headerData.contactPerson || '---'}</Text>
+                            </View>
+                        )}
+                        {!isSupplier && (
+                            <View style={styles.clientItem}>
+                                <Text style={styles.clientLabel}>E-mail:</Text>
+                                <Text style={styles.clientValue}>{headerData.email || '---'}</Text>
+                            </View>
+                        )}
+                        <View style={[styles.clientItem, isSupplier ? { width: '67%' } : {}]}>
+                            <Text style={styles.clientLabel}>Endereço:</Text>
+                            <Text style={styles.clientValue}>
+                                {isSupplier ? ALFA_DATA.address : (headerData.address || '---')}
+                            </Text>
+                        </View>
+                        {!isSupplier && (
+                            <View style={styles.clientItem}>
+                                <Text style={styles.clientLabel}>Atendimento:</Text>
+                                <Text style={styles.clientValue}>
+                                    {headerData.billingType} {headerData.maintenanceVisit ? `- ${headerData.maintenanceVisit}` : ''}
+                                </Text>
+                            </View>
+                        )}
                     </View>
                 </View>
 
@@ -497,10 +522,16 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                             const defects = item.defect ? item.defect.split('\n').filter(d => d.trim()) : [];
                             const solutions = item.solution ? item.solution.split('\n').filter(s => s.trim()) : [];
                             const observation = item.equipmentObservation || '';
-                            const isBudgetItem = item.status === 'Em orçamento' || item.status === 'Aguardando aprovação';
+                            const isBudgetItem = item.status === 'Em orçamento' || item.status === 'Aguardando aprovação do orçamento';
                             const validPhotos = item.photos
                                 ? item.photos.filter(url => url && typeof url === 'string' && url.trim() !== '')
                                 : [];
+
+                            const solutionLower = (item.solution || '').toLowerCase();
+                            const isWarningObs = solutionLower.includes('não passível') || solutionLower.includes('bancada');
+                            const obsBoxStyle = isWarningObs
+                                ? { ...styles.observationBox, backgroundColor: '#fef9c3', borderLeftWidth: 2, borderLeftColor: '#f59e0b', borderLeftStyle: 'solid' }
+                                : styles.observationBox;
 
                             return (
                                 <View key={`${item.groupIndex}-${index}`} style={styles.itemBlock} wrap={false}>
@@ -547,7 +578,7 @@ const DocumentoPDF = ({ groups, printType, title, customPaymentConditions }) => 
                                         </View>
 
                                         <View style={[styles.tableCell, mostrarValor ? styles.cellObs : styles.cellObs_noValor]}>
-                                            <View style={styles.observationBox}>
+                                            <View style={obsBoxStyle}>
                                                 <Text wrap>{observation || 'Sem observações'}</Text>
                                             </View>
                                         </View>

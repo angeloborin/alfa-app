@@ -1315,36 +1315,35 @@ export default function MainApp() {
     // === FUNÇÕES UTILITÁRIAS ===
 
     // Encontra todas as OS no mesmo grupo de vínculos (grafo não-direcionado via BFS)
-    // Encontra todas as OS no mesmo grupo de vínculos (grafo não-direcionado via BFS)
-const findLinkedGroup = useCallback((orderId) => {
-    const visited = new Set();
-    const queue = [orderId];
-    
-    while (queue.length > 0) {
-        const currentId = queue.shift();
-        if (visited.has(currentId)) continue;
-        visited.add(currentId);
-        
-        // Links diretos da OS atual
-        const currentOrder = orders.find(o => o.firestoreId === currentId);
-        const directLinks = currentOrder?.linkedOS || [];
-        
-        // Links inversos: OSs que têm o currentId em seu linkedOS
-        const inverseLinks = orders
-            .filter(o => o.linkedOS && o.linkedOS.includes(currentId))
-            .map(o => o.firestoreId);
-        
-        // Une todos os vizinhos (sem duplicatas)
-        const allNeighbors = [...new Set([...directLinks, ...inverseLinks])];
-        
-        for (const neighborId of allNeighbors) {
-            if (!visited.has(neighborId)) {
-                queue.push(neighborId);
+    const findLinkedGroup = useCallback((orderId) => {
+        const visited = new Set();
+        const queue = [orderId];
+
+        while (queue.length > 0) {
+            const currentId = queue.shift();
+            if (visited.has(currentId)) continue;
+            visited.add(currentId);
+
+            // Links diretos da OS atual
+            const currentOrder = orders.find(o => o.firestoreId === currentId);
+            const directLinks = currentOrder?.linkedOS || [];
+
+            // Links inversos: OSs que têm o currentId em seu linkedOS
+            const inverseLinks = orders
+                .filter(o => o.linkedOS && o.linkedOS.includes(currentId))
+                .map(o => o.firestoreId);
+
+            // Une todos os vizinhos (sem duplicatas)
+            const allNeighbors = [...new Set([...directLinks, ...inverseLinks])];
+
+            for (const neighborId of allNeighbors) {
+                if (!visited.has(neighborId)) {
+                    queue.push(neighborId);
+                }
             }
         }
-    }
-    return Array.from(visited);
-}, [orders]);
+        return Array.from(visited);
+    }, [orders]);
 
     // Alterna seleção de uma OS e todo seu grupo de vínculos
     const toggleOrderSelectionWithLinked = useCallback((orderId) => {
@@ -3615,14 +3614,11 @@ const findLinkedGroup = useCallback((orderId) => {
     const handlePrintForSingleOrder = async (groups, paymentConditions = null) => {
         const title = 'Proposta de orçamento';
         try {
+            const customFilename = getReportFilename(selectedData, 'pdf');
             await openPdfBlob(
-                <DocumentoPDF
-                    groups={groups}
-                    printType='client'
-                    title={title}
-                    customPaymentConditions={paymentConditions}
-                />,
-                title
+                <DocumentoPDF groups={groups} printType={printType} title={title} />,
+                title,
+                customFilename
             );
         } catch (error) {
             console.error('Erro ao gerar PDF:', error);
@@ -3670,14 +3666,11 @@ const findLinkedGroup = useCallback((orderId) => {
                 (hasBudgetStage ? 'Proposta de orçamento' : 'Relatório de atendimento');
 
         try {
+            const customFilename = getReportFilename(selectedData, 'pdf');
             await openPdfBlob(
-                <DocumentoPDF
-                    groups={groups}
-                    printType={printType}
-                    title={title}
-                    customPaymentConditions={customPaymentConditions}
-                />,
-                title
+                <DocumentoPDF groups={groups} printType={printType} title={title} />,
+                title,
+                customFilename
             );
         } catch (error) {
             console.error('Erro ao gerar PDF:', error);
@@ -3798,21 +3791,45 @@ const findLinkedGroup = useCallback((orderId) => {
         return `${baseClass} ${errorClass} ${viewModeClass}`;
     };
 
+    const getReportFilename = (orders, extension) => {
+        if (!orders || orders.length === 0) {
+            return `relatorio_${new Date().toISOString().split('T')[0]}.${extension}`;
+        }
+        const firstOrder = orders[0];
+        const osNumberRaw = firstOrder.osNumber || '';
+        const match = osNumberRaw.match(/^(\d+)\/(\d{4})/);
+        let number = '0000';
+        let year = new Date().getFullYear().toString();
+        if (match) {
+            number = match[1].padStart(4, '0');
+            year = match[2];
+        }
+        let base = `OS_${number}_${year}`;
+        return `${base}.${extension}`;
+    };
+
     // Helper compartilhado para abrir/baixar um blob de PDF
-    const openPdfBlob = async (pdfDoc, title) => {
+    const openPdfBlob = async (pdfDoc, title, customFilename = null) => {
         showNotification('Gerando PDF...', 'info');
         const pdfBlob = await pdf(pdfDoc).toBlob();
         const pdfUrl = URL.createObjectURL(pdfBlob);
-        const printWindow = window.open(pdfUrl, '_blank');
-        if (!printWindow) {
-            showNotification('Permita pop-ups para visualizar o documento', 'error');
-            const link = document.createElement('a');
-            link.href = pdfUrl;
-            link.download = `${title.toLowerCase().replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+
+        // Define o nome do arquivo
+        let filename = customFilename;
+        if (!filename) {
+            const safeTitle = title.toLowerCase().replace(/\s+/g, '_');
+            filename = `${safeTitle}_${new Date().toISOString().split('T')[0]}.pdf`;
         }
+
+        // Força o download imediato
+        const link = document.createElement('a');
+        link.href = pdfUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        // Revoga a URL após um tempo para liberar memória
         setTimeout(() => URL.revokeObjectURL(pdfUrl), 30000);
         showNotification('PDF gerado com sucesso!', 'success');
     };
@@ -3841,9 +3858,11 @@ const findLinkedGroup = useCallback((orderId) => {
         };
 
         try {
+            const customFilename = getReportFilename(selectedData, 'pdf');
             await openPdfBlob(
                 <DocumentoPDF groups={groups} printType={printType} title={title} />,
-                title
+                title,
+                customFilename
             );
         } catch (error) {
             console.error('Erro ao gerar PDF:', error);
@@ -4115,7 +4134,8 @@ const findLinkedGroup = useCallback((orderId) => {
 
             // Criar blob e salvar
             const blob = new Blob([htmlContent], { type: 'application/msword;charset=utf-8' });
-            saveAs(blob, `relatorio_os_${new Date().toISOString().split('T')[0]}.doc`);
+            const wordFilename = getReportFilename(selectedData, 'doc');
+            saveAs(blob, wordFilename);
 
             showNotification('Documento Word gerado com sucesso!', 'success');
         } catch (error) {
