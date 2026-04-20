@@ -1345,21 +1345,20 @@ export default function MainApp() {
         return Array.from(visited);
     }, [orders]);
 
-    // Alterna seleção de uma OS e todo seu grupo de vínculos
     const toggleOrderSelectionWithLinked = useCallback((orderId) => {
-        setSelectedOrders(prev => {
+    setSelectedOrders(prev => {
+        const isSelected = prev.includes(orderId);
+        
+        if (!isSelected) {
+            // Marcar: adiciona todo o grupo de vínculos
             const group = findLinkedGroup(orderId);
-            const isAnySelected = group.some(id => prev.includes(id));
-
-            if (isAnySelected) {
-                // Remove todo o grupo da seleção
-                return prev.filter(id => !group.includes(id));
-            } else {
-                // Adiciona todo o grupo à seleção
-                return [...new Set([...prev, ...group])];
-            }
-        });
-    }, [findLinkedGroup]);
+            return [...new Set([...prev, ...group])];
+        } else {
+            // Desmarcar: remove apenas a OS clicada, mantendo as demais do grupo
+            return prev.filter(id => id !== orderId);
+        }
+    });
+}, [findLinkedGroup]);
 
     const MaintenanceVisitSelect = ({ value, onChange, uniqueMaintenanceVisits }) => {
         const defaultOptions = [
