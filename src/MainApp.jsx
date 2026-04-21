@@ -11,7 +11,8 @@ import {
     ArrowUpRight, ArrowDownRight, Percent, FileSignature,
     CheckSquare, CalendarDays, Eye, EyeOff, Shield, LogOut,
     ArrowDownWideNarrow, ArrowUpNarrowWide, Check, ArrowRight,
-    FileText, Upload, Image as ImageIcon, MoreVertical, Link2, History, Edit2
+    FileText, Upload, Image as ImageIcon, MoreVertical, Link2, History, Edit2,
+    Bell, BellRing, Settings2, Timer, AlertTriangle, Hourglass
 } from 'lucide-react';
 import {
     collection, addDoc, updateDoc, deleteDoc,
@@ -1097,6 +1098,20 @@ export default function MainApp() {
 
     const [customOptions, setCustomOptions] = useState({ Boleto: [], Cartão: [] });
 
+    // === AVISOS ===
+    const DEFAULT_ALERT_THRESHOLDS = {
+        'Recebido': 1,
+        'Em inspeção': 2,
+        'Em orçamento': 1,
+        'Em manutenção': 5,
+        'Aguardando aprovação': 5,
+    };
+
+    const [alertThresholds, setAlertThresholds] = useState(DEFAULT_ALERT_THRESHOLDS);
+    const [alertsTab, setAlertsTab] = useState('list'); // 'list' | 'settings'
+    const [savingThresholds, setSavingThresholds] = useState(false);
+    const [editingThresholds, setEditingThresholds] = useState({ ...DEFAULT_ALERT_THRESHOLDS });
+
     useEffect(() => {
         const unsub = onSnapshot(
             collection(db, 'artifacts', finalAppId, 'public', 'data', 'customOptions'),
@@ -1111,6 +1126,22 @@ export default function MainApp() {
                 setCustomOptions(options);
             },
             (error) => console.error('Erro ao buscar opções personalizadas:', error)
+        );
+        return unsub;
+    }, []);
+
+    // Listener para limites de avisos
+    useEffect(() => {
+        const unsub = onSnapshot(
+            doc(db, 'artifacts', finalAppId, 'public', 'data', 'alertConfig', 'thresholds'),
+            (snap) => {
+                if (snap.exists()) {
+                    const data = snap.data();
+                    setAlertThresholds(prev => ({ ...prev, ...data }));
+                    setEditingThresholds(prev => ({ ...prev, ...data }));
+                }
+            },
+            (error) => console.error('Erro ao buscar configurações de avisos:', error)
         );
         return unsub;
     }, []);
@@ -1142,6 +1173,20 @@ export default function MainApp() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [showValues, setShowValues] = useState(true);
     const [orders, setOrders] = useState([]);
+
+    // FILTRAR ORDENS POR USUÁRIO CLIENTE
+    const ordersForUser = useMemo(() => {
+        let filteredOrders = orders;
+
+        if (userData?.role === 'client' && userData.displayName) {
+            filteredOrders = filteredOrders.filter(order =>
+                order.client === userData.displayName
+            );
+        }
+
+        return filteredOrders;
+    }, [orders, userData]);
+    
     const [contracts, setContracts] = useState([]);
     const [clients, setClients] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -2041,6 +2086,60 @@ export default function MainApp() {
     }, [orders]);
 
     // === HISTÓRICO DO EQUIPAMENTO (para o modal de OS) ===
+    // === DIAS ÚTEIS ===
+    const calcBusinessDays = useCallback((startDateStr) => {
+        if (!startDateStr) return 0;
+        const start = new Date(startDateStr + 'T12:00:00');
+        const today = new Date();
+        today.setHours(12, 0, 0, 0);
+        if (start >= today) return 0;
+        let count = 0;
+        const cur = new Date(start);
+        cur.setDate(cur.getDate() + 1);
+        while (cur <= today) {
+            const day = cur.getDay();
+            if (day !== 0 && day !== 6) count++;
+            cur.setDate(cur.getDate() + 1);
+        }
+        return count;
+    }, []);
+
+    // === ORDENS COM ALERTA ===
+    const alertOrders = useMemo(() => {
+        const alerts = [];
+        ordersForUser.forEach(order => {
+            const threshold = alertThresholds[order.status];
+            if (threshold === undefined || threshold === null) return;
+            if (order.status === 'Finalizado' || order.status === 'Orçamento recusado') return;
+            const businessDays = calcBusinessDays(order.statusDate);
+            if (businessDays > threshold) {
+                alerts.push({
+                    ...order,
+                    businessDaysInStatus: businessDays,
+                    threshold,
+                    daysOver: businessDays - threshold
+                });
+            }
+        });
+        return alerts.sort((a, b) => b.daysOver - a.daysOver);
+    }, [ordersForUser, alertThresholds, calcBusinessDays]);
+
+    const handleSaveThresholds = async () => {
+        setSavingThresholds(true);
+        try {
+            await setDoc(
+                doc(db, 'artifacts', finalAppId, 'public', 'data', 'alertConfig', 'thresholds'),
+                editingThresholds,
+                { merge: true }
+            );
+            showNotification('Configurações de avisos salvas!', 'success');
+        } catch (err) {
+            showNotification('Erro ao salvar configurações: ' + err.message, 'error');
+        } finally {
+            setSavingThresholds(false);
+        }
+    };
+
     const equipmentHistory = useMemo(() => {
         const serial = formData.serial?.trim();
         if (!serial) return null;
@@ -2071,19 +2170,6 @@ export default function MainApp() {
             allOccurrences: sorted
         };
     }, [formData.serial, orders, editingOrder]);
-
-    // FILTRAR ORDENS POR USUÁRIO CLIENTE
-    const ordersForUser = useMemo(() => {
-        let filteredOrders = orders;
-
-        if (userData?.role === 'client' && userData.displayName) {
-            filteredOrders = filteredOrders.filter(order =>
-                order.client === userData.displayName
-            );
-        }
-
-        return filteredOrders;
-    }, [orders, userData]);
 
     // --- ORDENAÇÃO DE OS ---
     const sortedOrders = useMemo(() => {
@@ -2190,6 +2276,7 @@ export default function MainApp() {
         const pagePermissions = {
             'os': 'canViewOS',
             'status': 'canViewOS',
+            'alerts': 'canViewFinancial',
             'financial': 'canViewFinancial',
             'contracts': 'canViewContracts',
             'inventory': 'canViewOS',
@@ -4286,6 +4373,14 @@ export default function MainApp() {
                             <NavItem icon={<LayoutDashboard size={isSidebarOpen ? 20 : 22} />} label="Painel de OS" active={currentPage === 'os'} onClick={() => setCurrentPage('os')} isSidebarOpen={isSidebarOpen} />
                             <NavItem icon={<PieChart size={isSidebarOpen ? 20 : 22} />} label="Painel de Status" active={currentPage === 'status'} onClick={() => setCurrentPage('status')} isSidebarOpen={isSidebarOpen} />
                             <NavItem icon={<History size={isSidebarOpen ? 20 : 22} />} label="Histórico do produto" active={currentPage === 'product-history'} onClick={() => setCurrentPage('product-history')} isSidebarOpen={isSidebarOpen} />
+                            <div className="relative">
+                                <NavItem icon={<Bell size={isSidebarOpen ? 20 : 22} />} label="Avisos" active={currentPage === 'alerts'} onClick={() => setCurrentPage('alerts')} isSidebarOpen={isSidebarOpen} />
+                                {alertOrders.length > 0 && (
+                                    <span className={`absolute top-1 ${isSidebarOpen ? 'right-3' : 'right-1'} bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full min-w-[18px] text-center pointer-events-none`}>
+                                        {alertOrders.length > 99 ? '99+' : alertOrders.length}
+                                    </span>
+                                )}
+                            </div>
                             <NavItem icon={<DollarSign size={isSidebarOpen ? 20 : 22} />} label="Financeiro" active={currentPage === 'financial'} onClick={() => setCurrentPage('financial')} isSidebarOpen={isSidebarOpen} />
                             <NavItem icon={<FileSignature size={isSidebarOpen ? 20 : 22} />} label="Contratos" active={currentPage === 'contracts'} onClick={() => setCurrentPage('contracts')} isSidebarOpen={isSidebarOpen} />
                             <NavItem icon={<Boxes size={isSidebarOpen ? 20 : 22} />} label="Inventário" active={currentPage === 'inventory'} onClick={() => setCurrentPage('inventory')} isSidebarOpen={isSidebarOpen} />
@@ -5948,6 +6043,246 @@ export default function MainApp() {
                                 </table>
                             </div>
                         </div>
+                    </div>
+                )}
+
+                {currentPage === 'alerts' && userData?.role === 'admin' && (
+                    <div className="space-y-6 animate-in fade-in duration-500 max-w-5xl mx-auto">
+                        {/* Header */}
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
+                            <div>
+                                <h2 className="text-3xl font-black text-slate-900 tracking-tighter flex items-center gap-3">
+                                    <BellRing className={alertOrders.length > 0 ? 'text-red-500 animate-bounce' : 'text-slate-400'} size={32} />
+                                    Avisos
+                                </h2>
+                                <p className="text-slate-500 font-medium text-sm">Ordens de serviço com prazo excedido por etapa</p>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                {alertOrders.length > 0 && (
+                                    <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-2xl font-black text-sm">
+                                        <AlertTriangle size={16} />
+                                        {alertOrders.length} OS em alerta
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Tabs */}
+                        <div className="flex gap-1 bg-slate-100 p-1 rounded-2xl w-fit">
+                            <button
+                                onClick={() => setAlertsTab('list')}
+                                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all ${alertsTab === 'list' ? 'bg-white text-slate-900 shadow-md' : 'text-slate-500 hover:text-slate-700'}`}
+                            >
+                                <Bell size={16} />
+                                Avisos Ativos
+                                {alertOrders.length > 0 && (
+                                    <span className="bg-red-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full">{alertOrders.length}</span>
+                                )}
+                            </button>
+                            <button
+                                onClick={() => setAlertsTab('settings')}
+                                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all ${alertsTab === 'settings' ? 'bg-white text-slate-900 shadow-md' : 'text-slate-500 hover:text-slate-700'}`}
+                            >
+                                <Settings2 size={16} />
+                                Configurações
+                            </button>
+                        </div>
+
+                        {/* ABA: AVISOS ATIVOS */}
+                        {alertsTab === 'list' && (
+                            <div className="space-y-4 animate-in fade-in duration-300">
+                                {alertOrders.length === 0 ? (
+                                    <div className="bg-white rounded-[2rem] shadow-xl border border-slate-100 p-20 text-center">
+                                        <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                            <CheckCircle2 size={40} className="text-green-500" />
+                                        </div>
+                                        <h3 className="text-xl font-black text-slate-700 mb-2">Tudo em dia!</h3>
+                                        <p className="text-slate-400 text-sm">Nenhuma OS está com prazo excedido no momento.</p>
+                                    </div>
+                                ) : (
+                                    <>
+                                        {/* Sumário por status */}
+                                        {(() => {
+                                            const byStatus = {};
+                                            alertOrders.forEach(o => {
+                                                byStatus[o.status] = (byStatus[o.status] || 0) + 1;
+                                            });
+                                            return (
+                                                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                                                    {Object.entries(byStatus).map(([status, count]) => {
+                                                        const color = statusColors[status] ?? '#94a3b8';
+                                                        return (
+                                                            <div key={status} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 text-center">
+                                                                <div className="w-3 h-3 rounded-full mx-auto mb-2" style={{ backgroundColor: color }} />
+                                                                <div className="text-2xl font-black" style={{ color }}>{count}</div>
+                                                                <div className="text-[10px] font-bold text-slate-400 uppercase mt-1 leading-tight">{status}</div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            );
+                                        })()}
+
+                                        {/* Lista de OS em alerta */}
+                                        <div className="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden">
+                                            <div className="bg-slate-50 px-6 py-4 border-b border-slate-100">
+                                                <div className="grid grid-cols-12 text-[10px] font-black uppercase text-slate-400 tracking-widest gap-4">
+                                                    <div className="col-span-1">OS</div>
+                                                    <div className="col-span-3">Cliente</div>
+                                                    <div className="col-span-3">Equipamento</div>
+                                                    <div className="col-span-2">Status</div>
+                                                    <div className="col-span-2 text-center">Dias úteis</div>
+                                                    <div className="col-span-1 text-right">Ação</div>
+                                                </div>
+                                            </div>
+                                            <div className="divide-y divide-slate-50 max-h-[calc(100vh-460px)] overflow-y-auto">
+                                                {alertOrders.map(order => {
+                                                    const color = statusColors[order.status] ?? '#94a3b8';
+                                                    const urgency = order.daysOver >= 5 ? 'high' : order.daysOver >= 3 ? 'med' : 'low';
+                                                    const urgencyBg = urgency === 'high' ? 'bg-red-50' : urgency === 'med' ? 'bg-amber-50' : 'bg-yellow-50/60';
+                                                    return (
+                                                        <div key={order.firestoreId} className={`grid grid-cols-12 gap-4 px-6 py-4 items-center hover:bg-slate-50 transition-colors ${urgency === 'high' ? urgencyBg : ''}`}>
+                                                            <div className="col-span-1">
+                                                                <span className="font-black text-blue-700 text-sm">{order.osNumber}</span>
+                                                            </div>
+                                                            <div className="col-span-3">
+                                                                <div className="font-bold text-slate-800 text-sm truncate">{order.client}</div>
+                                                                <div className="text-[10px] text-slate-400">{formatDateBR(order.statusDate)}</div>
+                                                            </div>
+                                                            <div className="col-span-3">
+                                                                <div className="font-medium text-slate-700 text-sm truncate">{order.item}</div>
+                                                                <div className="text-[10px] text-slate-400 truncate">{order.manufacturer} {order.model}</div>
+                                                            </div>
+                                                            <div className="col-span-2">
+                                                                <span className="text-[10px] font-black px-2 py-1 rounded-lg border" style={{ backgroundColor: color + '18', borderColor: color + '40', color }}>
+                                                                    {order.status}
+                                                                </span>
+                                                            </div>
+                                                            <div className="col-span-2 text-center">
+                                                                <div className="inline-flex flex-col items-center">
+                                                                    <span className={`text-2xl font-black ${urgency === 'high' ? 'text-red-600' : urgency === 'med' ? 'text-amber-600' : 'text-yellow-600'}`}>
+                                                                        {order.businessDaysInStatus}
+                                                                    </span>
+                                                                    <span className="text-[9px] text-slate-400 font-bold leading-none">
+                                                                        +{order.daysOver}d além do limite
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-span-1 flex justify-end">
+                                                                <button
+                                                                    onClick={() => openModal(order, false)}
+                                                                    className="p-2 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors"
+                                                                    title="Abrir OS"
+                                                                >
+                                                                    <ExternalLink size={16} />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        )}
+
+                        {/* ABA: CONFIGURAÇÕES */}
+                        {alertsTab === 'settings' && (
+                            <div className="space-y-6 animate-in fade-in duration-300">
+                                <div className="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden">
+                                    <div className="p-8 space-y-6">
+                                        <div className="flex items-center gap-3">
+                                            <div className="bg-amber-100 p-3 rounded-2xl">
+                                                <Timer size={24} className="text-amber-600" />
+                                            </div>
+                                            <div>
+                                                <h3 className="text-lg font-black text-slate-900">Limites por Etapa</h3>
+                                                <p className="text-slate-500 text-sm">Defina quantos dias úteis em cada etapa disparam um alerta.</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-3">
+                                            {Object.entries(editingThresholds).map(([status, days]) => {
+                                                const color = statusColors[status] ?? '#94a3b8';
+                                                return (
+                                                    <div key={status} className="flex items-center justify-between gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100 group hover:border-slate-200 transition-colors">
+                                                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                                                            <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+                                                            <span className="font-bold text-slate-800 text-sm">{status}</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-3 flex-shrink-0">
+                                                            <span className="text-xs text-slate-400 font-medium">Alertar após</span>
+                                                            <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-sm">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setEditingThresholds(prev => ({ ...prev, [status]: Math.max(1, (prev[status] || 1) - 1) }))}
+                                                                    className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 font-black transition-colors text-lg leading-none"
+                                                                >−</button>
+                                                                <input
+                                                                    type="number"
+                                                                    min="1"
+                                                                    max="90"
+                                                                    value={editingThresholds[status] ?? 1}
+                                                                    onChange={e => setEditingThresholds(prev => ({ ...prev, [status]: Math.max(1, parseInt(e.target.value) || 1) }))}
+                                                                    className="w-10 text-center font-black text-slate-900 text-lg outline-none bg-transparent"
+                                                                />
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setEditingThresholds(prev => ({ ...prev, [status]: Math.min(90, (prev[status] || 1) + 1) }))}
+                                                                    className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 font-black transition-colors text-lg leading-none"
+                                                                >+</button>
+                                                            </div>
+                                                            <span className="text-xs text-slate-400 font-medium w-16">dias úteis</span>
+                                                        </div>
+                                                        {/* Preview: quantas OS afetadas com esse threshold */}
+                                                        {(() => {
+                                                            const affected = ordersForUser.filter(o => {
+                                                                if (o.status !== status) return false;
+                                                                return calcBusinessDays(o.statusDate) > (editingThresholds[status] ?? 1);
+                                                            }).length;
+                                                            return affected > 0 ? (
+                                                                <span className="text-[10px] font-black text-red-500 bg-red-50 px-2 py-1 rounded-lg border border-red-100 flex-shrink-0">
+                                                                    {affected} OS afetada{affected > 1 ? 's' : ''}
+                                                                </span>
+                                                            ) : (
+                                                                <span className="text-[10px] text-slate-300 flex-shrink-0 w-20 text-right">Nenhuma</span>
+                                                            );
+                                                        })()}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+
+                                        <div className="flex justify-between items-center pt-4 border-t border-slate-100">
+                                            <button
+                                                type="button"
+                                                onClick={() => setEditingThresholds({ ...DEFAULT_ALERT_THRESHOLDS })}
+                                                className="text-sm font-bold text-slate-400 hover:text-slate-600 transition-colors flex items-center gap-1.5"
+                                            >
+                                                <RefreshCw size={14} /> Restaurar padrões
+                                            </button>
+                                            <button
+                                                onClick={handleSaveThresholds}
+                                                disabled={savingThresholds}
+                                                className="flex items-center gap-2 bg-blue-600 text-white px-8 py-3 rounded-2xl font-black hover:bg-blue-700 shadow-xl shadow-blue-200 transition-all disabled:opacity-70"
+                                            >
+                                                {savingThresholds ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                                                Salvar Configurações
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 flex gap-3">
+                                    <Info size={18} className="text-blue-500 flex-shrink-0 mt-0.5" />
+                                    <div className="text-sm text-blue-700 space-y-1">
+                                        <p className="font-bold">Como funciona o cálculo de dias úteis?</p>
+                                        <p className="font-medium opacity-80">São contados apenas dias úteis (segunda a sexta-feira) a partir do dia seguinte à data do status atual da OS. Feriados não são considerados no cálculo automático.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
 
