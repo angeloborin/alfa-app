@@ -1152,6 +1152,22 @@ export default function MainApp() {
     const [rangeInput, setRangeInput] = useState('');
     const [showRangeInput, setShowRangeInput] = useState(false);
 
+    // === FILTROS AVANÇADOS ===
+    const [filtersOpen, setFiltersOpen] = useState(false);
+    const [filterClient, setFilterClient] = useState('');
+    const [filterCNPJ, setFilterCNPJ] = useState('');
+    const [filterSerial, setFilterSerial] = useState('');
+    const [filterItem, setFilterItem] = useState('');
+    const [filterManufacturer, setFilterManufacturer] = useState('');
+    const [filterModel, setFilterModel] = useState('');
+    const [filterStatus, setFilterStatus] = useState('');
+    const [showFilterClientSug, setShowFilterClientSug] = useState(false);
+    const [showFilterItemSug, setShowFilterItemSug] = useState(false);
+    const [showFilterManufSug, setShowFilterManufSug] = useState(false);
+    const [showFilterModelSug, setShowFilterModelSug] = useState(false);
+    const [showFilterSerialSug, setShowFilterSerialSug] = useState(false);
+    const filterPanelRef = useRef(null);
+
     // Estados de sugestões/autocomplete
     const [showClientSuggestions, setShowClientSuggestions] = useState(false);
     const [showDefectSuggestions, setShowDefectSuggestions] = useState(false);
@@ -2023,6 +2039,38 @@ export default function MainApp() {
     const uniqueSerials = useMemo(() => {
         return [...new Set(orders.map(o => o.serial).filter(i => i && i.length > 1))].sort();
     }, [orders]);
+
+    // === HISTÓRICO DO EQUIPAMENTO (para o modal de OS) ===
+    const equipmentHistory = useMemo(() => {
+        const serial = formData.serial?.trim();
+        if (!serial) return null;
+
+        const related = orders.filter(o => {
+            if (editingOrder && o.firestoreId === editingOrder.firestoreId) return false;
+            return o.serial && o.serial.trim().toLowerCase() === serial.toLowerCase();
+        });
+
+        if (related.length === 0) return null;
+
+        const sorted = [...related].sort((a, b) =>
+            new Date(b.statusDate || 0) - new Date(a.statusDate || 0)
+        );
+        const latest = sorted[0];
+        const latestDate = latest.statusDate ? new Date(latest.statusDate) : null;
+
+        if (!latestDate) return { latest, underWarranty: false, diffMonths: null, allOccurrences: sorted };
+
+        const now = new Date();
+        const diffMs = now - latestDate;
+        const diffMonths = diffMs / (1000 * 60 * 60 * 24 * 30.44);
+
+        return {
+            latest,
+            underWarranty: diffMonths < 3,
+            diffMonths,
+            allOccurrences: sorted
+        };
+    }, [formData.serial, orders, editingOrder]);
 
     // FILTRAR ORDENS POR USUÁRIO CLIENTE
     const ordersForUser = useMemo(() => {
@@ -3696,13 +3744,24 @@ export default function MainApp() {
         setSelectedMonth('');
         setSelectedYear('');
         setSearchTerm('');
+        setFilterClient('');
+        setFilterCNPJ('');
+        setFilterSerial('');
+        setFilterItem('');
+        setFilterManufacturer('');
+        setFilterModel('');
+        setFilterStatus('');
     };
 
     // Função para verificar se há filtros ativos
     const hasActiveFilters = () => {
         return statusFilter || billingFilter || selectedOrders.length > 0 ||
-            selectedDay || selectedMonth || selectedYear || searchTerm;
+            selectedDay || selectedMonth || selectedYear || searchTerm ||
+            filterClient || filterCNPJ || filterSerial || filterItem ||
+            filterManufacturer || filterModel || filterStatus;
     };
+
+    const hasAdvancedFilters = !!(filterClient || filterCNPJ || filterSerial || filterItem || filterManufacturer || filterModel || filterStatus);
 
     const handleNewContract = () => {
         setContractForm({
@@ -4539,6 +4598,164 @@ export default function MainApp() {
                             </div>
                         </div>
 
+                        {/* ── PAINEL DE FILTROS AVANÇADOS ── */}
+                        <div className="bg-white rounded-2xl shadow-xl border border-slate-100 overflow-visible" ref={filterPanelRef}>
+                            <button
+                                onClick={() => setFiltersOpen(!filtersOpen)}
+                                className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors rounded-2xl"
+                            >
+                                <div className="flex items-center gap-3 font-bold text-slate-700 text-sm">
+                                    <Filter size={18} className="text-blue-500" />
+                                    <span>Filtros Avançados</span>
+                                    {hasAdvancedFilters && (
+                                        <span className="bg-blue-600 text-white text-[10px] px-2 py-0.5 rounded-full font-black uppercase">Ativo</span>
+                                    )}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    {hasAdvancedFilters && (
+                                        <button
+                                            type="button"
+                                            onClick={(e) => { e.stopPropagation(); setFilterClient(''); setFilterCNPJ(''); setFilterSerial(''); setFilterItem(''); setFilterManufacturer(''); setFilterModel(''); setFilterStatus(''); }}
+                                            className="text-xs text-red-500 font-bold hover:text-red-700 flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-red-50"
+                                        >
+                                            <X size={12} /> Limpar
+                                        </button>
+                                    )}
+                                    <ChevronDown size={18} className={`text-slate-400 transition-transform duration-200 ${filtersOpen ? 'rotate-180' : ''}`} />
+                                </div>
+                            </button>
+
+                            {filtersOpen && (
+                                <div className="px-4 pb-5 border-t border-slate-100 pt-4 space-y-4 animate-in slide-in-from-top-2 duration-200">
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                                        {/* Cliente */}
+                                        <div className="relative col-span-2 sm:col-span-1">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase block mb-1">Cliente</label>
+                                            <input
+                                                type="text"
+                                                placeholder="Nome do cliente..."
+                                                className="w-full p-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl outline-none font-medium focus:ring-2 focus:ring-blue-500/20"
+                                                value={filterClient}
+                                                onChange={e => { setFilterClient(e.target.value); setShowFilterClientSug(true); }}
+                                                onFocus={() => setShowFilterClientSug(true)}
+                                                onBlur={() => setTimeout(() => setShowFilterClientSug(false), 200)}
+                                            />
+                                            {showFilterClientSug && filterClient && (
+                                                <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-2xl border border-slate-100 z-50 max-h-40 overflow-y-auto">
+                                                    {uniqueClients.filter(c => c.client.toLowerCase().includes(filterClient.toLowerCase())).slice(0, 6).map((c, i) => (
+                                                        <div key={i} className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm font-medium" onMouseDown={() => { setFilterClient(c.client); setShowFilterClientSug(false); }}>{c.client}</div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                        {/* Número de Série */}
+                                        <div className="relative">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase block mb-1">Nº de Série</label>
+                                            <input
+                                                type="text"
+                                                placeholder="NS..."
+                                                className="w-full p-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl outline-none font-mono font-medium focus:ring-2 focus:ring-blue-500/20"
+                                                value={filterSerial}
+                                                onChange={e => { setFilterSerial(e.target.value); setShowFilterSerialSug(true); }}
+                                                onFocus={() => setShowFilterSerialSug(true)}
+                                                onBlur={() => setTimeout(() => setShowFilterSerialSug(false), 200)}
+                                            />
+                                            {showFilterSerialSug && filterSerial && (
+                                                <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-2xl border border-slate-100 z-50 max-h-40 overflow-y-auto">
+                                                    {uniqueSerials.filter(s => s.toLowerCase().includes(filterSerial.toLowerCase())).slice(0, 6).map((s, i) => (
+                                                        <div key={i} className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-xs font-mono font-medium" onMouseDown={() => { setFilterSerial(s); setShowFilterSerialSug(false); }}>{s}</div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                        {/* Item */}
+                                        <div className="relative">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase block mb-1">Equipamento</label>
+                                            <input
+                                                type="text"
+                                                placeholder="Item..."
+                                                className="w-full p-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl outline-none font-medium focus:ring-2 focus:ring-blue-500/20"
+                                                value={filterItem}
+                                                onChange={e => { setFilterItem(e.target.value); setShowFilterItemSug(true); }}
+                                                onFocus={() => setShowFilterItemSug(true)}
+                                                onBlur={() => setTimeout(() => setShowFilterItemSug(false), 200)}
+                                            />
+                                            {showFilterItemSug && filterItem && (
+                                                <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-2xl border border-slate-100 z-50 max-h-40 overflow-y-auto">
+                                                    {uniqueItems.filter(i => i.toLowerCase().includes(filterItem.toLowerCase())).slice(0, 6).map((it, i) => (
+                                                        <div key={i} className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm font-medium" onMouseDown={() => { setFilterItem(it); setShowFilterItemSug(false); }}>{it}</div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                        {/* Marca */}
+                                        <div className="relative">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase block mb-1">Marca</label>
+                                            <input
+                                                type="text"
+                                                placeholder="Marca..."
+                                                className="w-full p-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl outline-none font-medium focus:ring-2 focus:ring-blue-500/20"
+                                                value={filterManufacturer}
+                                                onChange={e => { setFilterManufacturer(e.target.value); setShowFilterManufSug(true); }}
+                                                onFocus={() => setShowFilterManufSug(true)}
+                                                onBlur={() => setTimeout(() => setShowFilterManufSug(false), 200)}
+                                            />
+                                            {showFilterManufSug && filterManufacturer && (
+                                                <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-2xl border border-slate-100 z-50 max-h-40 overflow-y-auto">
+                                                    {uniqueManufacturers.filter(m => m.toLowerCase().includes(filterManufacturer.toLowerCase())).slice(0, 6).map((m, i) => (
+                                                        <div key={i} className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm font-medium" onMouseDown={() => { setFilterManufacturer(m); setShowFilterManufSug(false); }}>{m}</div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                        {/* Modelo */}
+                                        <div className="relative">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase block mb-1">Modelo</label>
+                                            <input
+                                                type="text"
+                                                placeholder="Modelo..."
+                                                className="w-full p-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl outline-none font-medium focus:ring-2 focus:ring-blue-500/20"
+                                                value={filterModel}
+                                                onChange={e => { setFilterModel(e.target.value); setShowFilterModelSug(true); }}
+                                                onFocus={() => setShowFilterModelSug(true)}
+                                                onBlur={() => setTimeout(() => setShowFilterModelSug(false), 200)}
+                                            />
+                                            {showFilterModelSug && filterModel && (
+                                                <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-2xl border border-slate-100 z-50 max-h-40 overflow-y-auto">
+                                                    {uniqueModels.filter(m => m.toLowerCase().includes(filterModel.toLowerCase())).slice(0, 6).map((m, i) => (
+                                                        <div key={i} className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm font-medium" onMouseDown={() => { setFilterModel(m); setShowFilterModelSug(false); }}>{m}</div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Status - círculos coloridos */}
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase">Status</label>
+                                        <div className="flex flex-wrap gap-2">
+                                            {statusOptions.map(status => {
+                                                const color = statusColors[status] ?? '#94a3b8';
+                                                const isActive = filterStatus === status;
+                                                return (
+                                                    <button
+                                                        key={status}
+                                                        type="button"
+                                                        onClick={() => setFilterStatus(prev => prev === status ? '' : status)}
+                                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition-all ${isActive ? 'text-white shadow-md scale-105' : 'bg-white text-slate-600 hover:scale-105'}`}
+                                                        style={isActive ? { backgroundColor: color, borderColor: color } : { borderColor: color + '60', color: color }}
+                                                    >
+                                                        <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+                                                        {status}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
                         {/* ── LISTA DE OS ── */}
                         {isLoading ? (
                             <div className="flex items-center justify-center py-20">
@@ -4547,19 +4764,29 @@ export default function MainApp() {
                         ) : (() => {
                             const filteredOrders = sortedOrders.filter(o => {
                                 const q = searchTerm.toLowerCase().trim();
-                                if (!q) return true;
-                                const [year, month, day] = (o.statusDate ?? '').split('-');
-                                const dateBR = `${day}/${month}/${year}`;
-                                return (
-                                    o.client?.toLowerCase().includes(q) ||
-                                    o.osNumber?.includes(searchTerm) ||
-                                    o.item?.toLowerCase().includes(q) ||
-                                    o.manufacturer?.toLowerCase().includes(q) ||
-                                    o.model?.toLowerCase().includes(q) ||
-                                    o.serial?.toLowerCase().includes(q) ||
-                                    dateBR.includes(q) ||
-                                    (o.statusDate ?? '').includes(q)
-                                );
+                                if (q) {
+                                    const [year, month, day] = (o.statusDate ?? '').split('-');
+                                    const dateBR = `${day}/${month}/${year}`;
+                                    const matchSearch = (
+                                        o.client?.toLowerCase().includes(q) ||
+                                        o.osNumber?.includes(searchTerm) ||
+                                        o.item?.toLowerCase().includes(q) ||
+                                        o.manufacturer?.toLowerCase().includes(q) ||
+                                        o.model?.toLowerCase().includes(q) ||
+                                        o.serial?.toLowerCase().includes(q) ||
+                                        dateBR.includes(q) ||
+                                        (o.statusDate ?? '').includes(q)
+                                    );
+                                    if (!matchSearch) return false;
+                                }
+                                if (filterClient && !o.client?.toLowerCase().includes(filterClient.toLowerCase())) return false;
+                                if (filterCNPJ && !o.cnpj?.toLowerCase().includes(filterCNPJ.toLowerCase())) return false;
+                                if (filterSerial && !o.serial?.toLowerCase().includes(filterSerial.toLowerCase())) return false;
+                                if (filterItem && !o.item?.toLowerCase().includes(filterItem.toLowerCase())) return false;
+                                if (filterManufacturer && !o.manufacturer?.toLowerCase().includes(filterManufacturer.toLowerCase())) return false;
+                                if (filterModel && !o.model?.toLowerCase().includes(filterModel.toLowerCase())) return false;
+                                if (filterStatus && o.status !== filterStatus) return false;
+                                return true;
                             });
 
                             return (
@@ -4694,7 +4921,7 @@ export default function MainApp() {
 
                                     {/* ── TABELA (desktop) ── */}
                                     <div className="hidden lg:block bg-white rounded-[2rem] shadow-xl border border-slate-100">
-                                        <div className="max-h-[calc(100vh-280px)] overflow-y-auto overflow-x-auto rounded-[2rem]">
+                                        <div className="h-[calc(100vh-320px)] overflow-y-auto overflow-x-auto rounded-[2rem]">
                                             <table className="w-full text-left min-w-[900px]">
                                                 <thead className="bg-white sticky top-0 z-10 shadow-sm">
                                                     <tr className="border-b text-[10px] font-black uppercase text-slate-400 tracking-widest">
@@ -4994,62 +5221,141 @@ export default function MainApp() {
                             </div>
                         )}
 
-                        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
-                            <div className="text-sm font-bold text-slate-700 flex items-center gap-2">
-                                <Filter size={16} /> Filtrar por Data:
-                            </div>
-                            <div className="flex flex-wrap gap-3">
-                                <div className="flex items-center gap-2">
-                                    <label className="text-xs font-bold text-slate-500">Dia:</label>
-                                    <select
-                                        className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-medium focus:ring-2 focus:ring-blue-500/20 outline-none"
-                                        value={selectedDay}
-                                        onChange={(e) => setSelectedDay(e.target.value)}
-                                    >
-                                        <option value="">Todos</option>
-                                        {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
-                                            <option key={day} value={day}>{day}</option>
-                                        ))}
-                                    </select>
+                        {/* ── PAINEL DE FILTROS (STATUS) ── */}
+                        <div className="bg-white rounded-2xl shadow-xl border border-slate-100 overflow-visible">
+                            <button
+                                onClick={() => setFiltersOpen(!filtersOpen)}
+                                className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors rounded-2xl"
+                            >
+                                <div className="flex items-center gap-3 font-bold text-slate-700 text-sm">
+                                    <Filter size={18} className="text-blue-500" />
+                                    <span>Filtros & Data</span>
+                                    {hasAdvancedFilters && (
+                                        <span className="bg-blue-600 text-white text-[10px] px-2 py-0.5 rounded-full font-black uppercase">Ativo</span>
+                                    )}
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <label className="text-xs font-bold text-slate-500">Mês:</label>
-                                    <select
-                                        className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-medium focus:ring-2 focus:ring-blue-500/20 outline-none"
-                                        value={selectedMonth}
-                                        onChange={(e) => setSelectedMonth(e.target.value)}
-                                    >
-                                        <option value="">Todos</option>
-                                        {MESES.map((mes, index) => (
-                                            <option key={index} value={index + 1}>{mes}</option>
-                                        ))}
-                                    </select>
+                                    {hasAdvancedFilters && (
+                                        <button type="button" onClick={(e) => { e.stopPropagation(); setFilterClient(''); setFilterCNPJ(''); setFilterSerial(''); setFilterItem(''); setFilterManufacturer(''); setFilterModel(''); setFilterStatus(''); setSelectedDay(''); setSelectedMonth(''); setSelectedYear(''); }} className="text-xs text-red-500 font-bold hover:text-red-700 flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-red-50">
+                                            <X size={12} /> Limpar
+                                        </button>
+                                    )}
+                                    <ChevronDown size={18} className={`text-slate-400 transition-transform duration-200 ${filtersOpen ? 'rotate-180' : ''}`} />
                                 </div>
-                                <div className="flex items-center gap-2">
-                                    <label className="text-xs font-bold text-slate-500">Ano:</label>
-                                    <select
-                                        className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-medium focus:ring-2 focus:ring-blue-500/20 outline-none"
-                                        value={selectedYear}
-                                        onChange={(e) => setSelectedYear(e.target.value)}
-                                    >
-                                        <option value="">Todos</option>
-                                        {Array.from(new Set(ordersForUser.map(o => {
-                                            const date = o.statusDate ? new Date(o.statusDate) : new Date();
-                                            return date.getFullYear();
-                                        }))).sort((a, b) => b - a).map(year => (
-                                            <option key={year} value={year}>{year}</option>
-                                        ))}
-                                    </select>
+                            </button>
+
+                            {filtersOpen && (
+                                <div className="px-4 pb-5 border-t border-slate-100 pt-4 space-y-4 animate-in slide-in-from-top-2 duration-200">
+                                    {/* Filtros de texto */}
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                                        <div className="relative col-span-2 sm:col-span-1">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase block mb-1">Cliente</label>
+                                            <input type="text" placeholder="Nome..." className="w-full p-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl outline-none font-medium focus:ring-2 focus:ring-blue-500/20" value={filterClient} onChange={e => { setFilterClient(e.target.value); setShowFilterClientSug(true); }} onFocus={() => setShowFilterClientSug(true)} onBlur={() => setTimeout(() => setShowFilterClientSug(false), 200)} />
+                                            {showFilterClientSug && filterClient && (
+                                                <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-2xl border border-slate-100 z-50 max-h-40 overflow-y-auto">
+                                                    {uniqueClients.filter(c => c.client.toLowerCase().includes(filterClient.toLowerCase())).slice(0, 6).map((c, i) => (
+                                                        <div key={i} className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm font-medium" onMouseDown={() => { setFilterClient(c.client); setShowFilterClientSug(false); }}>{c.client}</div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="relative">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase block mb-1">Nº de Série</label>
+                                            <input type="text" placeholder="NS..." className="w-full p-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl outline-none font-mono font-medium focus:ring-2 focus:ring-blue-500/20" value={filterSerial} onChange={e => { setFilterSerial(e.target.value); setShowFilterSerialSug(true); }} onFocus={() => setShowFilterSerialSug(true)} onBlur={() => setTimeout(() => setShowFilterSerialSug(false), 200)} />
+                                            {showFilterSerialSug && filterSerial && (
+                                                <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-2xl border border-slate-100 z-50 max-h-40 overflow-y-auto">
+                                                    {uniqueSerials.filter(s => s.toLowerCase().includes(filterSerial.toLowerCase())).slice(0, 6).map((s, i) => (
+                                                        <div key={i} className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-xs font-mono font-medium" onMouseDown={() => { setFilterSerial(s); setShowFilterSerialSug(false); }}>{s}</div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="relative">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase block mb-1">Equipamento</label>
+                                            <input type="text" placeholder="Item..." className="w-full p-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl outline-none font-medium focus:ring-2 focus:ring-blue-500/20" value={filterItem} onChange={e => { setFilterItem(e.target.value); setShowFilterItemSug(true); }} onFocus={() => setShowFilterItemSug(true)} onBlur={() => setTimeout(() => setShowFilterItemSug(false), 200)} />
+                                            {showFilterItemSug && filterItem && (
+                                                <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-2xl border border-slate-100 z-50 max-h-40 overflow-y-auto">
+                                                    {uniqueItems.filter(i => i.toLowerCase().includes(filterItem.toLowerCase())).slice(0, 6).map((it, i) => (
+                                                        <div key={i} className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm font-medium" onMouseDown={() => { setFilterItem(it); setShowFilterItemSug(false); }}>{it}</div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="relative">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase block mb-1">Marca</label>
+                                            <input type="text" placeholder="Marca..." className="w-full p-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl outline-none font-medium focus:ring-2 focus:ring-blue-500/20" value={filterManufacturer} onChange={e => { setFilterManufacturer(e.target.value); setShowFilterManufSug(true); }} onFocus={() => setShowFilterManufSug(true)} onBlur={() => setTimeout(() => setShowFilterManufSug(false), 200)} />
+                                            {showFilterManufSug && filterManufacturer && (
+                                                <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-2xl border border-slate-100 z-50 max-h-40 overflow-y-auto">
+                                                    {uniqueManufacturers.filter(m => m.toLowerCase().includes(filterManufacturer.toLowerCase())).slice(0, 6).map((m, i) => (
+                                                        <div key={i} className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm font-medium" onMouseDown={() => { setFilterManufacturer(m); setShowFilterManufSug(false); }}>{m}</div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="relative">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase block mb-1">Modelo</label>
+                                            <input type="text" placeholder="Modelo..." className="w-full p-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl outline-none font-medium focus:ring-2 focus:ring-blue-500/20" value={filterModel} onChange={e => { setFilterModel(e.target.value); setShowFilterModelSug(true); }} onFocus={() => setShowFilterModelSug(true)} onBlur={() => setTimeout(() => setShowFilterModelSug(false), 200)} />
+                                            {showFilterModelSug && filterModel && (
+                                                <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-2xl border border-slate-100 z-50 max-h-40 overflow-y-auto">
+                                                    {uniqueModels.filter(m => m.toLowerCase().includes(filterModel.toLowerCase())).slice(0, 6).map((m, i) => (
+                                                        <div key={i} className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm font-medium" onMouseDown={() => { setFilterModel(m); setShowFilterModelSug(false); }}>{m}</div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Status - círculos */}
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase">Status</label>
+                                        <div className="flex flex-wrap gap-2">
+                                            {statusOptions.map(status => {
+                                                const color = statusColors[status] ?? '#94a3b8';
+                                                const isActive = filterStatus === status;
+                                                return (
+                                                    <button key={status} type="button" onClick={() => setFilterStatus(prev => prev === status ? '' : status)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition-all ${isActive ? 'text-white shadow-md scale-105' : 'bg-white text-slate-600 hover:scale-105'}`} style={isActive ? { backgroundColor: color, borderColor: color } : { borderColor: color + '60', color: color }}>
+                                                        <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+                                                        {status}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* Filtro de data */}
+                                    <div className="border-t border-slate-100 pt-3 space-y-2">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase flex items-center gap-1"><CalendarDays size={12} /> Filtrar por Data do Status</label>
+                                        <div className="flex flex-wrap gap-3">
+                                            <div className="flex items-center gap-2">
+                                                <label className="text-xs font-bold text-slate-500">Dia:</label>
+                                                <select className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-medium focus:ring-2 focus:ring-blue-500/20 outline-none" value={selectedDay} onChange={(e) => setSelectedDay(e.target.value)}>
+                                                    <option value="">Todos</option>
+                                                    {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (<option key={day} value={day}>{day}</option>))}
+                                                </select>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <label className="text-xs font-bold text-slate-500">Mês:</label>
+                                                <select className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-medium focus:ring-2 focus:ring-blue-500/20 outline-none" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)}>
+                                                    <option value="">Todos</option>
+                                                    {MESES.map((mes, index) => (<option key={index} value={index + 1}>{mes}</option>))}
+                                                </select>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <label className="text-xs font-bold text-slate-500">Ano:</label>
+                                                <select className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-medium focus:ring-2 focus:ring-blue-500/20 outline-none" value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)}>
+                                                    <option value="">Todos</option>
+                                                    {Array.from(new Set(ordersForUser.map(o => { const date = o.statusDate ? new Date(o.statusDate) : new Date(); return date.getFullYear(); }))).sort((a, b) => b - a).map(year => (<option key={year} value={year}>{year}</option>))}
+                                                </select>
+                                            </div>
+                                            {(selectedDay || selectedMonth || selectedYear) && (
+                                                <button onClick={() => { setSelectedDay(''); setSelectedMonth(''); setSelectedYear(''); }} className="text-xs font-bold text-red-600 hover:text-red-700 flex items-center gap-1">
+                                                    <X size={12} /> Limpar data
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
-                                {(selectedDay || selectedMonth || selectedYear) && (
-                                    <button
-                                        onClick={() => { setSelectedDay(''); setSelectedMonth(''); setSelectedYear(''); }}
-                                        className="text-xs font-bold text-red-600 hover:text-red-700 flex items-center gap-1"
-                                    >
-                                        <X size={12} /> Limpar data
-                                    </button>
-                                )}
-                            </div>
+                            )}
                         </div>
 
                         <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-0">
@@ -5238,6 +5544,14 @@ export default function MainApp() {
                                             if (statusFilter && o.status !== statusFilter) return false;
                                             if (billingFilter && o.billingType !== billingFilter) return false;
 
+                                            // Filtros avançados
+                                            if (filterClient && !o.client?.toLowerCase().includes(filterClient.toLowerCase())) return false;
+                                            if (filterSerial && !o.serial?.toLowerCase().includes(filterSerial.toLowerCase())) return false;
+                                            if (filterItem && !o.item?.toLowerCase().includes(filterItem.toLowerCase())) return false;
+                                            if (filterManufacturer && !o.manufacturer?.toLowerCase().includes(filterManufacturer.toLowerCase())) return false;
+                                            if (filterModel && !o.model?.toLowerCase().includes(filterModel.toLowerCase())) return false;
+                                            if (filterStatus && o.status !== filterStatus) return false;
+
                                             // Aplicar busca
                                             if (searchTerm) {
                                                 const normalizedSearchTerm = searchTerm.toLowerCase().trim();
@@ -5373,7 +5687,7 @@ export default function MainApp() {
                                             onClick={handleFilterByStatus}
                                         />
                                         <div className="space-y-2 mt-4">
-                                            {dashboardData.statusChartData.slice(0, 4).map((d, i) => {
+                                            {dashboardData.statusChartData.map((d, i) => {
                                                 const statusDate = d.date ? new Date(d.date).toLocaleDateString('pt-BR') : '';
                                                 const isActive = statusFilter === d.label;
 
@@ -5560,7 +5874,7 @@ export default function MainApp() {
 
                         {/* Tabela de resultados */}
                         <div className="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden">
-                            <div className="max-h-[calc(100vh-280px)] overflow-y-auto">
+                            <div className="h-[calc(100vh-320px)] overflow-y-auto">
                                 <table className="w-full text-left min-w-[900px]">
                                     <thead className="bg-white sticky top-0 z-10 shadow-sm">
                                         <tr className="border-b text-[10px] font-black uppercase text-slate-400 tracking-widest">
@@ -6146,6 +6460,81 @@ export default function MainApp() {
                                         </div>
                                     </div>
                                 </div>
+
+                                {/* SEÇÃO HISTÓRICO DO EQUIPAMENTO */}
+                                {equipmentHistory && (
+                                    <div className="space-y-3">
+                                        <div className="flex items-center gap-2 text-violet-600 font-bold uppercase text-xs tracking-widest">
+                                            <History size={16} /> Histórico do Equipamento
+                                        </div>
+                                        <div className={`rounded-2xl border-2 p-5 space-y-3 ${equipmentHistory.underWarranty ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                                            {/* Badge de garantia */}
+                                            <div className="flex items-center justify-between flex-wrap gap-3">
+                                                <div className={`flex items-center gap-2 px-4 py-2 rounded-full font-black text-sm ${equipmentHistory.underWarranty ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>
+                                                    {equipmentHistory.underWarranty ? (
+                                                        <><CheckCircle2 size={16} /> Passível de garantia</>
+                                                    ) : (
+                                                        <><AlertCircle size={16} /> Não passível de garantia</>
+                                                    )}
+                                                </div>
+                                                <span className={`text-xs font-bold px-3 py-1.5 rounded-xl ${equipmentHistory.underWarranty ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                                    {equipmentHistory.diffMonths !== null
+                                                        ? `${Math.floor(equipmentHistory.diffMonths)} meses atrás`
+                                                        : 'Data desconhecida'
+                                                    }
+                                                </span>
+                                            </div>
+
+                                            {/* Última OS com este NS */}
+                                            <div className={`rounded-xl p-4 space-y-1.5 ${equipmentHistory.underWarranty ? 'bg-green-100/60' : 'bg-red-100/60'}`}>
+                                                <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Último registro deste NS</div>
+                                                <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+                                                    <div>
+                                                        <span className="text-[10px] font-bold text-slate-400 uppercase block">OS</span>
+                                                        <span className="font-black text-blue-700">{equipmentHistory.latest.osNumber}</span>
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-[10px] font-bold text-slate-400 uppercase block">Data</span>
+                                                        <span className="font-bold text-slate-700">{formatDateBR(equipmentHistory.latest.statusDate)}</span>
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-[10px] font-bold text-slate-400 uppercase block">Cliente</span>
+                                                        <span className="font-bold text-slate-700">{equipmentHistory.latest.client}</span>
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-[10px] font-bold text-slate-400 uppercase block">Status</span>
+                                                        <span className="font-bold" style={{ color: statusColors[equipmentHistory.latest.status] ?? '#94a3b8' }}>{equipmentHistory.latest.status}</span>
+                                                    </div>
+                                                </div>
+                                                {equipmentHistory.latest.defect && (
+                                                    <div className="mt-2">
+                                                        <span className="text-[10px] font-bold text-slate-400 uppercase block">Defeito registrado</span>
+                                                        <span className="text-xs text-slate-600">{equipmentHistory.latest.defect.split('\n')[0]}</span>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Todas as ocorrências */}
+                                            {equipmentHistory.allOccurrences.length > 1 && (
+                                                <details className="group">
+                                                    <summary className={`text-xs font-bold cursor-pointer list-none flex items-center gap-1.5 ${equipmentHistory.underWarranty ? 'text-green-700' : 'text-red-700'}`}>
+                                                        <ChevronDown size={14} className="transition-transform group-open:rotate-180" />
+                                                        Ver todas as {equipmentHistory.allOccurrences.length} ocorrências deste NS
+                                                    </summary>
+                                                    <div className="mt-2 space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                                                        {equipmentHistory.allOccurrences.map((oc, idx) => (
+                                                            <div key={idx} className="flex items-center gap-4 p-2 bg-white/70 rounded-lg text-xs">
+                                                                <span className="font-black text-blue-600 w-20 flex-shrink-0">{oc.osNumber}</span>
+                                                                <span className="text-slate-500 w-20 flex-shrink-0">{formatDateBR(oc.statusDate)}</span>
+                                                                <span className="text-slate-600 truncate">{oc.client}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </details>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
 
                                 {/* SEÇÃO LAUDO TÉCNICO */}
                                 <div className="space-y-6">
