@@ -1045,6 +1045,8 @@ export default function MainApp() {
     const [showAddBoletoInput, setShowAddBoletoInput] = useState(false);
     const [newBoletoOption, setNewBoletoOption] = useState('');
 
+    const [isContractViewMode, setIsContractViewMode] = useState(false);
+
     const [historySearchSerial, setHistorySearchSerial] = useState('');
     const [historyFilteredOrders, setHistoryFilteredOrders] = useState([]);
     const [historyDropdownOpen, setHistoryDropdownOpen] = useState(null);
@@ -1111,6 +1113,8 @@ export default function MainApp() {
     const [alertsTab, setAlertsTab] = useState('list'); // 'list' | 'settings'
     const [savingThresholds, setSavingThresholds] = useState(false);
     const [editingThresholds, setEditingThresholds] = useState({ ...DEFAULT_ALERT_THRESHOLDS });
+    const [alertSortDir, setAlertSortDir] = useState('desc'); // 'desc' = mais dias primeiro
+    const [alertStatusFilter, setAlertStatusFilter] = useState(null);
 
     useEffect(() => {
         const unsub = onSnapshot(
@@ -1186,7 +1190,7 @@ export default function MainApp() {
 
         return filteredOrders;
     }, [orders, userData]);
-    
+
     const [contracts, setContracts] = useState([]);
     const [clients, setClients] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -1287,8 +1291,31 @@ export default function MainApp() {
             videoSurgeryEquipment: false,
             endoscopes: false
         },
-        observations: ''
+        observations: '',
+        isActive: true,
+        attachments: []
     });
+
+    // === ESTADOS CONTRATOS (VIEW / FILTRO) ===
+    const [contractActivityFilter, setContractActivityFilter] = useState('all');
+    const [isContractViewModalOpen, setIsContractViewModalOpen] = useState(false);
+    const [contractToView, setContractToView] = useState(null);
+    const [uploadingContractAttachments, setUploadingContractAttachments] = useState(false);
+
+    // === ESTADOS INVENTÁRIO ===
+    const [inventory, setInventory] = useState([]);
+    const [inventoryCategory, setInventoryCategory] = useState('consumables');
+    const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false);
+    const [editingInventoryItem, setEditingInventoryItem] = useState(null);
+    const [inventoryForm, setInventoryForm] = useState({ category: 'consumables', item: '', brand: '', specification: '', supplier: '' });
+    const [inventorySearch, setInventorySearch] = useState('');
+
+    // === ESTADOS FORNECEDORES ===
+    const [suppliers, setSuppliers] = useState([]);
+    const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
+    const [editingSupplier, setEditingSupplier] = useState(null);
+    const [supplierForm, setSupplierForm] = useState({ name: '', cnpj: '', address: '', contact: '', email: '', phone: '' });
+    const [supplierSearch, setSupplierSearch] = useState('');
 
     // === ESTADOS DE VALIDAÇÃO ===
     const [fieldErrors, setFieldErrors] = useState({
@@ -1406,20 +1433,21 @@ export default function MainApp() {
         return Array.from(visited);
     }, [orders]);
 
+    // Alterna seleção de uma OS e todo seu grupo de vínculos
     const toggleOrderSelectionWithLinked = useCallback((orderId) => {
-    setSelectedOrders(prev => {
-        const isSelected = prev.includes(orderId);
-        
-        if (!isSelected) {
-            // Marcar: adiciona todo o grupo de vínculos
-            const group = findLinkedGroup(orderId);
-            return [...new Set([...prev, ...group])];
-        } else {
-            // Desmarcar: remove apenas a OS clicada, mantendo as demais do grupo
-            return prev.filter(id => id !== orderId);
-        }
-    });
-}, [findLinkedGroup]);
+        setSelectedOrders(prev => {
+            const isSelected = prev.includes(orderId);
+
+            if (!isSelected) {
+                // Marcar: adiciona todo o grupo de vínculos
+                const group = findLinkedGroup(orderId);
+                return [...new Set([...prev, ...group])];
+            } else {
+                // Desmarcar: remove apenas a OS clicada, mantendo as demais do grupo
+                return prev.filter(id => id !== orderId);
+            }
+        });
+    }, [findLinkedGroup]);
 
     const MaintenanceVisitSelect = ({ value, onChange, uniqueMaintenanceVisits }) => {
         const defaultOptions = [
@@ -2228,7 +2256,18 @@ export default function MainApp() {
         return { totalRevenue, totalCosts, totalProfit, margin, topClients };
     }, [ordersForUser]);
 
-    // --- LISTA DE CONTRATOS COMBINADA (OS + SALVOS) ---
+    // Calcula dias restantes até o fim do contrato (considera apenas a data, sem horas)
+    const getDaysUntilExpiry = (endDateStr) => {
+        if (!endDateStr) return Infinity;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const endDate = new Date(endDateStr);
+        endDate.setHours(0, 0, 0, 0);
+        const diffTime = endDate - today;
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return diffDays;
+    };
+
     const combinedContracts = useMemo(() => {
         const osClients = new Set(ordersForUser.filter(o => o.billingType === "Contrato de manutenção").map(o => o.client));
         const savedClients = new Set(contracts.map(c => c.clientName));
@@ -2237,6 +2276,14 @@ export default function MainApp() {
         return allClients.map(clientName => {
             const savedData = contracts.find(c => c.clientName === clientName);
             const latestOS = ordersForUser.find(o => o.client === clientName);
+
+            // Calcular dias restantes e nível de alerta
+            const endDate = savedData?.endDate || '';
+            const daysToExpiry = getDaysUntilExpiry(endDate);
+            let alertStatus = 'none';
+            if (endDate && daysToExpiry <= 60) {
+                alertStatus = daysToExpiry <= 30 ? 'red' : 'yellow';
+            }
 
             return {
                 clientName,
@@ -2255,10 +2302,16 @@ export default function MainApp() {
                     endoscopes: false
                 },
                 observations: savedData?.observations || '',
-                isConfigured: !!savedData
+                isConfigured: !!savedData,
+                daysToExpiry,      // novo campo
+                alertStatus        // novo campo: 'none', 'yellow', 'red'
             };
         }).sort((a, b) => a.clientName.localeCompare(b.clientName));
     }, [ordersForUser, contracts]);
+
+    const alertContractsCount = useMemo(() => {
+        return combinedContracts.filter(c => c.alertStatus !== 'none').length;
+    }, [combinedContracts]);
 
     // === Verificar permissões de página ===
     const canAccessPage = () => {
@@ -2280,6 +2333,7 @@ export default function MainApp() {
             'financial': 'canViewFinancial',
             'contracts': 'canViewContracts',
             'inventory': 'canViewOS',
+            'suppliers': 'canViewOS',
             'clients': 'canViewAllClients',
             'users': 'canManageUsers',
             'about': true
@@ -2324,9 +2378,23 @@ export default function MainApp() {
             }
         );
 
+        const unsubInventory = onSnapshot(
+            collection(db, 'artifacts', finalAppId, 'public', 'data', 'inventory'),
+            (snap) => { setInventory(snap.docs.map(d => ({ firestoreId: d.id, ...d.data() }))); },
+            (error) => console.error('Erro ao buscar inventário:', error)
+        );
+
+        const unsubSuppliers = onSnapshot(
+            collection(db, 'artifacts', finalAppId, 'public', 'data', 'suppliers'),
+            (snap) => { setSuppliers(snap.docs.map(d => ({ firestoreId: d.id, ...d.data() }))); },
+            (error) => console.error('Erro ao buscar fornecedores:', error)
+        );
+
         return () => {
             unsubOrders();
             unsubContracts();
+            unsubInventory();
+            unsubSuppliers();
         };
     }, [user, authLoading]);
 
@@ -3855,15 +3923,20 @@ export default function MainApp() {
             clientName: '', cnpj: '', address: '', contactPerson: '', email: '',
             startDate: '', endDate: '', monthlyValue: '', annualValue: '',
             coveredItems: { videoSurgeryInstruments: false, openInstruments: false, videoSurgeryEquipment: false, endoscopes: false },
-            observations: ''
+            observations: '', isActive: true, attachments: []
         });
         setIsNewContractMode(true);
         setIsContractModalOpen(true);
     };
 
-    const openContractModal = (contract) => {
-        setContractForm(contract);
+    const openContractModal = (contract, viewMode = false) => {
+        setContractForm({
+            ...contract,
+            attachments: contract.attachments || [],
+            isActive: contract.isActive !== false
+        });
         setIsNewContractMode(false);
+        setIsContractViewMode(viewMode);
         setIsContractModalOpen(true);
     };
 
@@ -3885,6 +3958,110 @@ export default function MainApp() {
         } finally {
             setIsSaving(false);
         }
+    };
+
+    // === HANDLERS: ANEXOS DE CONTRATOS ===
+    const handleContractAttachmentUpload = async (e) => {
+        const files = Array.from(e.target.files);
+        if (!files.length) return;
+        setUploadingContractAttachments(true);
+        try {
+            const urls = await Promise.all(files.map(async (file) => {
+                const storageRef = ref(storage, `contract_attachments/${contractForm.clientName.replace(/\s+/g, '_')}/${Date.now()}_${file.name}`);
+                await uploadBytes(storageRef, file);
+                return getDownloadURL(storageRef);
+            }));
+            setContractForm(prev => ({ ...prev, attachments: [...(prev.attachments || []), ...urls] }));
+            showNotification(`${files.length} anexo(s) enviado(s)!`, 'success');
+        } catch (err) {
+            showNotification('Erro ao enviar anexo: ' + err.message, 'error');
+        } finally {
+            setUploadingContractAttachments(false);
+        }
+    };
+
+    const handleContractAttachmentRemove = async (index) => {
+        const url = contractForm.attachments[index];
+        try {
+            const path = url.split('/o/')[1]?.split('?')[0];
+            if (path) await deleteObject(ref(storage, decodeURIComponent(path)));
+        } catch (err) { console.warn('Não foi possível remover arquivo do storage:', err); }
+        setContractForm(prev => ({ ...prev, attachments: prev.attachments.filter((_, i) => i !== index) }));
+        showNotification('Anexo removido!', 'success');
+    };
+
+    // === HANDLERS: INVENTÁRIO ===
+    const handleSaveInventoryItem = async () => {
+        if (!inventoryForm.item.trim()) { showNotification('Item é obrigatório', 'error'); return; }
+        try {
+            const data = { ...inventoryForm, updatedAt: Date.now() };
+            if (editingInventoryItem) {
+                await updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'inventory', editingInventoryItem.firestoreId), data);
+                showNotification('Item atualizado!', 'success');
+            } else {
+                await addDoc(collection(db, 'artifacts', finalAppId, 'public', 'data', 'inventory'), { ...data, createdAt: Date.now() });
+                showNotification('Item adicionado!', 'success');
+            }
+            setIsInventoryModalOpen(false);
+            setEditingInventoryItem(null);
+            setInventoryForm({ category: inventoryCategory, item: '', brand: '', specification: '', supplier: '' });
+        } catch (err) { showNotification('Erro: ' + err.message, 'error'); }
+    };
+
+    const handleDeleteInventoryItem = async (item) => {
+        if (!window.confirm(`Excluir "${item.item}"?`)) return;
+        try {
+            await deleteDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'inventory', item.firestoreId));
+            showNotification('Item excluído!', 'success');
+        } catch (err) { showNotification('Erro: ' + err.message, 'error'); }
+    };
+
+    const openInventoryModal = (item = null) => {
+        if (item) {
+            setEditingInventoryItem(item);
+            setInventoryForm({ category: item.category || 'consumables', item: item.item, brand: item.brand || '', specification: item.specification || '', supplier: item.supplier || '' });
+        } else {
+            setEditingInventoryItem(null);
+            setInventoryForm({ category: inventoryCategory, item: '', brand: '', specification: '', supplier: '' });
+        }
+        setIsInventoryModalOpen(true);
+    };
+
+    // === HANDLERS: FORNECEDORES ===
+    const handleSaveSupplier = async () => {
+        if (!supplierForm.name.trim()) { showNotification('Nome é obrigatório', 'error'); return; }
+        try {
+            const data = { ...supplierForm, updatedAt: Date.now() };
+            if (editingSupplier) {
+                await updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'suppliers', editingSupplier.firestoreId), data);
+                showNotification('Fornecedor atualizado!', 'success');
+            } else {
+                await addDoc(collection(db, 'artifacts', finalAppId, 'public', 'data', 'suppliers'), { ...data, createdAt: Date.now() });
+                showNotification('Fornecedor adicionado!', 'success');
+            }
+            setIsSupplierModalOpen(false);
+            setEditingSupplier(null);
+            setSupplierForm({ name: '', cnpj: '', address: '', contact: '', email: '', phone: '' });
+        } catch (err) { showNotification('Erro: ' + err.message, 'error'); }
+    };
+
+    const handleDeleteSupplier = async (supplier) => {
+        if (!window.confirm(`Excluir fornecedor "${supplier.name}"?`)) return;
+        try {
+            await deleteDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'suppliers', supplier.firestoreId));
+            showNotification('Fornecedor excluído!', 'success');
+        } catch (err) { showNotification('Erro: ' + err.message, 'error'); }
+    };
+
+    const openSupplierModal = (supplier = null) => {
+        if (supplier) {
+            setEditingSupplier(supplier);
+            setSupplierForm({ name: supplier.name, cnpj: supplier.cnpj || '', address: supplier.address || '', contact: supplier.contact || '', email: supplier.email || '', phone: supplier.phone || '' });
+        } else {
+            setEditingSupplier(null);
+            setSupplierForm({ name: '', cnpj: '', address: '', contact: '', email: '', phone: '' });
+        }
+        setIsSupplierModalOpen(true);
     };
 
     const confirmDelete = (order) => {
@@ -4382,8 +4559,16 @@ export default function MainApp() {
                                 )}
                             </div>
                             <NavItem icon={<DollarSign size={isSidebarOpen ? 20 : 22} />} label="Financeiro" active={currentPage === 'financial'} onClick={() => setCurrentPage('financial')} isSidebarOpen={isSidebarOpen} />
-                            <NavItem icon={<FileSignature size={isSidebarOpen ? 20 : 22} />} label="Contratos" active={currentPage === 'contracts'} onClick={() => setCurrentPage('contracts')} isSidebarOpen={isSidebarOpen} />
+                            <div className="relative">
+                                <NavItem icon={<FileSignature size={isSidebarOpen ? 20 : 22} />} label="Contratos" active={currentPage === 'contracts'} onClick={() => setCurrentPage('contracts')} isSidebarOpen={isSidebarOpen} />
+                                {alertContractsCount > 0 && (
+                                    <span className={`absolute top-1 ${isSidebarOpen ? 'right-3' : 'right-1'} bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full min-w-[18px] text-center pointer-events-none`}>
+                                        {alertContractsCount > 99 ? '99+' : alertContractsCount}
+                                    </span>
+                                )}
+                            </div>
                             <NavItem icon={<Boxes size={isSidebarOpen ? 20 : 22} />} label="Inventário" active={currentPage === 'inventory'} onClick={() => setCurrentPage('inventory')} isSidebarOpen={isSidebarOpen} />
+                            <NavItem icon={<Truck size={isSidebarOpen ? 20 : 22} />} label="Fornecedores" active={currentPage === 'suppliers'} onClick={() => setCurrentPage('suppliers')} isSidebarOpen={isSidebarOpen} />
                             <NavItem icon={<Users size={isSidebarOpen ? 20 : 22} />} label="Clientes" active={currentPage === 'clients'} onClick={() => setCurrentPage('clients')} isSidebarOpen={isSidebarOpen} />
                             {hasPermission('canManageUsers') && (
                                 <NavItem icon={<Shield size={isSidebarOpen ? 20 : 22} />} label="Usuários" active={currentPage === 'users'} onClick={() => setCurrentPage('users')} isSidebarOpen={isSidebarOpen} />
@@ -6101,87 +6286,199 @@ export default function MainApp() {
                                     </div>
                                 ) : (
                                     <>
-                                        {/* Sumário por status */}
+                                        {/* Sumário por status — clicável para filtrar */}
                                         {(() => {
                                             const byStatus = {};
-                                            alertOrders.forEach(o => {
-                                                byStatus[o.status] = (byStatus[o.status] || 0) + 1;
-                                            });
+                                            alertOrders.forEach(o => { byStatus[o.status] = (byStatus[o.status] || 0) + 1; });
                                             return (
                                                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                                                     {Object.entries(byStatus).map(([status, count]) => {
                                                         const color = statusColors[status] ?? '#94a3b8';
+                                                        const isActive = alertStatusFilter === status;
                                                         return (
-                                                            <div key={status} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 text-center">
-                                                                <div className="w-3 h-3 rounded-full mx-auto mb-2" style={{ backgroundColor: color }} />
+                                                            <button
+                                                                key={status}
+                                                                type="button"
+                                                                onClick={() => setAlertStatusFilter(prev => prev === status ? null : status)}
+                                                                className={`rounded-2xl border-2 p-4 text-center transition-all hover:scale-105 active:scale-100 ${isActive ? 'shadow-lg scale-105' : 'bg-white border-slate-100 shadow-sm hover:border-slate-200'}`}
+                                                                style={isActive ? { backgroundColor: color + '15', borderColor: color } : {}}
+                                                            >
+                                                                <div className="w-3 h-3 rounded-full mx-auto mb-2 transition-transform" style={{ backgroundColor: color }} />
                                                                 <div className="text-2xl font-black" style={{ color }}>{count}</div>
                                                                 <div className="text-[10px] font-bold text-slate-400 uppercase mt-1 leading-tight">{status}</div>
-                                                            </div>
+                                                                {isActive && <div className="text-[9px] font-black mt-1.5" style={{ color }}>● filtrando</div>}
+                                                            </button>
                                                         );
                                                     })}
                                                 </div>
                                             );
                                         })()}
 
-                                        {/* Lista de OS em alerta */}
-                                        <div className="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden">
-                                            <div className="bg-slate-50 px-6 py-4 border-b border-slate-100">
-                                                <div className="grid grid-cols-12 text-[10px] font-black uppercase text-slate-400 tracking-widest gap-4">
-                                                    <div className="col-span-1">OS</div>
-                                                    <div className="col-span-3">Cliente</div>
-                                                    <div className="col-span-3">Equipamento</div>
-                                                    <div className="col-span-2">Status</div>
-                                                    <div className="col-span-2 text-center">Dias úteis</div>
-                                                    <div className="col-span-1 text-right">Ação</div>
-                                                </div>
+                                        {/* Barra de controles: filtro ativo + ordenação mobile */}
+                                        <div className="flex items-center justify-between gap-3 flex-wrap">
+                                            <div className="flex items-center gap-2">
+                                                {alertStatusFilter && (
+                                                    <button
+                                                        onClick={() => setAlertStatusFilter(null)}
+                                                        className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
+                                                    >
+                                                        <X size={12} /> Limpar filtro: {alertStatusFilter}
+                                                    </button>
+                                                )}
                                             </div>
-                                            <div className="divide-y divide-slate-50 max-h-[calc(100vh-460px)] overflow-y-auto">
-                                                {alertOrders.map(order => {
-                                                    const color = statusColors[order.status] ?? '#94a3b8';
-                                                    const urgency = order.daysOver >= 5 ? 'high' : order.daysOver >= 3 ? 'med' : 'low';
-                                                    const urgencyBg = urgency === 'high' ? 'bg-red-50' : urgency === 'med' ? 'bg-amber-50' : 'bg-yellow-50/60';
-                                                    return (
-                                                        <div key={order.firestoreId} className={`grid grid-cols-12 gap-4 px-6 py-4 items-center hover:bg-slate-50 transition-colors ${urgency === 'high' ? urgencyBg : ''}`}>
-                                                            <div className="col-span-1">
-                                                                <span className="font-black text-blue-700 text-sm">{order.osNumber}</span>
-                                                            </div>
-                                                            <div className="col-span-3">
-                                                                <div className="font-bold text-slate-800 text-sm truncate">{order.client}</div>
-                                                                <div className="text-[10px] text-slate-400">{formatDateBR(order.statusDate)}</div>
-                                                            </div>
-                                                            <div className="col-span-3">
-                                                                <div className="font-medium text-slate-700 text-sm truncate">{order.item}</div>
-                                                                <div className="text-[10px] text-slate-400 truncate">{order.manufacturer} {order.model}</div>
-                                                            </div>
-                                                            <div className="col-span-2">
-                                                                <span className="text-[10px] font-black px-2 py-1 rounded-lg border" style={{ backgroundColor: color + '18', borderColor: color + '40', color }}>
-                                                                    {order.status}
-                                                                </span>
-                                                            </div>
-                                                            <div className="col-span-2 text-center">
-                                                                <div className="inline-flex flex-col items-center">
-                                                                    <span className={`text-2xl font-black ${urgency === 'high' ? 'text-red-600' : urgency === 'med' ? 'text-amber-600' : 'text-yellow-600'}`}>
-                                                                        {order.businessDaysInStatus}
-                                                                    </span>
-                                                                    <span className="text-[9px] text-slate-400 font-bold leading-none">
-                                                                        +{order.daysOver}d além do limite
-                                                                    </span>
+                                            {/* Ordenação — aparece só no mobile (no desktop é pelo header da tabela) */}
+                                            <button
+                                                type="button"
+                                                onClick={() => setAlertSortDir(d => d === 'desc' ? 'asc' : 'desc')}
+                                                className="lg:hidden flex items-center gap-2 text-xs font-bold px-3 py-2 bg-white border border-slate-200 rounded-xl shadow-sm hover:bg-slate-50 transition-colors text-slate-600"
+                                            >
+                                                {alertSortDir === 'desc' ? <ArrowDownWideNarrow size={15} /> : <ArrowUpNarrowWide size={15} />}
+                                                Dias úteis: {alertSortDir === 'desc' ? 'Maior primeiro' : 'Menor primeiro'}
+                                            </button>
+                                        </div>
+
+                                        {/* ── DESKTOP: tabela ── */}
+                                        {(() => {
+                                            const displayed = alertOrders
+                                                .filter(o => !alertStatusFilter || o.status === alertStatusFilter)
+                                                .sort((a, b) => alertSortDir === 'desc'
+                                                    ? b.businessDaysInStatus - a.businessDaysInStatus
+                                                    : a.businessDaysInStatus - b.businessDaysInStatus
+                                                );
+                                            return (
+                                                <>
+                                                    {/* DESKTOP TABLE */}
+                                                    <div className="hidden lg:block bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden">
+                                                        <div className="bg-slate-50 px-6 py-4 border-b border-slate-100">
+                                                            <div className="grid grid-cols-12 text-[10px] font-black uppercase text-slate-400 tracking-widest gap-4 items-center">
+                                                                <div className="col-span-1">OS</div>
+                                                                <div className="col-span-3">Cliente</div>
+                                                                <div className="col-span-3">Equipamento</div>
+                                                                <div className="col-span-2">Status</div>
+                                                                <div className="col-span-2 text-center">
+                                                                    <button
+                                                                        onClick={() => setAlertSortDir(d => d === 'desc' ? 'asc' : 'desc')}
+                                                                        className="inline-flex items-center gap-1 hover:text-blue-600 transition-colors cursor-pointer group"
+                                                                        title="Ordenar por dias úteis"
+                                                                    >
+                                                                        Dias úteis
+                                                                        <span className="opacity-60 group-hover:opacity-100">
+                                                                            {alertSortDir === 'desc' ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
+                                                                        </span>
+                                                                    </button>
                                                                 </div>
-                                                            </div>
-                                                            <div className="col-span-1 flex justify-end">
-                                                                <button
-                                                                    onClick={() => openModal(order, false)}
-                                                                    className="p-2 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors"
-                                                                    title="Abrir OS"
-                                                                >
-                                                                    <ExternalLink size={16} />
-                                                                </button>
+                                                                <div className="col-span-1 text-right">Ação</div>
                                                             </div>
                                                         </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
+                                                        <div className="divide-y divide-slate-50 max-h-[calc(100vh-460px)] overflow-y-auto">
+                                                            {displayed.length === 0 ? (
+                                                                <div className="p-10 text-center text-slate-400 text-sm">Nenhuma OS para o status selecionado.</div>
+                                                            ) : displayed.map(order => {
+                                                                const color = statusColors[order.status] ?? '#94a3b8';
+                                                                const urgency = order.daysOver >= 5 ? 'high' : order.daysOver >= 3 ? 'med' : 'low';
+                                                                const rowBg = urgency === 'high' ? 'bg-red-50/60' : urgency === 'med' ? 'bg-amber-50/40' : '';
+                                                                return (
+                                                                    <div key={order.firestoreId} className={`grid grid-cols-12 gap-4 px-6 py-4 items-center hover:bg-blue-50/30 transition-colors ${rowBg}`}>
+                                                                        <div className="col-span-1">
+                                                                            <span className="font-black text-blue-700 text-sm">{order.osNumber}</span>
+                                                                        </div>
+                                                                        <div className="col-span-3">
+                                                                            <div className="font-bold text-slate-800 text-sm truncate">{order.client}</div>
+                                                                            <div className="text-[10px] text-slate-400">{formatDateBR(order.statusDate)}</div>
+                                                                        </div>
+                                                                        <div className="col-span-3">
+                                                                            <div className="font-medium text-slate-700 text-sm truncate">{order.item}</div>
+                                                                            <div className="text-[10px] text-slate-400 truncate">{order.manufacturer} {order.model}</div>
+                                                                        </div>
+                                                                        <div className="col-span-2">
+                                                                            <span className="text-[10px] font-black px-2 py-1 rounded-lg border" style={{ backgroundColor: color + '18', borderColor: color + '40', color }}>
+                                                                                {order.status}
+                                                                            </span>
+                                                                        </div>
+                                                                        <div className="col-span-2 text-center">
+                                                                            <span className={`text-2xl font-black ${urgency === 'high' ? 'text-red-600' : urgency === 'med' ? 'text-amber-600' : 'text-yellow-600'}`}>
+                                                                                {order.businessDaysInStatus}
+                                                                            </span>
+                                                                            <div className="text-[9px] text-slate-400 font-bold">+{order.daysOver}d além do limite</div>
+                                                                        </div>
+                                                                        <div className="col-span-1 flex justify-end">
+                                                                            <button onClick={() => openModal(order, false)} className="p-2 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors" title="Abrir OS">
+                                                                                <ExternalLink size={16} />
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* MOBILE CARDS */}
+                                                    <div className="lg:hidden space-y-3">
+                                                        {displayed.length === 0 ? (
+                                                            <div className="bg-white rounded-2xl p-8 text-center text-slate-400 text-sm border border-slate-100">
+                                                                Nenhuma OS para o status selecionado.
+                                                            </div>
+                                                        ) : displayed.map(order => {
+                                                            const color = statusColors[order.status] ?? '#94a3b8';
+                                                            const urgency = order.daysOver >= 5 ? 'high' : order.daysOver >= 3 ? 'med' : 'low';
+                                                            const urgencyColor = urgency === 'high' ? '#ef4444' : urgency === 'med' ? '#f59e0b' : '#eab308';
+                                                            const urgencyBg = urgency === 'high' ? 'bg-red-50 border-red-200' : urgency === 'med' ? 'bg-amber-50 border-amber-200' : 'bg-yellow-50 border-yellow-200';
+                                                            return (
+                                                                <div
+                                                                    key={order.firestoreId}
+                                                                    className={`relative bg-white rounded-2xl border-2 shadow-sm overflow-hidden ${urgencyBg}`}
+                                                                >
+                                                                    {/* Barra lateral de urgência */}
+                                                                    <div className="absolute left-0 top-0 bottom-0 w-1.5" style={{ backgroundColor: urgencyColor }} />
+
+                                                                    <div className="pl-5 pr-4 pt-4 pb-3 space-y-3">
+                                                                        {/* Linha 1: OS + dias em destaque */}
+                                                                        <div className="flex items-start justify-between gap-2">
+                                                                            <div>
+                                                                                <span className="font-black text-blue-700 text-base">{order.osNumber}</span>
+                                                                                <div className="text-xs text-slate-400 mt-0.5">{formatDateBR(order.statusDate)}</div>
+                                                                            </div>
+                                                                            <div className="flex flex-col items-end flex-shrink-0">
+                                                                                <span className="text-3xl font-black leading-none" style={{ color: urgencyColor }}>
+                                                                                    {order.businessDaysInStatus}
+                                                                                </span>
+                                                                                <span className="text-[9px] font-bold text-slate-400 leading-tight text-right">
+                                                                                    dias úteis<br />+{order.daysOver}d além
+                                                                                </span>
+                                                                            </div>
+                                                                        </div>
+
+                                                                        {/* Linha 2: Cliente */}
+                                                                        <div className="font-bold text-slate-900 text-sm leading-tight truncate">{order.client}</div>
+
+                                                                        {/* Linha 3: Equipamento */}
+                                                                        <div className="text-sm text-slate-600 truncate">
+                                                                            {order.item}
+                                                                            {(order.manufacturer || order.model) && (
+                                                                                <span className="text-slate-400"> · {[order.manufacturer, order.model].filter(Boolean).join(' ')}</span>
+                                                                            )}
+                                                                        </div>
+
+                                                                        {/* Linha 4: status + botão */}
+                                                                        <div className="flex items-center justify-between pt-1 border-t border-white/60">
+                                                                            <span className="text-[10px] font-black px-2.5 py-1 rounded-lg border" style={{ backgroundColor: color + '20', borderColor: color + '50', color }}>
+                                                                                {order.status}
+                                                                            </span>
+                                                                            <button
+                                                                                onClick={() => openModal(order, false)}
+                                                                                className="flex items-center gap-1.5 text-xs font-bold text-blue-600 bg-white px-3 py-1.5 rounded-xl border border-blue-100 hover:bg-blue-50 transition-colors shadow-sm"
+                                                                            >
+                                                                                <ExternalLink size={13} /> Abrir OS
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </>
+                                            );
+                                        })()}
                                     </>
                                 )}
                             </div>
@@ -6339,44 +6636,273 @@ export default function MainApp() {
                                 <button onClick={handleNewContract} className="bg-blue-600 text-white px-8 py-3 rounded-2xl font-black flex items-center gap-2 shadow-xl shadow-blue-200 hover:bg-blue-700 transition-colors"><Plus size={20} /> Novo Contrato</button>
                             </div>
                         </div>
+
+                        {/* Filtro ativo/inativo */}
+                        <div className="flex gap-2 flex-wrap">
+                            {['all', 'active', 'inactive'].map(f => (
+                                <button key={f} onClick={() => setContractActivityFilter(f)}
+                                    className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${contractActivityFilter === f ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-slate-200 hover:border-blue-300'}`}>
+                                    {f === 'all' ? 'Todos' : f === 'active' ? '✓ Ativos' : '✗ Inativos'}
+                                </button>
+                            ))}
+                        </div>
+
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                             {combinedContracts.length === 0 ? (<div className="col-span-3 text-center py-20 text-slate-400">Nenhum contrato encontrado. Adicione um manualmente ou crie uma OS.</div>) : (
-                                combinedContracts.map((contract, index) => (
-                                    <div key={index} className="bg-white rounded-[2rem] border border-slate-100 shadow-xl overflow-hidden group hover:shadow-2xl transition-all">
-                                        <div className="p-6 border-b border-slate-50 bg-slate-50/50 flex justify-between items-start">
-                                            <div><div className="font-black text-lg text-slate-800 leading-tight mb-1">{contract.clientName}</div><div className="text-xs text-slate-500 font-medium truncate max-w-[200px]">{contract.cnpj || 'CNPJ não informado'}</div></div>
-                                            <div className={`p-2 rounded-lg ${contract.isConfigured ? 'bg-green-100 text-green-600' : 'bg-amber-100 text-amber-600'}`}>{contract.isConfigured ? <CheckCircle2 size={20} /> : <AlertCircle size={20} />}</div>
-                                        </div>
-                                        <div className="p-6 space-y-4">
-                                            <div className="grid grid-cols-2 gap-4">
-                                                <div><div className="text-[10px] font-bold text-slate-400 uppercase">Vigência Início</div><div className="font-bold text-slate-700">{contract.startDate ? new Date(contract.startDate + 'T00:00:00').toLocaleDateString() : '---'}</div></div>
-                                                <div><div className="text-[10px] font-bold text-slate-400 uppercase">Vigência Fim</div><div className="font-bold text-slate-700">{contract.endDate ? new Date(contract.endDate + 'T00:00:00').toLocaleDateString() : '---'}</div></div>
-                                            </div>
-                                            <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                                                <div className="flex justify-between items-center mb-1"><span className="text-[10px] font-bold text-slate-400 uppercase">Valor Mensal</span><span className="font-black text-slate-800">R$ {formatMoney(parseCurrency(contract.monthlyValue))}</span></div>
-                                                <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-slate-400 uppercase">Valor Anual</span><span className="font-black text-blue-600">R$ {formatMoney(parseCurrency(contract.annualValue))}</span></div>
-                                            </div>
-                                            <div className="space-y-1">
-                                                <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Escopo Contratado</div>
-                                                <div className="flex flex-wrap gap-1">
-                                                    {contract.coveredItems.videoSurgeryInstruments && <span className="text-[9px] bg-indigo-50 text-indigo-600 px-2 py-1 rounded border border-indigo-100 font-bold">Instr. Videocirurgia</span>}
-                                                    {contract.coveredItems.openInstruments && <span className="text-[9px] bg-purple-50 text-purple-600 px-2 py-1 rounded border border-purple-100 font-bold">Instr. Abertos</span>}
-                                                    {contract.coveredItems.videoSurgeryEquipment && <span className="text-[9px] bg-blue-50 text-blue-600 px-2 py-1 rounded border border-blue-100 font-bold">Equip. Vídeo</span>}
-                                                    {contract.coveredItems.endoscopes && <span className="text-[9px] bg-emerald-50 text-emerald-600 px-2 py-1 rounded border border-emerald-100 font-bold">Endoscópios</span>}
-                                                    {!Object.values(contract.coveredItems).some(Boolean) && <span className="text-[9px] text-slate-400 italic">Nenhum item selecionado</span>}
+                                combinedContracts
+                                    .filter(c => contractActivityFilter === 'all' ? true : contractActivityFilter === 'active' ? c.isActive !== false : c.isActive === false)
+                                    .map((contract, index) => (
+                                        <div
+                                            key={index}
+                                            className={`
+    bg-white rounded-[2rem] border shadow-xl overflow-hidden group hover:shadow-2xl transition-all
+    ${contract.alertStatus === 'red' ? 'border-red-400 bg-red-50/30 ring-1 ring-red-200' : ''}
+    ${contract.alertStatus === 'yellow' ? 'border-yellow-400 bg-yellow-50/30 ring-1 ring-yellow-200' : 'border-slate-100'}
+  `}
+                                        >
+                                            <div className="p-6 border-b border-slate-50 bg-slate-50/50 flex justify-between items-start">
+                                                <div>
+                                                    <div className="font-black text-lg text-slate-800 leading-tight mb-1">{contract.clientName}</div>
+                                                    <div className="text-xs text-slate-500 font-medium truncate max-w-[200px]">
+                                                        {contract.cnpj || 'CNPJ não informado'}
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2 flex-wrap justify-end">
+                                                    {/* Badge ativo/inativo */}
+                                                    <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${contract.isActive !== false ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-500'}`}>
+                                                        {contract.isActive !== false ? 'Ativo' : 'Inativo'}
+                                                    </span>
+                                                    {/* BOLINHA VERMELHA (aparece apenas se houver alerta) */}
+                                                    {contract.alertStatus !== 'none' && (
+                                                        <div className="relative">
+                                                            <div
+                                                                className="w-3 h-3 bg-red-500 rounded-full animate-pulse"
+                                                                title={`Vence em ${contract.daysToExpiry} dias`}
+                                                            />
+                                                        </div>
+                                                    )}
+                                                    {/* Ícone de configurado/não configurado (já existente) */}
+                                                    <div className={`p-2 rounded-lg ${contract.isConfigured ? 'bg-green-100 text-green-600' : 'bg-amber-100 text-amber-600'}`}>
+                                                        {contract.isConfigured ? <CheckCircle2 size={20} /> : <AlertCircle size={20} />}
+                                                    </div>
                                                 </div>
                                             </div>
+                                            <div className="p-6 space-y-4">
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div><div className="text-[10px] font-bold text-slate-400 uppercase">Vigência Início</div><div className="font-bold text-slate-700">{contract.startDate ? new Date(contract.startDate + 'T00:00:00').toLocaleDateString() : '---'}</div></div>
+                                                    <div><div className="text-[10px] font-bold text-slate-400 uppercase">Vigência Fim</div><div className="font-bold text-slate-700">{contract.endDate ? new Date(contract.endDate + 'T00:00:00').toLocaleDateString() : '---'}</div></div>
+                                                </div>
+                                                <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                                                    <div className="flex justify-between items-center mb-1"><span className="text-[10px] font-bold text-slate-400 uppercase">Valor Mensal</span><span className="font-black text-slate-800">R$ {formatMoney(parseCurrency(contract.monthlyValue))}</span></div>
+                                                    <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-slate-400 uppercase">Valor Anual</span><span className="font-black text-blue-600">R$ {formatMoney(parseCurrency(contract.annualValue))}</span></div>
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Escopo Contratado</div>
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {contract.coveredItems.videoSurgeryInstruments && <span className="text-[9px] bg-indigo-50 text-indigo-600 px-2 py-1 rounded border border-indigo-100 font-bold">Instr. Videocirurgia</span>}
+                                                        {contract.coveredItems.openInstruments && <span className="text-[9px] bg-purple-50 text-purple-600 px-2 py-1 rounded border border-purple-100 font-bold">Instr. Abertos</span>}
+                                                        {contract.coveredItems.videoSurgeryEquipment && <span className="text-[9px] bg-blue-50 text-blue-600 px-2 py-1 rounded border border-blue-100 font-bold">Equip. Vídeo</span>}
+                                                        {contract.coveredItems.endoscopes && <span className="text-[9px] bg-emerald-50 text-emerald-600 px-2 py-1 rounded border border-emerald-100 font-bold">Endoscópios</span>}
+                                                        {!Object.values(contract.coveredItems).some(Boolean) && <span className="text-[9px] text-slate-400 italic">Nenhum item selecionado</span>}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="flex border-t border-slate-100">
+                                                <button
+                                                    onClick={() => openContractModal(contract, true)}
+                                                    className="flex-1 py-3 bg-slate-50 hover:bg-blue-50 text-slate-600 hover:text-blue-600 font-bold text-xs uppercase tracking-widest transition-colors flex items-center justify-center gap-2"
+                                                >
+                                                    <Eye size={14} /> Exibir
+                                                </button>
+                                                <div className="w-px bg-slate-200" />
+                                                <button
+                                                    onClick={() => openContractModal(contract, false)}
+                                                    className="flex-1 py-3 bg-slate-50 hover:bg-slate-100 text-slate-600 font-bold text-xs uppercase tracking-widest transition-colors flex items-center justify-center gap-2"
+                                                >
+                                                    <FileSignature size={14} /> {contract.isConfigured ? 'Editar' : 'Configurar'}
+                                                </button>
+                                            </div>
                                         </div>
-                                        <button onClick={() => openContractModal(contract)} className="w-full py-4 bg-slate-50 hover:bg-slate-100 border-t border-slate-100 text-slate-600 font-bold text-xs uppercase tracking-widest transition-colors flex items-center justify-center gap-2"><FileSignature size={16} /> {contract.isConfigured ? 'Editar Contrato' : 'Configurar Contrato'}</button>
-                                    </div>
-                                ))
+                                    ))
                             )}
                         </div>
                     </div>
                 )}
 
-                {currentPage === 'inventory' && canAccessPage() && <div className="p-20 text-center"><Boxes size={80} className="mx-auto text-slate-200 mb-6" /><h3 className="text-2xl font-black">Inventário em breve</h3></div>}
+                {currentPage === 'inventory' && canAccessPage() && (() => {
+                    const filteredInventory = inventory.filter(i => i.category === inventoryCategory && (
+                        !inventorySearch ||
+                        i.item?.toLowerCase().includes(inventorySearch.toLowerCase()) ||
+                        i.brand?.toLowerCase().includes(inventorySearch.toLowerCase()) ||
+                        i.specification?.toLowerCase().includes(inventorySearch.toLowerCase()) ||
+                        i.supplier?.toLowerCase().includes(inventorySearch.toLowerCase())
+                    ));
+                    return (
+                        <div className="space-y-8 animate-in fade-in duration-500 max-w-7xl mx-auto">
+                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
+                                <div>
+                                    <h2 className="text-3xl font-black text-slate-900 tracking-tighter">Inventário</h2>
+                                    <p className="text-slate-500 text-sm font-medium">Controle de itens de consumo, peças e ferramentas</p>
+                                </div>
+                                <button onClick={() => openInventoryModal()} className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-black flex items-center gap-2 shadow-xl shadow-blue-200 hover:bg-blue-700 transition-colors">
+                                    <Plus size={20} /> Adicionar
+                                </button>
+                            </div>
+                            {/* Category tabs */}
+                            <div className="flex gap-2 bg-slate-100 p-1.5 rounded-2xl w-fit">
+                                {[{id:'consumables',label:'Itens de Consumo'},{id:'parts',label:'Peças'},{id:'tools',label:'Ferramentas'}].map(cat => (
+                                    <button key={cat.id} onClick={() => setInventoryCategory(cat.id)}
+                                        className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-all ${inventoryCategory === cat.id ? 'bg-white text-slate-900 shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>
+                                        {cat.label}
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="relative">
+                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                <input className="w-full pl-12 pr-4 py-3 bg-white rounded-2xl border border-slate-200 shadow-sm outline-none font-medium focus:ring-2 focus:ring-blue-500/20"
+                                    placeholder="Buscar item, marca, especificação, fornecedor..." value={inventorySearch} onChange={e => setInventorySearch(e.target.value)} />
+                            </div>
+                            {/* Desktop Table */}
+                            <div className="hidden md:block bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden">
+                                <table className="w-full text-left">
+                                    <thead className="bg-slate-50 border-b border-slate-100">
+                                        <tr className="text-[10px] font-black uppercase text-slate-400 tracking-widest">
+                                            <th className="px-6 py-4">Item</th>
+                                            <th className="px-6 py-4">Marca</th>
+                                            <th className="px-6 py-4">Especificação</th>
+                                            <th className="px-6 py-4">Fornecedor</th>
+                                            <th className="px-6 py-4 text-right">Ações</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-50">
+                                        {filteredInventory.length === 0 ? (
+                                            <tr><td colSpan="5" className="p-16 text-center text-slate-400">Nenhum item. Clique em "Adicionar Item" para começar.</td></tr>
+                                        ) : filteredInventory.map(item => (
+                                            <tr key={item.firestoreId} className="hover:bg-blue-50/20 transition-colors">
+                                                <td className="px-6 py-4 font-bold text-slate-900">{item.item}</td>
+                                                <td className="px-6 py-4 text-slate-600 text-sm">{item.brand || <span className="text-slate-300">---</span>}</td>
+                                                <td className="px-6 py-4 text-slate-600 text-sm">{item.specification || <span className="text-slate-300">---</span>}</td>
+                                                <td className="px-6 py-4 text-slate-600 text-sm">{item.supplier || <span className="text-slate-300">---</span>}</td>
+                                                <td className="px-6 py-4 text-right">
+                                                    <div className="flex justify-end gap-2">
+                                                        <button onClick={() => openInventoryModal(item)} className="p-2 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors" title="Editar"><Edit2 size={16} /></button>
+                                                        <button onClick={() => handleDeleteInventoryItem(item)} className="p-2 bg-red-50 text-red-500 rounded-xl hover:bg-red-100 transition-colors" title="Excluir"><Trash2 size={16} /></button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {/* Mobile Cards */}
+                            <div className="md:hidden space-y-3">
+                                {filteredInventory.length === 0 ? (
+                                    <div className="text-center py-12 text-slate-400 bg-white rounded-2xl border">Nenhum item. Adicione um novo item.</div>
+                                ) : filteredInventory.map(item => (
+                                    <div key={item.firestoreId} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-2">
+                                        <div className="flex justify-between items-start">
+                                            <div className="font-bold text-slate-900">{item.item}</div>
+                                            <div className="flex gap-2">
+                                                <button onClick={() => openInventoryModal(item)} className="p-1.5 bg-blue-50 text-blue-600 rounded-lg"><Edit2 size={14} /></button>
+                                                <button onClick={() => handleDeleteInventoryItem(item)} className="p-1.5 bg-red-50 text-red-500 rounded-lg"><Trash2 size={14} /></button>
+                                            </div>
+                                        </div>
+                                        {item.brand && <div className="text-sm text-slate-500"><span className="font-bold text-slate-400 text-xs uppercase">Marca: </span>{item.brand}</div>}
+                                        {item.specification && <div className="text-sm text-slate-500"><span className="font-bold text-slate-400 text-xs uppercase">Especificação: </span>{item.specification}</div>}
+                                        {item.supplier && <div className="text-sm text-slate-500"><span className="font-bold text-slate-400 text-xs uppercase">Fornecedor: </span>{item.supplier}</div>}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    );
+                })()}
                 {currentPage === 'clients' && canAccessPage() && <div className="p-20 text-center"><Users size={80} className="mx-auto text-slate-200 mb-6" /><h3 className="text-2xl font-black">Módulo de Clientes em breve</h3></div>}
+                {currentPage === 'suppliers' && canAccessPage() && (() => {
+                    const filteredSuppliers = suppliers.filter(s =>
+                        !supplierSearch ||
+                        s.name?.toLowerCase().includes(supplierSearch.toLowerCase()) ||
+                        s.cnpj?.includes(supplierSearch) ||
+                        s.contact?.toLowerCase().includes(supplierSearch.toLowerCase()) ||
+                        s.address?.toLowerCase().includes(supplierSearch.toLowerCase())
+                    );
+                    return (
+                        <div className="space-y-8 animate-in fade-in duration-500 max-w-7xl mx-auto">
+                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
+                                <div>
+                                    <h2 className="text-3xl font-black text-slate-900 tracking-tighter">Fornecedores</h2>
+                                    <p className="text-slate-500 text-sm font-medium">Cadastro de fornecedores e parceiros</p>
+                                </div>
+                                <button onClick={() => openSupplierModal()} className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-black flex items-center gap-2 shadow-xl shadow-blue-200 hover:bg-blue-700 transition-colors">
+                                    <Plus size={20} /> Novo Fornecedor
+                                </button>
+                            </div>
+                            <div className="relative">
+                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                <input className="w-full pl-12 pr-4 py-3 bg-white rounded-2xl border border-slate-200 shadow-sm outline-none font-medium focus:ring-2 focus:ring-blue-500/20"
+                                    placeholder="Buscar por nome, CNPJ, contato..." value={supplierSearch} onChange={e => setSupplierSearch(e.target.value)} />
+                            </div>
+                            {/* Desktop Table */}
+                            <div className="hidden md:block bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden">
+                                <table className="w-full text-left">
+                                    <thead className="bg-slate-50 border-b border-slate-100">
+                                        <tr className="text-[10px] font-black uppercase text-slate-400 tracking-widest">
+                                            <th className="px-6 py-4">Nome</th>
+                                            <th className="px-6 py-4">CNPJ</th>
+                                            <th className="px-6 py-4">Endereço</th>
+                                            <th className="px-6 py-4">Contato</th>
+                                            <th className="px-6 py-4 text-right">Ações</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-50">
+                                        {filteredSuppliers.length === 0 ? (
+                                            <tr><td colSpan="5" className="p-16 text-center text-slate-400">Nenhum fornecedor. Clique em "Novo Fornecedor" para adicionar.</td></tr>
+                                        ) : filteredSuppliers.map(supplier => (
+                                            <tr key={supplier.firestoreId} className="hover:bg-blue-50/20 transition-colors">
+                                                <td className="px-6 py-4">
+                                                    <div className="font-bold text-slate-900">{supplier.name}</div>
+                                                    {supplier.email && <div className="text-xs text-slate-400 mt-0.5">{supplier.email}</div>}
+                                                </td>
+                                                <td className="px-6 py-4 text-slate-600 font-mono text-sm">{supplier.cnpj || <span className="text-slate-300">---</span>}</td>
+                                                <td className="px-6 py-4 text-slate-600 text-sm max-w-xs">{supplier.address || <span className="text-slate-300">---</span>}</td>
+                                                <td className="px-6 py-4">
+                                                    <div className="text-slate-800 font-medium text-sm">{supplier.contact || <span className="text-slate-300">---</span>}</div>
+                                                    {supplier.phone && <div className="text-xs text-slate-400 mt-0.5">{supplier.phone}</div>}
+                                                </td>
+                                                <td className="px-6 py-4 text-right">
+                                                    <div className="flex justify-end gap-2">
+                                                        <button onClick={() => openSupplierModal(supplier)} className="p-2 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors" title="Editar"><Edit2 size={16} /></button>
+                                                        <button onClick={() => handleDeleteSupplier(supplier)} className="p-2 bg-red-50 text-red-500 rounded-xl hover:bg-red-100 transition-colors" title="Excluir"><Trash2 size={16} /></button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {/* Mobile Cards */}
+                            <div className="md:hidden space-y-3">
+                                {filteredSuppliers.length === 0 ? (
+                                    <div className="text-center py-12 text-slate-400 bg-white rounded-2xl border">Nenhum fornecedor cadastrado.</div>
+                                ) : filteredSuppliers.map(supplier => (
+                                    <div key={supplier.firestoreId} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-2">
+                                        <div className="flex justify-between items-start">
+                                            <div className="font-bold text-slate-900">{supplier.name}</div>
+                                            <div className="flex gap-2">
+                                                <button onClick={() => openSupplierModal(supplier)} className="p-1.5 bg-blue-50 text-blue-600 rounded-lg"><Edit2 size={14} /></button>
+                                                <button onClick={() => handleDeleteSupplier(supplier)} className="p-1.5 bg-red-50 text-red-500 rounded-lg"><Trash2 size={14} /></button>
+                                            </div>
+                                        </div>
+                                        {supplier.cnpj && <div className="text-sm"><span className="font-bold text-slate-400 text-xs uppercase">CNPJ: </span><span className="font-mono">{supplier.cnpj}</span></div>}
+                                        {supplier.address && <div className="text-sm text-slate-500"><span className="font-bold text-slate-400 text-xs uppercase">Endereço: </span>{supplier.address}</div>}
+                                        {supplier.contact && <div className="text-sm text-slate-500"><span className="font-bold text-slate-400 text-xs uppercase">Contato: </span>{supplier.contact}</div>}
+                                        {supplier.phone && <div className="text-sm text-slate-500"><span className="font-bold text-slate-400 text-xs uppercase">Telefone: </span>{supplier.phone}</div>}
+                                        {supplier.email && <div className="text-sm text-slate-500"><span className="font-bold text-slate-400 text-xs uppercase">E-mail: </span>{supplier.email}</div>}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    );
+                })()}
                 {currentPage === 'users' && canAccessPage() && <UserManagement />}
                 {currentPage === 'about' && <div className="p-20 text-center"><Info size={80} className="mx-auto text-slate-200 mb-6" /><h3 className="text-2xl font-black">Sobre o Sistema</h3></div>}
             </main>
@@ -7831,239 +8357,282 @@ export default function MainApp() {
                 </div>
             )}
 
-            {/* MODAL CONFIGURAÇÃO DE CONTRATO */}
             {isContractModalOpen && (
-                <div
-                    className="fixed inset-0 z-[60]"
-                    role="dialog"
-                    aria-modal="true"
-                    aria-labelledby="contract-modal-title"
-                    onClick={(e) => {
-                        if (e.target === e.currentTarget) {
-                            setIsContractModalOpen(false);
-                        }
-                    }}
-                >
-                    <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md overflow-y-auto">
-                        <div className="min-h-full flex items-start justify-center p-4 py-8">
-                            <div
-                                className="bg-white rounded-[2.5rem] w-full max-w-4xl shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-200 my-8"
-                                ref={contractModalRef}
-                                tabIndex={-1}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Escape') {
-                                        setIsContractModalOpen(false);
-                                    }
-                                }}
-                            >
-                                <form onSubmit={handleSaveContract} className="p-8 space-y-8">
-                                    <div className="flex justify-between items-center border-b pb-6">
-                                        <div>
-                                            <h2 id="contract-modal-title" className="text-2xl font-black text-slate-900 tracking-tight">
-                                                {isNewContractMode ? 'Novo Contrato' : 'Configurar Contrato'}
-                                            </h2>
-                                            <p className="text-slate-500 text-sm font-medium">
-                                                {isNewContractMode ? 'Preencha os dados do cliente e contrato' : contractForm.clientName}
-                                            </p>
-                                        </div>
-                                        <button
-                                            type="button"
-                                            onClick={() => setIsContractModalOpen(false)}
-                                            className="p-2 hover:bg-slate-100 rounded-full text-slate-400"
-                                        >
-                                            <X size={20} />
-                                        </button>
-                                    </div>
+  <div
+    className="fixed inset-0 z-[60]"
+    role="dialog"
+    aria-modal="true"
+    onClick={(e) => {
+      if (e.target === e.currentTarget) setIsContractModalOpen(false);
+    }}
+  >
+    <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md overflow-y-auto">
+      <div className="min-h-full flex items-start justify-center p-4 py-8">
+        <div className="bg-white rounded-[2.5rem] w-full max-w-4xl shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-200 my-8">
+          <form onSubmit={handleSaveContract} className="p-8 space-y-8">
+            <div className="flex justify-between items-center border-b pb-6">
+              <div>
+                <h2 className="text-2xl font-black text-slate-900 tracking-tight">
+                  {isContractViewMode 
+                    ? 'Visualizar Contrato' 
+                    : (isNewContractMode ? 'Novo Contrato' : 'Configurar Contrato')}
+                </h2>
+                <p className="text-slate-500 text-sm font-medium">
+                  {isContractViewMode ? contractForm.clientName : (isNewContractMode ? 'Preencha os dados do cliente e contrato' : contractForm.clientName)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsContractModalOpen(false)}
+                className="p-2 hover:bg-slate-100 rounded-full text-slate-400"
+              >
+                <X size={20} />
+              </button>
+            </div>
 
-                                    <div className="space-y-8">
-                                        <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-4">
-                                            <div className="flex items-center gap-2 text-blue-600 font-bold uppercase text-xs tracking-widest mb-2">
-                                                <User size={16} /> Dados do Cliente
-                                            </div>
-                                            <div className="space-y-2">
-                                                <label className="text-[10px] font-bold text-slate-400 uppercase">Nome do Cliente *</label>
-                                                <input
-                                                    className={`w-full p-3 border rounded-xl font-bold ${isNewContractMode ? 'bg-white border-slate-200' : 'bg-slate-100 border-slate-200 cursor-not-allowed'}`}
-                                                    value={contractForm.clientName}
-                                                    onChange={e => isNewContractMode && setContractForm({ ...contractForm, clientName: e.target.value })}
-                                                    placeholder="Nome da Empresa / Hospital"
-                                                    readOnly={!isNewContractMode}
-                                                    required
-                                                />
-                                            </div>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                <div className="space-y-2">
-                                                    <label className="text-[10px] font-bold text-slate-400 uppercase">CNPJ</label>
-                                                    <input
-                                                        className="w-full p-3 bg-white border border-slate-200 rounded-xl font-medium text-sm"
-                                                        value={contractForm.cnpj}
-                                                        onChange={e => setContractForm({ ...contractForm, cnpj: e.target.value })}
-                                                        placeholder="00.000.000/0000-00"
-                                                    />
-                                                </div>
-                                                <div className="space-y-2">
-                                                    <label className="text-[10px] font-bold text-slate-400 uppercase">Contato</label>
-                                                    <input
-                                                        className="w-full p-3 bg-white border border-slate-200 rounded-xl font-medium text-sm"
-                                                        value={contractForm.contactPerson}
-                                                        onChange={e => setContractForm({ ...contractForm, contactPerson: e.target.value })}
-                                                        placeholder="Nome do Responsável"
-                                                    />
-                                                </div>
-                                            </div>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                <div className="space-y-2">
-                                                    <label className="text-[10px] font-bold text-slate-400 uppercase">E-mail</label>
-                                                    <input
-                                                        className="w-full p-3 bg-white border border-slate-200 rounded-xl font-medium text-sm"
-                                                        value={contractForm.email}
-                                                        onChange={e => setContractForm({ ...contractForm, email: e.target.value })}
-                                                        placeholder="financeiro@hospital.com"
-                                                    />
-                                                </div>
-                                                <div className="space-y-2">
-                                                    <label className="text-[10px] font-bold text-slate-400 uppercase">Endereço</label>
-                                                    <input
-                                                        className="w-full p-3 bg-white border border-slate-200 rounded-xl font-medium text-sm"
-                                                        value={contractForm.address}
-                                                        onChange={e => setContractForm({ ...contractForm, address: e.target.value })}
-                                                        placeholder="Rua, Número, Cidade - UF"
-                                                    />
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                            <div className="space-y-6">
-                                                <div className="space-y-2">
-                                                    <label className="text-[10px] font-bold text-slate-400 uppercase">Vigência (Início - Fim)</label>
-                                                    <div className="flex gap-2">
-                                                        <input
-                                                            type="date"
-                                                            className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-sm"
-                                                            value={contractForm.startDate}
-                                                            onChange={e => setContractForm({ ...contractForm, startDate: e.target.value })}
-                                                            required
-                                                        />
-                                                        <input
-                                                            type="date"
-                                                            className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-sm"
-                                                            value={contractForm.endDate}
-                                                            onChange={e => setContractForm({ ...contractForm, endDate: e.target.value })}
-                                                            required
-                                                        />
-                                                    </div>
-                                                </div>
-
-                                                <div className="space-y-2">
-                                                    <label className="text-[10px] font-bold text-slate-400 uppercase">Valor Mensal (R$)</label>
-                                                    <input
-                                                        className="w-full p-3 bg-white border border-slate-200 rounded-xl font-black text-slate-800"
-                                                        value={contractForm.monthlyValue}
-                                                        onChange={e => {
-                                                            const val = e.target.value;
-                                                            const numVal = parseCurrency(val);
-                                                            setContractForm({
-                                                                ...contractForm,
-                                                                monthlyValue: val,
-                                                                annualValue: (numVal * 12).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
-                                                            });
-                                                        }}
-                                                        placeholder="0,00"
-                                                    />
-                                                </div>
-
-                                                <div className="space-y-2">
-                                                    <label className="text-[10px] font-bold text-slate-400 uppercase">Valor Anual (Estimado)</label>
-                                                    <input
-                                                        className="w-full p-3 bg-blue-50 border border-blue-100 rounded-xl font-black text-blue-600"
-                                                        value={contractForm.annualValue}
-                                                        onChange={e => setContractForm({ ...contractForm, annualValue: e.target.value })}
-                                                        placeholder="0,00"
-                                                    />
-                                                </div>
-
-                                                <div className="space-y-2">
-                                                    <label className="text-[10px] font-bold text-slate-400 uppercase">Observações</label>
-                                                    <textarea
-                                                        rows="3"
-                                                        className="w-full p-3 bg-white border border-slate-200 rounded-xl text-sm resize-none"
-                                                        value={contractForm.observations}
-                                                        onChange={e => setContractForm({ ...contractForm, observations: e.target.value })}
-                                                        placeholder="Detalhes adicionais..."
-                                                    ></textarea>
-                                                </div>
-                                            </div>
-
-                                            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-4 h-fit">
-                                                <div className="flex items-center gap-2 text-indigo-600 font-bold uppercase text-xs tracking-widest mb-2">
-                                                    <CheckSquare size={16} /> Itens Cobertos
-                                                </div>
-                                                <div className="space-y-3">
-                                                    <label className="flex items-center gap-3 p-4 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-indigo-300 transition-colors">
-                                                        <input
-                                                            type="checkbox"
-                                                            className="w-5 h-5 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
-                                                            checked={contractForm.coveredItems.videoSurgeryInstruments}
-                                                            onChange={e => setContractForm({ ...contractForm, coveredItems: { ...contractForm.coveredItems, videoSurgeryInstruments: e.target.checked } })}
-                                                        />
-                                                        <span className="text-sm font-bold text-slate-700">Instrumentais de Vídeo Cirurgia</span>
-                                                    </label>
-                                                    <label className="flex items-center gap-3 p-4 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-indigo-300 transition-colors">
-                                                        <input
-                                                            type="checkbox"
-                                                            className="w-5 h-5 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
-                                                            checked={contractForm.coveredItems.openInstruments}
-                                                            onChange={e => setContractForm({ ...contractForm, coveredItems: { ...contractForm.coveredItems, openInstruments: e.target.checked } })}
-                                                        />
-                                                        <span className="text-sm font-bold text-slate-700">Instrumentais Abertos</span>
-                                                    </label>
-                                                    <label className="flex items-center gap-3 p-4 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-indigo-300 transition-colors">
-                                                        <input
-                                                            type="checkbox"
-                                                            className="w-5 h-5 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
-                                                            checked={contractForm.coveredItems.videoSurgeryEquipment}
-                                                            onChange={e => setContractForm({ ...contractForm, coveredItems: { ...contractForm.coveredItems, videoSurgeryEquipment: e.target.checked } })}
-                                                        />
-                                                        <span className="text-sm font-bold text-slate-700">Equipamentos de Vídeo</span>
-                                                    </label>
-                                                    <label className="flex items-center gap-3 p-4 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-indigo-300 transition-colors">
-                                                        <input
-                                                            type="checkbox"
-                                                            className="w-5 h-5 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
-                                                            checked={contractForm.coveredItems.endoscopes}
-                                                            onChange={e => setContractForm({ ...contractForm, coveredItems: { ...contractForm.coveredItems, endoscopes: e.target.checked } })}
-                                                        />
-                                                        <span className="text-sm font-bold text-slate-700">Endoscópios</span>
-                                                    </label>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div className="pt-4 border-t flex justify-end gap-3">
-                                        <button
-                                            type="button"
-                                            onClick={() => setIsContractModalOpen(false)}
-                                            className="px-6 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-100"
-                                        >
-                                            Cancelar
-                                        </button>
-                                        <button
-                                            type="submit"
-                                            disabled={isSaving}
-                                            className="px-8 py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg hover:bg-blue-700 flex items-center gap-2"
-                                        >
-                                            {isSaving ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
-                                            Salvar Contrato
-                                        </button>
-                                    </div>
-                                </form>
-                            </div>
-                        </div>
-                    </div>
+            <div className="space-y-8">
+              {/* Dados do Cliente */}
+              <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-4">
+                <div className="flex items-center gap-2 text-blue-600 font-bold uppercase text-xs tracking-widest mb-2">
+                  <User size={16} /> Dados do Cliente
                 </div>
-            )}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Nome do Cliente *</label>
+                  <input
+                    className={`w-full p-3 border rounded-xl font-bold ${isNewContractMode && !isContractViewMode ? 'bg-white border-slate-200' : 'bg-slate-100 border-slate-200 cursor-not-allowed'}`}
+                    value={contractForm.clientName}
+                    onChange={e => !isContractViewMode && isNewContractMode && setContractForm({ ...contractForm, clientName: e.target.value })}
+                    placeholder="Nome da Empresa / Hospital"
+                    readOnly={isContractViewMode || !isNewContractMode}
+                    required
+                  />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase">CNPJ</label>
+                    <input
+                      className="w-full p-3 bg-white border border-slate-200 rounded-xl font-medium text-sm"
+                      value={contractForm.cnpj}
+                      onChange={e => !isContractViewMode && setContractForm({ ...contractForm, cnpj: e.target.value })}
+                      placeholder="00.000.000/0000-00"
+                      disabled={isContractViewMode}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase">Contato</label>
+                    <input
+                      className="w-full p-3 bg-white border border-slate-200 rounded-xl font-medium text-sm"
+                      value={contractForm.contactPerson}
+                      onChange={e => !isContractViewMode && setContractForm({ ...contractForm, contactPerson: e.target.value })}
+                      placeholder="Nome do Responsável"
+                      disabled={isContractViewMode}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase">E-mail</label>
+                    <input
+                      className="w-full p-3 bg-white border border-slate-200 rounded-xl font-medium text-sm"
+                      value={contractForm.email}
+                      onChange={e => !isContractViewMode && setContractForm({ ...contractForm, email: e.target.value })}
+                      placeholder="financeiro@hospital.com"
+                      disabled={isContractViewMode}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase">Endereço</label>
+                    <input
+                      className="w-full p-3 bg-white border border-slate-200 rounded-xl font-medium text-sm"
+                      value={contractForm.address}
+                      onChange={e => !isContractViewMode && setContractForm({ ...contractForm, address: e.target.value })}
+                      placeholder="Rua, Número, Cidade - UF"
+                      disabled={isContractViewMode}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase">Vigência (Início - Fim)</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="date"
+                        className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-sm"
+                        value={contractForm.startDate}
+                        onChange={e => !isContractViewMode && setContractForm({ ...contractForm, startDate: e.target.value })}
+                        required
+                        disabled={isContractViewMode}
+                      />
+                      <input
+                        type="date"
+                        className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-sm"
+                        value={contractForm.endDate}
+                        onChange={e => !isContractViewMode && setContractForm({ ...contractForm, endDate: e.target.value })}
+                        required
+                        disabled={isContractViewMode}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Valor Mensal - visível apenas em modo edição */}
+                  {!isContractViewMode && (
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">Valor Mensal (R$)</label>
+                      <input
+                        className="w-full p-3 bg-white border border-slate-200 rounded-xl font-black text-slate-800"
+                        value={contractForm.monthlyValue}
+                        onChange={e => {
+                          const val = e.target.value;
+                          const numVal = parseCurrency(val);
+                          setContractForm({
+                            ...contractForm,
+                            monthlyValue: val,
+                            annualValue: (numVal * 12).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
+                          });
+                        }}
+                        placeholder="0,00"
+                        disabled={isContractViewMode}
+                      />
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase">Observações</label>
+                    <textarea
+                      rows="3"
+                      className="w-full p-3 bg-white border border-slate-200 rounded-xl text-sm resize-none"
+                      value={contractForm.observations}
+                      onChange={e => !isContractViewMode && setContractForm({ ...contractForm, observations: e.target.value })}
+                      placeholder="Detalhes adicionais..."
+                      disabled={isContractViewMode}
+                    ></textarea>
+                  </div>
+
+                  {/* Status Ativo/Inativo */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase">Status do Contrato</label>
+                    <div className="flex gap-2">
+                      {[{v:true,l:'Ativo'},{v:false,l:'Inativo'}].map(({v,l}) => (
+                        <button
+                          key={l}
+                          type="button"
+                          onClick={() => !isContractViewMode && setContractForm(p => ({...p, isActive: v}))}
+                          className={`flex-1 py-2.5 rounded-xl font-bold text-sm border transition-all ${
+                            contractForm.isActive === v 
+                              ? (v ? 'bg-green-600 text-white border-green-600' : 'bg-slate-600 text-white border-slate-600')
+                              : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                          }`}
+                          disabled={isContractViewMode}
+                        >
+                          {v ? '✓ ' : '✗ '}{l}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Anexos */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase">Anexos (Fotos, Documentos)</label>
+                    {!isContractViewMode && (
+                      <label className="flex items-center gap-2 px-4 py-3 bg-white border-2 border-dashed border-slate-300 rounded-xl cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors">
+                        <Upload size={18} className="text-blue-500" />
+                        <span className="text-sm font-bold text-slate-600">
+                          {uploadingContractAttachments ? 'Enviando...' : 'Clique para adicionar anexos'}
+                        </span>
+                        <input type="file" multiple className="hidden" onChange={handleContractAttachmentUpload} disabled={uploadingContractAttachments || isContractViewMode} />
+                      </label>
+                    )}
+                    {contractForm.attachments && contractForm.attachments.length > 0 && (
+                      <div className="space-y-2">
+                        {contractForm.attachments.map((url, idx) => {
+                          const isImage = /\.(jpg|jpeg|png|gif|webp)/i.test(url.split('?')[0]);
+                          const filename = decodeURIComponent(url.split('/').pop().split('?')[0]).replace(/^\d+_/, '');
+                          return (
+                            <div key={idx} className="flex items-center gap-2 p-2.5 bg-blue-50 rounded-xl border border-blue-100">
+                              {isImage ? <ImageIcon size={14} className="text-blue-600 flex-shrink-0" /> : <FileText size={14} className="text-blue-600 flex-shrink-0" />}
+                              <a href={url} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-blue-700 truncate flex-1 hover:underline">{filename}</a>
+                              {!isContractViewMode && (
+                                <button type="button" onClick={() => handleContractAttachmentRemove(idx)} className="p-1 text-red-400 hover:text-red-600 rounded flex-shrink-0">
+                                  <X size={14} />
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Itens Cobertos */}
+                <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-4 h-fit">
+                  <div className="flex items-center gap-2 text-indigo-600 font-bold uppercase text-xs tracking-widest mb-2">
+                    <CheckSquare size={16} /> Itens Cobertos
+                  </div>
+                  <div className="space-y-3">
+                    {[
+                      { key: 'videoSurgeryInstruments', label: 'Instrumentais de Vídeo Cirurgia' },
+                      { key: 'openInstruments', label: 'Instrumentais Abertos' },
+                      { key: 'videoSurgeryEquipment', label: 'Equipamentos de Vídeo' },
+                      { key: 'endoscopes', label: 'Endoscópios' }
+                    ].map(item => (
+                      <label key={item.key} className="flex items-center gap-3 p-4 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-indigo-300 transition-colors">
+                        <input
+                          type="checkbox"
+                          className="w-5 h-5 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                          checked={contractForm.coveredItems[item.key]}
+                          onChange={e => !isContractViewMode && setContractForm({
+                            ...contractForm,
+                            coveredItems: { ...contractForm.coveredItems, [item.key]: e.target.checked }
+                          })}
+                          disabled={isContractViewMode}
+                        />
+                        <span className="text-sm font-bold text-slate-700">{item.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t flex justify-end gap-3">
+              {isContractViewMode ? (
+                <button
+                  type="button"
+                  onClick={() => setIsContractModalOpen(false)}
+                  className="px-8 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200"
+                >
+                  Fechar
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setIsContractModalOpen(false)}
+                    className="px-6 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-100"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSaving}
+                    className="px-8 py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg hover:bg-blue-700 flex items-center gap-2"
+                  >
+                    {isSaving ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
+                    Salvar Contrato
+                  </button>
+                </>
+              )}
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
 
             {isDeleteModalOpen && (
                 <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[60] flex items-center justify-center p-4">
@@ -8122,6 +8691,67 @@ export default function MainApp() {
                 order={orderToReject}
                 onConfirm={confirmRejectBudget}
             />
+
+            {/* Inventory Modal */}
+            {isInventoryModalOpen && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border border-slate-200 animate-in zoom-in-95 space-y-5">
+                        <div className="flex justify-between items-center">
+                            <h3 className="text-xl font-black text-slate-900">{editingInventoryItem ? 'Editar Item' : 'Novo Item'}</h3>
+                            <button onClick={() => setIsInventoryModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400"><X size={20} /></button>
+                        </div>
+                        <div className="space-y-3">
+                            <div>
+                                <label className="text-xs font-bold text-slate-400 uppercase block mb-1">Categoria</label>
+                                <select value={inventoryForm.category} onChange={e => setInventoryForm(p => ({...p, category: e.target.value}))}
+                                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold">
+                                    <option value="consumables">Itens de Consumo</option>
+                                    <option value="parts">Peças</option>
+                                    <option value="tools">Ferramentas</option>
+                                </select>
+                            </div>
+                            {[{k:'item',l:'Item *'},{k:'brand',l:'Marca'},{k:'specification',l:'Especificação'},{k:'supplier',l:'Fornecedor'}].map(({k,l}) => (
+                                <div key={k}>
+                                    <label className="text-xs font-bold text-slate-400 uppercase block mb-1">{l}</label>
+                                    <input value={inventoryForm[k]} onChange={e => setInventoryForm(p => ({...p,[k]:e.target.value}))}
+                                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold focus:ring-2 focus:ring-blue-500/20"
+                                        placeholder={l.replace(' *','')} />
+                                </div>
+                            ))}
+                        </div>
+                        <div className="flex gap-3">
+                            <button onClick={() => setIsInventoryModalOpen(false)} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-colors">Cancelar</button>
+                            <button onClick={handleSaveInventoryItem} className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"><Save size={18}/> Salvar</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Supplier Modal */}
+            {isSupplierModalOpen && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border border-slate-200 animate-in zoom-in-95 space-y-5">
+                        <div className="flex justify-between items-center">
+                            <h3 className="text-xl font-black text-slate-900">{editingSupplier ? 'Editar Fornecedor' : 'Novo Fornecedor'}</h3>
+                            <button onClick={() => setIsSupplierModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400"><X size={20} /></button>
+                        </div>
+                        <div className="space-y-3">
+                            {[{k:'name',l:'Nome *'},{k:'cnpj',l:'CNPJ'},{k:'address',l:'Endereço'},{k:'contact',l:'Contato'},{k:'email',l:'E-mail'},{k:'phone',l:'Telefone'}].map(({k,l}) => (
+                                <div key={k}>
+                                    <label className="text-xs font-bold text-slate-400 uppercase block mb-1">{l}</label>
+                                    <input value={supplierForm[k]} onChange={e => setSupplierForm(p => ({...p,[k]:e.target.value}))}
+                                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold focus:ring-2 focus:ring-blue-500/20"
+                                        placeholder={l.replace(' *','')} />
+                                </div>
+                            ))}
+                        </div>
+                        <div className="flex gap-3">
+                            <button onClick={() => setIsSupplierModalOpen(false)} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-colors">Cancelar</button>
+                            <button onClick={handleSaveSupplier} className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"><Save size={18}/> Salvar</button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Toast Notification */}
             {notification.show && (
