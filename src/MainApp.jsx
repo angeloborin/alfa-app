@@ -12,7 +12,7 @@ import {
     CheckSquare, CalendarDays, Eye, EyeOff, Shield, LogOut,
     ArrowDownWideNarrow, ArrowUpNarrowWide, Check, ArrowRight,
     FileText, Upload, Image as ImageIcon, MoreVertical, Link2, History, Edit2,
-    Bell, BellRing, Settings2, Timer, AlertTriangle, Hourglass
+    Bell, BellRing, Settings2, Timer, AlertTriangle, Hourglass, Tag
 } from 'lucide-react';
 import {
     collection, addDoc, updateDoc, deleteDoc,
@@ -1042,15 +1042,28 @@ export default function MainApp() {
     // === AUTENTICAÇÃO ===
     const { user, userData, loading: authLoading, hasPermission, logout } = useAuth();
 
+    const [workshopFilter, setWorkshopFilter] = useState('all');
+
+    // Estados para busca no Histórico do produto (três campos)
+    const [historySearchSerial, setHistorySearchSerial] = useState('');
+    const [historySearchItem, setHistorySearchItem] = useState('');
+    const [historySearchManufacturer, setHistorySearchManufacturer] = useState('');
+
+    // Estados de controle das sugestões
+    const [showHistorySerialSuggestions, setShowHistorySerialSuggestions] = useState(false);
+    const [showHistoryItemSuggestions, setShowHistoryItemSuggestions] = useState(false);
+    const [showHistoryManufSuggestions, setShowHistoryManufSuggestions] = useState(false);
+
+    const historyItemInputRef = useRef(null);
+    const historyManufInputRef = useRef(null);
+
     const [showAddBoletoInput, setShowAddBoletoInput] = useState(false);
     const [newBoletoOption, setNewBoletoOption] = useState('');
 
     const [isContractViewMode, setIsContractViewMode] = useState(false);
 
-    const [historySearchSerial, setHistorySearchSerial] = useState('');
     const [historyFilteredOrders, setHistoryFilteredOrders] = useState([]);
     const [historyDropdownOpen, setHistoryDropdownOpen] = useState(null);
-    const [showHistorySerialSuggestions, setShowHistorySerialSuggestions] = useState(false);
     const historySerialInputRef = useRef(null);
 
 
@@ -1178,6 +1191,22 @@ export default function MainApp() {
     const [showValues, setShowValues] = useState(true);
     const [orders, setOrders] = useState([]);
 
+    // Autocomplete: ao preencher o NS, busca o equipamento correspondente e preenche Item e Marca
+    useEffect(() => {
+        const serial = historySearchSerial.trim();
+        if (serial && serial !== '-') {
+            const foundOrder = orders.find(o => o.serial && o.serial.trim() === serial);
+            if (foundOrder) {
+                setHistorySearchItem(foundOrder.item || '');
+                setHistorySearchManufacturer(foundOrder.manufacturer || '');
+            } else {
+                // Se o NS não for encontrado, limpa os campos? (opcional, mantemos como está)
+                // setHistorySearchItem('');
+                // setHistorySearchManufacturer('');
+            }
+        }
+    }, [historySearchSerial, orders]);
+
     // FILTRAR ORDENS POR USUÁRIO CLIENTE
     const ordersForUser = useMemo(() => {
         let filteredOrders = orders;
@@ -1302,19 +1331,8 @@ export default function MainApp() {
     const [contractToView, setContractToView] = useState(null);
     const [uploadingContractAttachments, setUploadingContractAttachments] = useState(false);
 
-    // === ESTADOS INVENTÁRIO ===
-    const [inventory, setInventory] = useState([]);
-    const [inventoryCategory, setInventoryCategory] = useState('consumables');
-    const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false);
-    const [editingInventoryItem, setEditingInventoryItem] = useState(null);
-    const [inventoryForm, setInventoryForm] = useState({ category: 'consumables', item: '', brand: '', specification: '', supplier: '' });
+    // === ESTADOS INVENTÁRIO / FORNECEDORES (leitura das OS) ===
     const [inventorySearch, setInventorySearch] = useState('');
-
-    // === ESTADOS FORNECEDORES ===
-    const [suppliers, setSuppliers] = useState([]);
-    const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
-    const [editingSupplier, setEditingSupplier] = useState(null);
-    const [supplierForm, setSupplierForm] = useState({ name: '', cnpj: '', address: '', contact: '', email: '', phone: '' });
     const [supplierSearch, setSupplierSearch] = useState('');
 
     // === ESTADOS DE VALIDAÇÃO ===
@@ -1564,17 +1582,26 @@ export default function MainApp() {
 
     const handleHistorySearch = (e) => {
         e.preventDefault();
-        if (!historySearchSerial.trim()) {
-            showNotification('Digite um número de série para buscar', 'warning');
+
+        if (!historySearchSerial.trim() || !historySearchItem.trim() || !historySearchManufacturer.trim()) {
+            showNotification('Preencha os três campos: Número de Série, Item e Marca', 'warning');
             return;
         }
 
-        const filtered = orders.filter(o =>
-            o.serial && o.serial.toLowerCase().includes(historySearchSerial.trim().toLowerCase())
-        );
+        const serialTerm = historySearchSerial.trim().toLowerCase();
+        const itemTerm = historySearchItem.trim().toLowerCase();
+        const manufTerm = historySearchManufacturer.trim().toLowerCase();
+
+        const filtered = orders.filter(o => {
+            const matchesSerial = o.serial && o.serial.toLowerCase().includes(serialTerm);
+            const matchesItem = o.item && o.item.toLowerCase().includes(itemTerm);
+            const matchesManuf = o.manufacturer && o.manufacturer.toLowerCase().includes(manufTerm);
+            return matchesSerial && matchesItem && matchesManuf;
+        });
+
         setHistoryFilteredOrders(filtered);
         if (filtered.length === 0) {
-            showNotification('Nenhuma OS encontrada com esse número de série', 'info');
+            showNotification('Nenhuma OS encontrada com a combinação de NS, Item e Marca informados.', 'info');
         }
     };
 
@@ -2170,12 +2197,48 @@ export default function MainApp() {
 
     const equipmentHistory = useMemo(() => {
         const serial = formData.serial?.trim();
-        if (!serial) return null;
+        const item = formData.item?.trim().toLowerCase();
+        const manuf = formData.manufacturer?.trim().toLowerCase();
+        const model = formData.model?.trim().toLowerCase();
 
-        const related = orders.filter(o => {
-            if (editingOrder && o.firestoreId === editingOrder.firestoreId) return false;
-            return o.serial && o.serial.trim().toLowerCase() === serial.toLowerCase();
-        });
+        // Serial considerado inválido se for "-" ou vazio
+        const hasValidSerial = serial && serial !== '-' && serial.length > 0;
+
+        // Se não temos serial válido e não temos item, não há como identificar
+        if (!hasValidSerial && !item) return null;
+
+        const matchScore = (o) => {
+            // Ignora a própria OS em edição
+            if (editingOrder && o.firestoreId === editingOrder.firestoreId) return 0;
+
+            const oSerial = o.serial?.trim();
+            const oItem = o.item?.trim().toLowerCase();
+            const oManuf = o.manufacturer?.trim().toLowerCase();
+            const oModel = o.model?.trim().toLowerCase();
+
+            // 1) Serial válido e corresponde (score 10) – sempre o mais forte
+            if (hasValidSerial && oSerial && oSerial === serial && oSerial !== '-') return 10;
+
+            // 2) Item + Fabricante correspondem (score 8)
+            //    Requer que ambos existam nos dois registros
+            if (item && oItem === item && manuf && oManuf === manuf) return 8;
+
+            // 3) Item + Fabricante + Modelo (também 8, não precisa mais que isso)
+            if (item && oItem === item && manuf && oManuf === manuf && model && oModel === model) return 8;
+
+            // 4) Apenas item corresponde, mas SEM fabricante definido no formulário atual
+            //    (para não juntar itens de marcas diferentes quando a marca não foi preenchida)
+            if (item && oItem === item && !manuf && !model) return 2;
+
+            // 5) Qualquer outra combinação recebe 0 (não considera como relacionado)
+            return 0;
+        };
+
+        const related = orders
+            .map(o => ({ order: o, score: matchScore(o) }))
+            .filter(({ score }) => score > 0)
+            .sort((a, b) => b.score - a.score || new Date(b.order.statusDate || 0) - new Date(a.order.statusDate || 0))
+            .map(({ order }) => order);
 
         if (related.length === 0) return null;
 
@@ -2197,7 +2260,7 @@ export default function MainApp() {
             diffMonths,
             allOccurrences: sorted
         };
-    }, [formData.serial, orders, editingOrder]);
+    }, [formData.serial, formData.item, formData.manufacturer, formData.model, orders, editingOrder]);
 
     // --- ORDENAÇÃO DE OS ---
     const sortedOrders = useMemo(() => {
@@ -2378,23 +2441,9 @@ export default function MainApp() {
             }
         );
 
-        const unsubInventory = onSnapshot(
-            collection(db, 'artifacts', finalAppId, 'public', 'data', 'inventory'),
-            (snap) => { setInventory(snap.docs.map(d => ({ firestoreId: d.id, ...d.data() }))); },
-            (error) => console.error('Erro ao buscar inventário:', error)
-        );
-
-        const unsubSuppliers = onSnapshot(
-            collection(db, 'artifacts', finalAppId, 'public', 'data', 'suppliers'),
-            (snap) => { setSuppliers(snap.docs.map(d => ({ firestoreId: d.id, ...d.data() }))); },
-            (error) => console.error('Erro ao buscar fornecedores:', error)
-        );
-
         return () => {
             unsubOrders();
             unsubContracts();
-            unsubInventory();
-            unsubSuppliers();
         };
     }, [user, authLoading]);
 
@@ -3830,6 +3879,184 @@ export default function MainApp() {
 
     const handlePrintSupplier = () => handlePrint('supplier');
 
+    const handlePrintLabel = async () => {
+        const selectedData = ordersForUser.filter(o => selectedOrders.includes(o.firestoreId));
+        if (selectedData.length === 0) {
+            showNotification('Selecione pelo menos uma OS para imprimir etiqueta', 'error');
+            return;
+        }
+
+        // ── Converte o logo para base64 (necessário para impressoras térmicas) ──
+        let logoBase64 = '';
+        try {
+            const resp = await fetch(logo);
+            const blob = await resp.blob();
+            logoBase64 = await new Promise(resolve => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.readAsDataURL(blob);
+            });
+        } catch (e) {
+            console.warn('Falha ao carregar logo:', e);
+        }
+
+        const qrBaseUrl = 'https://api.qrserver.com/v1/create-qr-code/';
+        const qrTarget = 'https://angeloborin.github.io/alfa-app/';
+        const today = new Date().toLocaleDateString('pt-BR');
+
+        // Cada etiqueta é gerada individualmente
+        const labelsHtml = selectedData.map(os => {
+            const osNum = os.osNumber || '---';
+            const osDate = os.statusDate ? formatDateBR(os.statusDate) : today;
+            // QR individual por OS — codifica o número da OS no QR
+            const qrUrl = `${qrBaseUrl}?size=400x400&ecc=M&data=${encodeURIComponent(`${qrTarget}?os=${encodeURIComponent(osNum)}`)}`;
+
+            return `<div class="label">
+  <div class="logo-area">
+    ${logoBase64
+                    ? `<img class="logo" src="${logoBase64}" alt="Alfa Tecnologia Hospitalar" />`
+                    : `<p class="logo-text">ALFA TECNOLOGIA HOSPITALAR</p>`}
+  </div>
+  <div class="qr-area">
+    <img class="qr" src="${qrUrl}" alt="QR" />
+  </div>
+  <div class="info-area">
+    <p class="os-line">OS: ${osNum}</p>
+    <p class="date-line">Data: ${osDate}</p>
+  </div>
+</div>`;
+        }).join('\n');
+
+        // ── HTML completo para impressão ──
+        const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Etiqueta OS</title>
+<style>
+/* ── Reset ── */
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+ 
+/* ── Página: 57 × 40 mm, sem margens — Zebra ZD230 ── */
+@page {
+  size: 57mm 40mm;
+  margin: 0;
+}
+ 
+html, body {
+  width:  57mm;
+  height: 40mm;
+  overflow: hidden;
+  background: #fff;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+ 
+/* ── Container da etiqueta ── */
+.label {
+  width:  57mm;
+  height: 40mm;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+ 
+  /* margens internas: topo, laterais, base */
+  padding: 2mm 2.5mm 1.5mm;
+ 
+  page-break-after: always;
+  background: #fff;
+  font-family: Arial, Helvetica, sans-serif;
+}
+ 
+/* ── Área do logo: ~25% da altura = 10mm ── */
+.logo-area {
+  width: 100%;
+  height: 10mm;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.logo {
+  max-width: 50mm;   /* não ultrapassa a largura da etiqueta */
+  max-height: 9.5mm; /* não extrapola a área do logo */
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  display: block;
+}
+.logo-text {
+  font-size: 5.5pt;
+  font-weight: bold;
+  text-align: center;
+  color: #000;
+  letter-spacing: -.2px;
+}
+ 
+/* ── Área do QR: ~50% da altura = 20mm ── */
+.qr-area {
+  width: 100%;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.qr {
+  width:  20mm;
+  height: 20mm;
+  display: block;
+  image-rendering: pixelated; /* evita blur em baixa res */
+}
+ 
+/* ── Área de texto: ~18% da altura = 7.5mm ── */
+.info-area {
+  width: 100%;
+  flex-shrink: 0;
+  text-align: center;
+  line-height: 1.25;
+}
+.os-line {
+  font-size: 9.5pt;
+  font-weight: bold;
+  color: #1e3a8a;
+  letter-spacing: .3px;
+}
+.date-line {
+  font-size: 7pt;
+  color: #555;
+  margin-top: .4mm;
+}
+</style>
+</head>
+<body>
+${labelsHtml}
+<script>
+  // Aguarda todas as imagens carregarem antes de abrir o diálogo de impressão
+  const imgs = Array.from(document.querySelectorAll('img'));
+  let loaded = 0;
+  function tryPrint() {
+    if (++loaded >= imgs.length) window.print();
+  }
+  if (imgs.length === 0) {
+    window.print();
+  } else {
+    imgs.forEach(function(img) {
+      if (img.complete && img.naturalWidth > 0) { tryPrint(); }
+      else { img.onload = tryPrint; img.onerror = tryPrint; }
+    });
+  }
+<\/script>
+</body>
+</html>`;
+
+        const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        showNotification(`${selectedData.length} etiqueta(s) gerada(s)! Confirme a impressão na janela que abriu.`, 'success');
+    };
+
     const handlePrint = async (printType, customPaymentConditions = null) => {
         const selectedData = ordersForUser.filter(o => selectedOrders.includes(o.firestoreId));
         if (selectedData.length === 0) {
@@ -3988,80 +4215,6 @@ export default function MainApp() {
         } catch (err) { console.warn('Não foi possível remover arquivo do storage:', err); }
         setContractForm(prev => ({ ...prev, attachments: prev.attachments.filter((_, i) => i !== index) }));
         showNotification('Anexo removido!', 'success');
-    };
-
-    // === HANDLERS: INVENTÁRIO ===
-    const handleSaveInventoryItem = async () => {
-        if (!inventoryForm.item.trim()) { showNotification('Item é obrigatório', 'error'); return; }
-        try {
-            const data = { ...inventoryForm, updatedAt: Date.now() };
-            if (editingInventoryItem) {
-                await updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'inventory', editingInventoryItem.firestoreId), data);
-                showNotification('Item atualizado!', 'success');
-            } else {
-                await addDoc(collection(db, 'artifacts', finalAppId, 'public', 'data', 'inventory'), { ...data, createdAt: Date.now() });
-                showNotification('Item adicionado!', 'success');
-            }
-            setIsInventoryModalOpen(false);
-            setEditingInventoryItem(null);
-            setInventoryForm({ category: inventoryCategory, item: '', brand: '', specification: '', supplier: '' });
-        } catch (err) { showNotification('Erro: ' + err.message, 'error'); }
-    };
-
-    const handleDeleteInventoryItem = async (item) => {
-        if (!window.confirm(`Excluir "${item.item}"?`)) return;
-        try {
-            await deleteDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'inventory', item.firestoreId));
-            showNotification('Item excluído!', 'success');
-        } catch (err) { showNotification('Erro: ' + err.message, 'error'); }
-    };
-
-    const openInventoryModal = (item = null) => {
-        if (item) {
-            setEditingInventoryItem(item);
-            setInventoryForm({ category: item.category || 'consumables', item: item.item, brand: item.brand || '', specification: item.specification || '', supplier: item.supplier || '' });
-        } else {
-            setEditingInventoryItem(null);
-            setInventoryForm({ category: inventoryCategory, item: '', brand: '', specification: '', supplier: '' });
-        }
-        setIsInventoryModalOpen(true);
-    };
-
-    // === HANDLERS: FORNECEDORES ===
-    const handleSaveSupplier = async () => {
-        if (!supplierForm.name.trim()) { showNotification('Nome é obrigatório', 'error'); return; }
-        try {
-            const data = { ...supplierForm, updatedAt: Date.now() };
-            if (editingSupplier) {
-                await updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'suppliers', editingSupplier.firestoreId), data);
-                showNotification('Fornecedor atualizado!', 'success');
-            } else {
-                await addDoc(collection(db, 'artifacts', finalAppId, 'public', 'data', 'suppliers'), { ...data, createdAt: Date.now() });
-                showNotification('Fornecedor adicionado!', 'success');
-            }
-            setIsSupplierModalOpen(false);
-            setEditingSupplier(null);
-            setSupplierForm({ name: '', cnpj: '', address: '', contact: '', email: '', phone: '' });
-        } catch (err) { showNotification('Erro: ' + err.message, 'error'); }
-    };
-
-    const handleDeleteSupplier = async (supplier) => {
-        if (!window.confirm(`Excluir fornecedor "${supplier.name}"?`)) return;
-        try {
-            await deleteDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'suppliers', supplier.firestoreId));
-            showNotification('Fornecedor excluído!', 'success');
-        } catch (err) { showNotification('Erro: ' + err.message, 'error'); }
-    };
-
-    const openSupplierModal = (supplier = null) => {
-        if (supplier) {
-            setEditingSupplier(supplier);
-            setSupplierForm({ name: supplier.name, cnpj: supplier.cnpj || '', address: supplier.address || '', contact: supplier.contact || '', email: supplier.email || '', phone: supplier.phone || '' });
-        } else {
-            setEditingSupplier(null);
-            setSupplierForm({ name: '', cnpj: '', address: '', contact: '', email: '', phone: '' });
-        }
-        setIsSupplierModalOpen(true);
     };
 
     const confirmDelete = (order) => {
@@ -4558,6 +4711,13 @@ export default function MainApp() {
                                     </span>
                                 )}
                             </div>
+                            <NavItem
+                                icon={<Hourglass size={isSidebarOpen ? 20 : 22} />}
+                                label="Materiais em conserto"
+                                active={currentPage === 'workshop'}
+                                onClick={() => setCurrentPage('workshop')}
+                                isSidebarOpen={isSidebarOpen}
+                            />
                             <NavItem icon={<DollarSign size={isSidebarOpen ? 20 : 22} />} label="Financeiro" active={currentPage === 'financial'} onClick={() => setCurrentPage('financial')} isSidebarOpen={isSidebarOpen} />
                             <div className="relative">
                                 <NavItem icon={<FileSignature size={isSidebarOpen ? 20 : 22} />} label="Contratos" active={currentPage === 'contracts'} onClick={() => setCurrentPage('contracts')} isSidebarOpen={isSidebarOpen} />
@@ -4644,7 +4804,7 @@ export default function MainApp() {
                                     </button>
                                 </div>
 
-                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                                     {userData?.role !== 'client' && (
                                         <button
                                             onClick={() => setIsMoveModalOpen(true)}
@@ -4661,6 +4821,14 @@ export default function MainApp() {
                                     >
                                         <Printer size={20} />
                                         <span className="text-sm">Imprimir Cliente</span>
+                                    </button>
+
+                                    <button
+                                        onClick={handlePrintLabel}
+                                        className="bg-violet-600 text-white p-4 rounded-xl font-bold flex flex-col items-center justify-center gap-2 shadow hover:bg-violet-700 transition-colors h-24"
+                                    >
+                                        <Tag size={20} />
+                                        <span className="text-sm">Imprimir Etiqueta</span>
                                     </button>
 
                                     {userData?.role !== 'client' && (
@@ -5391,6 +5559,12 @@ export default function MainApp() {
                                     >
                                         <Printer size={16} /> Imprimir Cliente
                                     </button>
+                                    <button
+                                        onClick={handlePrintLabel}
+                                        className="bg-violet-600 text-white py-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5"
+                                    >
+                                        <Tag size={16} /> Etiqueta
+                                    </button>
                                     {userData?.role !== 'client' && (
                                         <>
                                             <button
@@ -5453,7 +5627,7 @@ export default function MainApp() {
                                     </button>
                                 </div>
 
-                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                                     {userData?.role !== 'client' && (
                                         <button
                                             onClick={() => setIsMoveModalOpen(true)}
@@ -5470,6 +5644,14 @@ export default function MainApp() {
                                     >
                                         <Printer size={20} />
                                         <span className="text-sm">Imprimir Cliente</span>
+                                    </button>
+
+                                    <button
+                                        onClick={handlePrintLabel}
+                                        className="bg-violet-600 text-white p-4 rounded-xl font-bold flex flex-col items-center justify-center gap-2 shadow hover:bg-violet-700 transition-colors h-24"
+                                    >
+                                        <Tag size={20} />
+                                        <span className="text-sm">Imprimir Etiqueta</span>
                                     </button>
 
                                     {userData?.role !== 'client' && (
@@ -6085,74 +6267,85 @@ export default function MainApp() {
                     <div className="space-y-8 animate-in fade-in duration-500 max-w-7xl mx-auto">
                         <div className="flex flex-col">
                             <h2 className="text-3xl font-black text-slate-900 tracking-tighter">Histórico do produto</h2>
-                            <p className="text-slate-500 text-sm font-medium">Busque um equipamento pelo número de série</p>
+                            <p className="text-slate-500 text-sm font-medium">Preencha os três campos obrigatórios. O NS preenche automaticamente Item e Marca.</p>
                         </div>
 
-                        {/* Formulário de busca */}
+                        {/* Formulário de busca com três campos obrigatórios */}
                         <div className="bg-white rounded-2xl shadow-xl border border-slate-100 p-6">
-                            <form onSubmit={handleHistorySearch} className="flex flex-col sm:flex-row gap-4">
-                                <div className="flex-1">
-                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Número de Série (NS)</label>
-                                    <div className="relative" ref={historySerialInputRef}>
-                                        <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400" size={20} />
+                            <form onSubmit={handleHistorySearch} className="space-y-6">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+                                    {/* Campo NS com autocomplete completo (SuggestionInput) */}
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Número de Série (NS)</label>
+                                        <SuggestionInput
+                                            value={historySearchSerial}
+                                            onChange={(e) => setHistorySearchSerial(e.target.value)}
+                                            suggestions={uniqueSerials}
+                                            placeholder="Digite o NS..."
+                                            className="bg-white"
+                                            style={{ backgroundColor: 'white' }}
+                                            userRole={userData?.role}
+                                            onRemoveSuggestion={userData?.role === 'admin' ? (value) => handleHideSuggestion('defect', value) : undefined}
+                                        />
+                                    </div>
+
+                                    {/* Campo Item com sugestões manuais */}
+                                    <div className="relative">
+                                        <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Item (Equipamento)</label>
                                         <input
                                             type="text"
-                                            placeholder="Digite o número de série do equipamento..."
-                                            className="w-full pl-12 pr-4 py-4 rounded-2xl border border-slate-200 focus:ring-4 focus:ring-blue-500/10 outline-none font-medium"
-                                            value={historySearchSerial}
-                                            onChange={(e) => {
-                                                setHistorySearchSerial(e.target.value);
-                                                setShowHistorySerialSuggestions(true);
-                                            }}
-                                            onFocus={() => setShowHistorySerialSuggestions(true)}
-                                            onBlur={() => setTimeout(() => setShowHistorySerialSuggestions(false), 200)}
+                                            placeholder="Digite o nome do equipamento..."
+                                            className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-bold"
+                                            value={historySearchItem}
+                                            onChange={(e) => setHistorySearchItem(e.target.value)}
+                                            onFocus={() => setShowHistoryItemSuggestions(true)}
+                                            onBlur={() => setTimeout(() => setShowHistoryItemSuggestions(false), 200)}
                                         />
-                                        {showHistorySerialSuggestions && historySearchSerial && uniqueSerials.filter(s => s.toLowerCase().includes(historySearchSerial.toLowerCase())).length > 0 && (
-                                            <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 max-h-48 overflow-y-auto animate-in slide-in-from-top-2">
-                                                <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-400">Sugestões de NS</div>
-                                                {uniqueSerials
-                                                    .filter(s => s.toLowerCase().includes(historySearchSerial.toLowerCase()))
-                                                    .slice(0, 8)
-                                                    .map((s, idx) => {
-                                                        // Busca o equipamento associado para mostrar detalhes adicionais
-                                                        const orderWithSerial = orders.find(o => o.serial === s);
-                                                        return (
-                                                            <div
-                                                                key={idx}
-                                                                className="p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 text-sm text-slate-700 font-mono font-bold"
-                                                                onMouseDown={(e) => {
-                                                                    e.preventDefault();
-                                                                    setHistorySearchSerial(s);
-                                                                    setShowHistorySerialSuggestions(false);
-                                                                    // (Opcional) Executar busca automaticamente ao selecionar
-                                                                    // handleHistorySearch();
-                                                                }}
-                                                            >
-                                                                {s}
-                                                                {orderWithSerial && (
-                                                                    <div className="text-xs text-slate-400 font-normal mt-1">
-                                                                        {orderWithSerial.item} - {orderWithSerial.manufacturer} {orderWithSerial.model}
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        );
-                                                    })}
+                                        {showHistoryItemSuggestions && historySearchItem && uniqueItems.filter(i => i.toLowerCase().includes(historySearchItem.toLowerCase())).length > 0 && (
+                                            <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 z-50 max-h-48 overflow-y-auto">
+                                                {uniqueItems.filter(i => i.toLowerCase().includes(historySearchItem.toLowerCase())).slice(0, 6).map(i => (
+                                                    <div key={i} className="p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 text-sm font-medium" onMouseDown={() => setHistorySearchItem(i)}>{i}</div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Campo Marca com sugestões manuais */}
+                                    <div className="relative">
+                                        <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Marca (Fabricante)</label>
+                                        <input
+                                            type="text"
+                                            placeholder="Digite a marca..."
+                                            className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all font-bold"
+                                            value={historySearchManufacturer}
+                                            onChange={(e) => setHistorySearchManufacturer(e.target.value)}
+                                            onFocus={() => setShowHistoryManufSuggestions(true)}
+                                            onBlur={() => setTimeout(() => setShowHistoryManufSuggestions(false), 200)}
+                                        />
+                                        {showHistoryManufSuggestions && historySearchManufacturer && uniqueManufacturers.filter(m => m.toLowerCase().includes(historySearchManufacturer.toLowerCase())).length > 0 && (
+                                            <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 z-50 max-h-48 overflow-y-auto">
+                                                {uniqueManufacturers.filter(m => m.toLowerCase().includes(historySearchManufacturer.toLowerCase())).slice(0, 6).map(m => (
+                                                    <div key={m} className="p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 text-sm font-medium" onMouseDown={() => setHistorySearchManufacturer(m)}>{m}</div>
+                                                ))}
                                             </div>
                                         )}
                                     </div>
                                 </div>
-                                <div className="flex items-end">
+
+                                <div className="flex justify-end">
                                     <button
                                         type="submit"
-                                        className="bg-blue-600 text-white px-8 py-4 rounded-2xl font-bold hover:bg-blue-700 transition-colors shadow-xl shadow-blue-200 flex items-center gap-2"
+                                        onClick={handleHistorySearch}
+                                        className="bg-blue-600 text-white px-8 py-4 rounded-2xl font-bold hover:bg-blue-700 transition-colors shadow-md flex items-center gap-2"
                                     >
-                                        <Search size={20} /> Buscar
+                                        <Search size={20} /> Buscar Histórico
                                     </button>
                                 </div>
                             </form>
                         </div>
 
-                        {/* Tabela de resultados */}
+                        {/* Tabela de resultados (mantém o código existente) */}
                         <div className="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden">
                             <div className="h-[calc(100vh-320px)] overflow-y-auto">
                                 <table className="w-full text-left min-w-[900px]">
@@ -6169,35 +6362,28 @@ export default function MainApp() {
                                         {historyFilteredOrders.length === 0 ? (
                                             <tr>
                                                 <td colSpan="5" className="p-20 text-center text-slate-400">
-                                                    Nenhum resultado encontrado. Digite um número de série e clique em Buscar.
+                                                    Nenhum resultado encontrado. Preencha os três campos e clique em Buscar.
                                                 </td>
                                             </tr>
                                         ) : (
                                             historyFilteredOrders.map((o) => (
-                                                <tr
-                                                    key={o.firestoreId}
-                                                    className="hover:bg-blue-50/30 transition-colors group"
-                                                >
+                                                <tr key={o.firestoreId} className="hover:bg-blue-50/30 transition-colors group">
                                                     <td className="px-8 py-6">
                                                         <div className="font-black text-blue-700 text-lg">{o.osNumber}</div>
                                                     </td>
                                                     <td className="px-8 py-6">
-                                                        <div className="text-sm font-medium text-slate-700">
-                                                            {formatDateBR(o.statusDate)}
-                                                        </div>
+                                                        <div className="text-sm font-medium text-slate-700">{formatDateBR(o.statusDate)}</div>
                                                     </td>
                                                     <td className="px-8 py-6">
-                                                        <div className="text-xs font-bold text-slate-500 uppercase tracking-tighter">
-                                                            {o.billingType}
-                                                        </div>
+                                                        <div className="text-xs font-bold text-slate-500 uppercase tracking-tighter">{o.billingType}</div>
                                                     </td>
                                                     <td className="px-8 py-6">
                                                         <div
                                                             className="px-4 py-2 rounded-xl text-[10px] font-black uppercase inline-block border"
                                                             style={{
-                                                                backgroundColor: statusColors[o.status] + '20',
-                                                                borderColor: statusColors[o.status] + '40',
-                                                                color: statusColors[o.status]
+                                                                backgroundColor: (statusColors[o.status] ?? '#94a3b8') + '20',
+                                                                borderColor: (statusColors[o.status] ?? '#94a3b8') + '40',
+                                                                color: statusColors[o.status] ?? '#94a3b8'
                                                             }}
                                                         >
                                                             {o.status}
@@ -6213,8 +6399,6 @@ export default function MainApp() {
                                                             userData={userData}
                                                             handleNewAssociatedOS={handleNewAssociatedOS}
                                                             hasPermission={hasPermission}
-                                                            isOpen={historyDropdownOpen === o.firestoreId}
-                                                            onOpenChange={(id) => setHistoryDropdownOpen(id)}
                                                             openHistoryModal={(order) => {
                                                                 setSelectedOrderForHistory(order);
                                                                 setIsHistoryModalOpen(true);
@@ -6388,7 +6572,17 @@ export default function MainApp() {
                                                                         </div>
                                                                         <div className="col-span-3">
                                                                             <div className="font-medium text-slate-700 text-sm truncate">{order.item}</div>
-                                                                            <div className="text-[10px] text-slate-400 truncate">{order.manufacturer} {order.model}</div>
+                                                                            {(order.manufacturer || order.model) && (
+                                                                                <div className="text-[10px] text-slate-400 truncate">
+                                                                                    {[order.manufacturer, order.model].filter(Boolean).join(' ')}
+                                                                                </div>
+                                                                            )}
+                                                                            {order.serial && (
+                                                                                <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1 mt-0.5">
+                                                                                    <span className="text-slate-300">NS:</span>
+                                                                                    <span className="font-bold text-slate-500">{order.serial}</span>
+                                                                                </div>
+                                                                            )}
                                                                         </div>
                                                                         <div className="col-span-2">
                                                                             <span className="text-[10px] font-black px-2 py-1 rounded-lg border" style={{ backgroundColor: color + '18', borderColor: color + '40', color }}>
@@ -6452,12 +6646,18 @@ export default function MainApp() {
                                                                         <div className="font-bold text-slate-900 text-sm leading-tight truncate">{order.client}</div>
 
                                                                         {/* Linha 3: Equipamento */}
-                                                                        <div className="text-sm text-slate-600 truncate">
-                                                                            {order.item}
-                                                                            {(order.manufacturer || order.model) && (
-                                                                                <span className="text-slate-400"> · {[order.manufacturer, order.model].filter(Boolean).join(' ')}</span>
-                                                                            )}
-                                                                        </div>
+                                                                        <div className="font-medium text-slate-700 text-sm truncate">{order.item}</div>
+                                                                        {(order.manufacturer || order.model) && (
+                                                                            <div className="text-[10px] text-slate-400 truncate">
+                                                                                {[order.manufacturer, order.model].filter(Boolean).join(' ')}
+                                                                            </div>
+                                                                        )}
+                                                                        {order.serial && (
+                                                                            <div className="flex items-center gap-1 mt-0.5">
+                                                                                <span className="text-[9px] text-slate-300 font-bold uppercase">NS</span>
+                                                                                <span className="text-[10px] font-mono font-bold text-slate-500">{order.serial}</span>
+                                                                            </div>
+                                                                        )}
 
                                                                         {/* Linha 4: status + botão */}
                                                                         <div className="flex items-center justify-between pt-1 border-t border-white/60">
@@ -6582,6 +6782,269 @@ export default function MainApp() {
                         )}
                     </div>
                 )}
+
+                {currentPage === 'workshop' && userData?.role !== 'client' && (() => {
+
+                    // Statuses que entram na visão (tudo entre Recebido e Finalizado, exclusive)
+                    const WORKSHOP_STATUSES = [
+                        'Em inspeção',
+                        'Em orçamento',
+                        'Aguardando aprovação',
+                        'Em manutenção',
+                        'Em rota de entrega',
+                    ];
+
+                    const workshopOrders = ordersForUser.filter(o =>
+                        WORKSHOP_STATUSES.includes(o.status)
+                    );
+
+                    const filteredWorkshop = workshopOrders.filter(o => {
+                        if (workshopFilter === 'interno') return o.sentToThirdParty !== 'Sim';
+                        if (workshopFilter === 'externo') return o.sentToThirdParty === 'Sim';
+                        return true;
+                    });
+
+                    const internoCount = workshopOrders.filter(o => o.sentToThirdParty !== 'Sim').length;
+                    const externoCount = workshopOrders.filter(o => o.sentToThirdParty === 'Sim').length;
+
+                    return (
+                        <div className="space-y-6 animate-in fade-in duration-500 max-w-7xl mx-auto">
+
+                            {/* Header */}
+                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
+                                <div>
+                                    <h2 className="text-3xl font-black text-slate-900 tracking-tighter flex items-center gap-3">
+                                        <Hourglass className="text-amber-500" size={30} />
+                                        Materiais em conserto
+                                    </h2>
+                                    <p className="text-slate-500 font-medium text-sm">
+                                        OS em andamento — de inspeção até entrega
+                                    </p>
+                                </div>
+
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-sm font-bold text-slate-500">
+                                        {filteredWorkshop.length} OS exibida(s)
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Filtros + contadores */}
+                            <div className="flex flex-wrap gap-3 items-center">
+                                {[
+                                    { key: 'all', label: 'Todos', count: workshopOrders.length, color: 'bg-slate-800 text-white' },
+                                    { key: 'interno', label: 'Interno', count: internoCount, color: 'bg-blue-600 text-white' },
+                                    { key: 'externo', label: 'Externo', count: externoCount, color: 'bg-teal-600 text-white' },
+                                ].map(({ key, label, count, color }) => (
+                                    <button
+                                        key={key}
+                                        onClick={() => setWorkshopFilter(key)}
+                                        className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl font-bold text-sm border-2 transition-all ${workshopFilter === key
+                                            ? `${color} border-transparent shadow-lg scale-105`
+                                            : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:scale-[1.02]'
+                                            }`}
+                                    >
+                                        {label}
+                                        <span className={`px-2 py-0.5 rounded-full text-xs font-black ${workshopFilter === key ? 'bg-white/20' : 'bg-slate-100 text-slate-600'
+                                            }`}>
+                                            {count}
+                                        </span>
+                                    </button>
+                                ))}
+                            </div>
+
+                            {/* Status pills — clique para filtrar */}
+                            <div className="flex flex-wrap gap-2">
+                                {WORKSHOP_STATUSES.map(s => {
+                                    const cnt = filteredWorkshop.filter(o => o.status === s).length;
+                                    const color = statusColors[s] ?? '#94a3b8';
+                                    return (
+                                        <div
+                                            key={s}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold"
+                                            style={{ borderColor: color + '50', color, backgroundColor: color + '15' }}
+                                        >
+                                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
+                                            {s}
+                                            <span className="ml-1 font-black">{cnt}</span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            {/* ── TABELA desktop ── */}
+                            <div className="hidden lg:block bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden">
+                                <div className="overflow-y-auto" style={{ maxHeight: 'calc(100vh - 320px)' }}>
+                                    <table className="w-full text-left min-w-[900px]">
+                                        <thead className="bg-slate-50 sticky top-0 z-10 shadow-sm">
+                                            <tr className="border-b text-[10px] font-black uppercase text-slate-400 tracking-widest">
+                                                <th className="px-6 py-5 bg-slate-50">OS</th>
+                                                <th className="px-6 py-5 bg-slate-50">Cliente</th>
+                                                <th className="px-6 py-5 bg-slate-50">Equipamento</th>
+                                                <th className="px-6 py-5 bg-slate-50">Status</th>
+                                                <th className="px-6 py-5 bg-slate-50">Tipo</th>
+                                                <th className="px-6 py-5 bg-slate-50">Terceiro</th>
+                                                <th className="px-6 py-5 bg-slate-50 text-right">Ações</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-50">
+                                            {filteredWorkshop.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan="7" className="p-20 text-center text-slate-400">
+                                                        Nenhuma OS encontrada para este filtro.
+                                                    </td>
+                                                </tr>
+                                            ) : (
+                                                filteredWorkshop.map(o => {
+                                                    const isExterno = o.sentToThirdParty === 'Sim';
+                                                    const color = statusColors[o.status] ?? '#94a3b8';
+                                                    return (
+                                                        <tr
+                                                            key={o.firestoreId}
+                                                            className="hover:bg-amber-50/30 transition-colors group cursor-pointer"
+                                                            onClick={() => openModal(o)}
+                                                        >
+                                                            <td className="px-6 py-4">
+                                                                <div className="font-black text-blue-700 text-base">{o.osNumber}</div>
+                                                                <div className="text-[10px] text-slate-400 mt-0.5">{formatDateBR(o.statusDate)}</div>
+                                                            </td>
+                                                            <td className="px-6 py-4">
+                                                                <div className="font-bold text-slate-900 text-sm">{o.client}</div>
+                                                            </td>
+                                                            <td className="px-6 py-4">
+                                                                <div className="font-bold text-slate-800 text-sm">{o.item}</div>
+                                                                {(o.manufacturer || o.model) && (
+                                                                    <div className="text-xs text-slate-400">{o.manufacturer} {o.model}</div>
+                                                                )}
+                                                                <div className="text-[10px] text-slate-400 font-mono">NS: {o.serial || 'N/D'}</div>
+                                                            </td>
+                                                            <td className="px-6 py-4">
+                                                                <span
+                                                                    className="px-3 py-1.5 rounded-xl text-[10px] font-black uppercase inline-block border"
+                                                                    style={{
+                                                                        backgroundColor: color + '20',
+                                                                        borderColor: color + '40',
+                                                                        color,
+                                                                    }}
+                                                                >
+                                                                    {o.status}
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-6 py-4">
+                                                                <span className="text-xs font-bold text-slate-500 uppercase">{o.billingType}</span>
+                                                            </td>
+                                                            <td className="px-6 py-4">
+                                                                {isExterno ? (
+                                                                    <span className="flex items-center gap-1.5 text-teal-700 bg-teal-50 border border-teal-200 px-3 py-1.5 rounded-xl text-xs font-black w-fit">
+                                                                        <Truck size={13} /> Externo
+                                                                        {o.thirdPartyInfo && (
+                                                                            <span className="font-normal text-teal-600 truncate max-w-[80px]">{o.thirdPartyInfo}</span>
+                                                                        )}
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="flex items-center gap-1.5 text-blue-700 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-xl text-xs font-black w-fit">
+                                                                        <Wrench size={13} /> Interno
+                                                                    </span>
+                                                                )}
+                                                            </td>
+                                                            <td className="px-6 py-4 text-right">
+                                                                <OrderActionsDropdown
+                                                                    order={o}
+                                                                    openModal={openModal}
+                                                                    openViewModal={openViewModal}
+                                                                    openNewWithClient={handleNewOSWithClient}
+                                                                    confirmDelete={confirmDelete}
+                                                                    userData={userData}
+                                                                    handleNewAssociatedOS={handleNewAssociatedOS}
+                                                                    hasPermission={hasPermission}
+                                                                    openHistoryModal={order => {
+                                                                        setSelectedOrderForHistory(order);
+                                                                        setIsHistoryModalOpen(true);
+                                                                    }}
+                                                                />
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            {/* ── CARDS mobile ── */}
+                            <div className="lg:hidden space-y-3 pb-24">
+                                {filteredWorkshop.length === 0 ? (
+                                    <div className="text-center py-16 bg-white rounded-2xl border border-slate-100 text-slate-400">
+                                        Nenhuma OS encontrada.
+                                    </div>
+                                ) : (
+                                    filteredWorkshop.map(o => {
+                                        const isExterno = o.sentToThirdParty === 'Sim';
+                                        const color = statusColors[o.status] ?? '#94a3b8';
+                                        return (
+                                            <div
+                                                key={o.firestoreId}
+                                                className="relative bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden"
+                                                onClick={() => openModal(o)}
+                                            >
+                                                {/* Barra lateral colorida */}
+                                                <div
+                                                    className="absolute left-0 top-0 bottom-0 w-1.5"
+                                                    style={{ backgroundColor: color }}
+                                                />
+
+                                                <div className="pl-5 pr-4 pt-4 pb-3 space-y-2">
+                                                    {/* Linha 1 */}
+                                                    <div className="flex items-start justify-between gap-2">
+                                                        <span className="font-black text-blue-700 text-base">{o.osNumber}</span>
+                                                        <span
+                                                            className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase border flex-shrink-0"
+                                                            style={{
+                                                                backgroundColor: color + '20',
+                                                                borderColor: color + '40',
+                                                                color,
+                                                            }}
+                                                        >
+                                                            {o.status}
+                                                        </span>
+                                                    </div>
+
+                                                    {/* Cliente */}
+                                                    <div className="font-bold text-slate-900 text-sm leading-tight">{o.client}</div>
+
+                                                    {/* Equipamento */}
+                                                    <div className="text-sm text-slate-600 leading-tight">
+                                                        {o.item}
+                                                        {(o.manufacturer || o.model) && (
+                                                            <span className="text-slate-400"> · {[o.manufacturer, o.model].filter(Boolean).join(' ')}</span>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Rodapé do card */}
+                                                    <div className="flex items-center justify-between pt-2 border-t border-slate-50">
+                                                        {isExterno ? (
+                                                            <span className="flex items-center gap-1.5 text-teal-700 bg-teal-50 border border-teal-200 px-2.5 py-1 rounded-lg text-[10px] font-black">
+                                                                <Truck size={11} /> Externo
+                                                                {o.thirdPartyInfo && ` · ${o.thirdPartyInfo}`}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="flex items-center gap-1.5 text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-lg text-[10px] font-black">
+                                                                <Wrench size={11} /> Interno
+                                                            </span>
+                                                        )}
+                                                        <span className="text-[10px] text-slate-400 font-medium">{formatDateBR(o.statusDate)}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })
+                                )}
+                            </div>
+                        </div>
+                    );
+                })()}
+
 
                 {currentPage === 'financial' && canAccessPage() && (
                     <div className="space-y-8 animate-in fade-in duration-500 max-w-7xl mx-auto h-full">
@@ -6730,37 +7193,40 @@ export default function MainApp() {
                 )}
 
                 {currentPage === 'inventory' && canAccessPage() && (() => {
-                    const filteredInventory = inventory.filter(i => i.category === inventoryCategory && (
+                    // Deduplica equipamentos por nome do item (case-insensitive)
+                    const seenItems = new Map();
+                    ordersForUser.forEach(o => {
+                        if (!o.item) return;
+                        const key = o.item.trim().toLowerCase();
+                        if (!seenItems.has(key)) {
+                            seenItems.set(key, {
+                                item: o.item,
+                                brand: o.manufacturer || '',
+                                specification: o.model || '',
+                                supplier: o.costThirdPartyName || o.thirdPartyInfo || ''
+                            });
+                        }
+                    });
+                    const equipmentList = Array.from(seenItems.values()).sort((a, b) => a.item.localeCompare(b.item));
+                    const filteredEquipment = equipmentList.filter(e =>
                         !inventorySearch ||
-                        i.item?.toLowerCase().includes(inventorySearch.toLowerCase()) ||
-                        i.brand?.toLowerCase().includes(inventorySearch.toLowerCase()) ||
-                        i.specification?.toLowerCase().includes(inventorySearch.toLowerCase()) ||
-                        i.supplier?.toLowerCase().includes(inventorySearch.toLowerCase())
-                    ));
+                        e.item.toLowerCase().includes(inventorySearch.toLowerCase()) ||
+                        e.brand.toLowerCase().includes(inventorySearch.toLowerCase()) ||
+                        e.specification.toLowerCase().includes(inventorySearch.toLowerCase()) ||
+                        e.supplier.toLowerCase().includes(inventorySearch.toLowerCase())
+                    );
                     return (
                         <div className="space-y-8 animate-in fade-in duration-500 max-w-7xl mx-auto">
                             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
                                 <div>
-                                    <h2 className="text-3xl font-black text-slate-900 tracking-tighter">Inventário</h2>
-                                    <p className="text-slate-500 text-sm font-medium">Controle de itens de consumo, peças e ferramentas</p>
+                                    <h2 className="text-3xl font-black text-slate-900 tracking-tighter">Inventário de Equipamentos</h2>
+                                    <p className="text-slate-500 text-sm font-medium">{equipmentList.length} equipamento(s) únicos registrados nas OS</p>
                                 </div>
-                                <button onClick={() => openInventoryModal()} className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-black flex items-center gap-2 shadow-xl shadow-blue-200 hover:bg-blue-700 transition-colors">
-                                    <Plus size={20} /> Adicionar
-                                </button>
-                            </div>
-                            {/* Category tabs */}
-                            <div className="flex gap-2 bg-slate-100 p-1.5 rounded-2xl w-fit">
-                                {[{id:'consumables',label:'Itens de Consumo'},{id:'parts',label:'Peças'},{id:'tools',label:'Ferramentas'}].map(cat => (
-                                    <button key={cat.id} onClick={() => setInventoryCategory(cat.id)}
-                                        className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-all ${inventoryCategory === cat.id ? 'bg-white text-slate-900 shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>
-                                        {cat.label}
-                                    </button>
-                                ))}
                             </div>
                             <div className="relative">
                                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                                 <input className="w-full pl-12 pr-4 py-3 bg-white rounded-2xl border border-slate-200 shadow-sm outline-none font-medium focus:ring-2 focus:ring-blue-500/20"
-                                    placeholder="Buscar item, marca, especificação, fornecedor..." value={inventorySearch} onChange={e => setInventorySearch(e.target.value)} />
+                                    placeholder="Buscar item, marca, modelo..." value={inventorySearch} onChange={e => setInventorySearch(e.target.value)} />
                             </div>
                             {/* Desktop Table */}
                             <div className="hidden md:block bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden">
@@ -6769,26 +7235,19 @@ export default function MainApp() {
                                         <tr className="text-[10px] font-black uppercase text-slate-400 tracking-widest">
                                             <th className="px-6 py-4">Item</th>
                                             <th className="px-6 py-4">Marca</th>
-                                            <th className="px-6 py-4">Especificação</th>
+                                            <th className="px-6 py-4">Especificação / Modelo</th>
                                             <th className="px-6 py-4">Fornecedor</th>
-                                            <th className="px-6 py-4 text-right">Ações</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-50">
-                                        {filteredInventory.length === 0 ? (
-                                            <tr><td colSpan="5" className="p-16 text-center text-slate-400">Nenhum item. Clique em "Adicionar Item" para começar.</td></tr>
-                                        ) : filteredInventory.map(item => (
-                                            <tr key={item.firestoreId} className="hover:bg-blue-50/20 transition-colors">
-                                                <td className="px-6 py-4 font-bold text-slate-900">{item.item}</td>
-                                                <td className="px-6 py-4 text-slate-600 text-sm">{item.brand || <span className="text-slate-300">---</span>}</td>
-                                                <td className="px-6 py-4 text-slate-600 text-sm">{item.specification || <span className="text-slate-300">---</span>}</td>
-                                                <td className="px-6 py-4 text-slate-600 text-sm">{item.supplier || <span className="text-slate-300">---</span>}</td>
-                                                <td className="px-6 py-4 text-right">
-                                                    <div className="flex justify-end gap-2">
-                                                        <button onClick={() => openInventoryModal(item)} className="p-2 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors" title="Editar"><Edit2 size={16} /></button>
-                                                        <button onClick={() => handleDeleteInventoryItem(item)} className="p-2 bg-red-50 text-red-500 rounded-xl hover:bg-red-100 transition-colors" title="Excluir"><Trash2 size={16} /></button>
-                                                    </div>
-                                                </td>
+                                        {filteredEquipment.length === 0 ? (
+                                            <tr><td colSpan="4" className="p-16 text-center text-slate-400">Nenhum equipamento encontrado.</td></tr>
+                                        ) : filteredEquipment.map((eq, idx) => (
+                                            <tr key={idx} className="hover:bg-blue-50/20 transition-colors">
+                                                <td className="px-6 py-4 font-bold text-slate-900">{eq.item}</td>
+                                                <td className="px-6 py-4 text-slate-600 text-sm">{eq.brand || <span className="text-slate-300">---</span>}</td>
+                                                <td className="px-6 py-4 text-slate-600 text-sm">{eq.specification || <span className="text-slate-300">---</span>}</td>
+                                                <td className="px-6 py-4 text-slate-600 text-sm">{eq.supplier || <span className="text-slate-300">---</span>}</td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -6796,20 +7255,14 @@ export default function MainApp() {
                             </div>
                             {/* Mobile Cards */}
                             <div className="md:hidden space-y-3">
-                                {filteredInventory.length === 0 ? (
-                                    <div className="text-center py-12 text-slate-400 bg-white rounded-2xl border">Nenhum item. Adicione um novo item.</div>
-                                ) : filteredInventory.map(item => (
-                                    <div key={item.firestoreId} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-2">
-                                        <div className="flex justify-between items-start">
-                                            <div className="font-bold text-slate-900">{item.item}</div>
-                                            <div className="flex gap-2">
-                                                <button onClick={() => openInventoryModal(item)} className="p-1.5 bg-blue-50 text-blue-600 rounded-lg"><Edit2 size={14} /></button>
-                                                <button onClick={() => handleDeleteInventoryItem(item)} className="p-1.5 bg-red-50 text-red-500 rounded-lg"><Trash2 size={14} /></button>
-                                            </div>
-                                        </div>
-                                        {item.brand && <div className="text-sm text-slate-500"><span className="font-bold text-slate-400 text-xs uppercase">Marca: </span>{item.brand}</div>}
-                                        {item.specification && <div className="text-sm text-slate-500"><span className="font-bold text-slate-400 text-xs uppercase">Especificação: </span>{item.specification}</div>}
-                                        {item.supplier && <div className="text-sm text-slate-500"><span className="font-bold text-slate-400 text-xs uppercase">Fornecedor: </span>{item.supplier}</div>}
+                                {filteredEquipment.length === 0 ? (
+                                    <div className="text-center py-12 text-slate-400 bg-white rounded-2xl border">Nenhum equipamento encontrado.</div>
+                                ) : filteredEquipment.map((eq, idx) => (
+                                    <div key={idx} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-1.5">
+                                        <div className="font-bold text-slate-900">{eq.item}</div>
+                                        {eq.brand && <div className="text-sm text-slate-500"><span className="font-bold text-slate-400 text-xs uppercase">Marca: </span>{eq.brand}</div>}
+                                        {eq.specification && <div className="text-sm text-slate-500"><span className="font-bold text-slate-400 text-xs uppercase">Modelo: </span>{eq.specification}</div>}
+                                        {eq.supplier && <div className="text-sm text-slate-500"><span className="font-bold text-slate-400 text-xs uppercase">Fornecedor: </span>{eq.supplier}</div>}
                                     </div>
                                 ))}
                             </div>
@@ -6818,62 +7271,64 @@ export default function MainApp() {
                 })()}
                 {currentPage === 'clients' && canAccessPage() && <div className="p-20 text-center"><Users size={80} className="mx-auto text-slate-200 mb-6" /><h3 className="text-2xl font-black">Módulo de Clientes em breve</h3></div>}
                 {currentPage === 'suppliers' && canAccessPage() && (() => {
-                    const filteredSuppliers = suppliers.filter(s =>
+                    // Deduplica por thirdPartyInfo (nome do terceiro), caso não vazio
+                    const seenSuppliers = new Map();
+                    ordersForUser.filter(o => o.sentToThirdParty === 'Sim' && o.thirdPartyInfo?.trim()).forEach(o => {
+                        const key = o.thirdPartyInfo.trim().toLowerCase();
+                        if (!seenSuppliers.has(key)) {
+                            seenSuppliers.set(key, {
+                                name: o.thirdPartyInfo,
+                                transportadora: o.costThirdPartyName || '',
+                                tracking: o.thirdPartyTracking || '',
+                                lastDate: o.thirdPartyDate || ''
+                            });
+                        } else {
+                            // atualiza com a OS mais recente se tiver data
+                            const existing = seenSuppliers.get(key);
+                            if (!existing.transportadora && o.costThirdPartyName) existing.transportadora = o.costThirdPartyName;
+                            if (!existing.tracking && o.thirdPartyTracking) existing.tracking = o.thirdPartyTracking;
+                            if (o.thirdPartyDate && (!existing.lastDate || o.thirdPartyDate > existing.lastDate)) existing.lastDate = o.thirdPartyDate;
+                        }
+                    });
+                    const supplierList = Array.from(seenSuppliers.values()).sort((a, b) => a.name.localeCompare(b.name));
+                    const filteredSuppliers = supplierList.filter(s =>
                         !supplierSearch ||
-                        s.name?.toLowerCase().includes(supplierSearch.toLowerCase()) ||
-                        s.cnpj?.includes(supplierSearch) ||
-                        s.contact?.toLowerCase().includes(supplierSearch.toLowerCase()) ||
-                        s.address?.toLowerCase().includes(supplierSearch.toLowerCase())
+                        s.name.toLowerCase().includes(supplierSearch.toLowerCase()) ||
+                        s.transportadora.toLowerCase().includes(supplierSearch.toLowerCase())
                     );
                     return (
                         <div className="space-y-8 animate-in fade-in duration-500 max-w-7xl mx-auto">
                             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
                                 <div>
-                                    <h2 className="text-3xl font-black text-slate-900 tracking-tighter">Fornecedores</h2>
-                                    <p className="text-slate-500 text-sm font-medium">Cadastro de fornecedores e parceiros</p>
+                                    <h2 className="text-3xl font-black text-slate-900 tracking-tighter">Fornecedores / Terceiros</h2>
+                                    <p className="text-slate-500 text-sm font-medium">{supplierList.length} fornecedor(es) registrado(s) nas OS</p>
                                 </div>
-                                <button onClick={() => openSupplierModal()} className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-black flex items-center gap-2 shadow-xl shadow-blue-200 hover:bg-blue-700 transition-colors">
-                                    <Plus size={20} /> Novo Fornecedor
-                                </button>
                             </div>
                             <div className="relative">
                                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                                 <input className="w-full pl-12 pr-4 py-3 bg-white rounded-2xl border border-slate-200 shadow-sm outline-none font-medium focus:ring-2 focus:ring-blue-500/20"
-                                    placeholder="Buscar por nome, CNPJ, contato..." value={supplierSearch} onChange={e => setSupplierSearch(e.target.value)} />
+                                    placeholder="Buscar por nome ou transportadora..." value={supplierSearch} onChange={e => setSupplierSearch(e.target.value)} />
                             </div>
                             {/* Desktop Table */}
                             <div className="hidden md:block bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden">
                                 <table className="w-full text-left">
                                     <thead className="bg-slate-50 border-b border-slate-100">
                                         <tr className="text-[10px] font-black uppercase text-slate-400 tracking-widest">
-                                            <th className="px-6 py-4">Nome</th>
-                                            <th className="px-6 py-4">CNPJ</th>
-                                            <th className="px-6 py-4">Endereço</th>
-                                            <th className="px-6 py-4">Contato</th>
-                                            <th className="px-6 py-4 text-right">Ações</th>
+                                            <th className="px-6 py-4">Nome / Empresa</th>
+                                            <th className="px-6 py-4">Transportadora</th>
+                                            <th className="px-6 py-4">Rastreio</th>
+                                            <th className="px-6 py-4">Última Ocorrência</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-50">
                                         {filteredSuppliers.length === 0 ? (
-                                            <tr><td colSpan="5" className="p-16 text-center text-slate-400">Nenhum fornecedor. Clique em "Novo Fornecedor" para adicionar.</td></tr>
-                                        ) : filteredSuppliers.map(supplier => (
-                                            <tr key={supplier.firestoreId} className="hover:bg-blue-50/20 transition-colors">
-                                                <td className="px-6 py-4">
-                                                    <div className="font-bold text-slate-900">{supplier.name}</div>
-                                                    {supplier.email && <div className="text-xs text-slate-400 mt-0.5">{supplier.email}</div>}
-                                                </td>
-                                                <td className="px-6 py-4 text-slate-600 font-mono text-sm">{supplier.cnpj || <span className="text-slate-300">---</span>}</td>
-                                                <td className="px-6 py-4 text-slate-600 text-sm max-w-xs">{supplier.address || <span className="text-slate-300">---</span>}</td>
-                                                <td className="px-6 py-4">
-                                                    <div className="text-slate-800 font-medium text-sm">{supplier.contact || <span className="text-slate-300">---</span>}</div>
-                                                    {supplier.phone && <div className="text-xs text-slate-400 mt-0.5">{supplier.phone}</div>}
-                                                </td>
-                                                <td className="px-6 py-4 text-right">
-                                                    <div className="flex justify-end gap-2">
-                                                        <button onClick={() => openSupplierModal(supplier)} className="p-2 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors" title="Editar"><Edit2 size={16} /></button>
-                                                        <button onClick={() => handleDeleteSupplier(supplier)} className="p-2 bg-red-50 text-red-500 rounded-xl hover:bg-red-100 transition-colors" title="Excluir"><Trash2 size={16} /></button>
-                                                    </div>
-                                                </td>
+                                            <tr><td colSpan="4" className="p-16 text-center text-slate-400">Nenhum fornecedor encontrado. Registre OS com "Enviado para Terceiro" para ver aqui.</td></tr>
+                                        ) : filteredSuppliers.map((s, idx) => (
+                                            <tr key={idx} className="hover:bg-blue-50/20 transition-colors">
+                                                <td className="px-6 py-4 font-bold text-slate-900">{s.name}</td>
+                                                <td className="px-6 py-4 text-slate-600 text-sm">{s.transportadora || <span className="text-slate-300">---</span>}</td>
+                                                <td className="px-6 py-4 text-slate-600 font-mono text-sm">{s.tracking || <span className="text-slate-300">---</span>}</td>
+                                                <td className="px-6 py-4 text-slate-600 text-sm">{s.lastDate ? new Date(s.lastDate + 'T12:00:00').toLocaleDateString('pt-BR') : <span className="text-slate-300">---</span>}</td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -6882,21 +7337,13 @@ export default function MainApp() {
                             {/* Mobile Cards */}
                             <div className="md:hidden space-y-3">
                                 {filteredSuppliers.length === 0 ? (
-                                    <div className="text-center py-12 text-slate-400 bg-white rounded-2xl border">Nenhum fornecedor cadastrado.</div>
-                                ) : filteredSuppliers.map(supplier => (
-                                    <div key={supplier.firestoreId} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-2">
-                                        <div className="flex justify-between items-start">
-                                            <div className="font-bold text-slate-900">{supplier.name}</div>
-                                            <div className="flex gap-2">
-                                                <button onClick={() => openSupplierModal(supplier)} className="p-1.5 bg-blue-50 text-blue-600 rounded-lg"><Edit2 size={14} /></button>
-                                                <button onClick={() => handleDeleteSupplier(supplier)} className="p-1.5 bg-red-50 text-red-500 rounded-lg"><Trash2 size={14} /></button>
-                                            </div>
-                                        </div>
-                                        {supplier.cnpj && <div className="text-sm"><span className="font-bold text-slate-400 text-xs uppercase">CNPJ: </span><span className="font-mono">{supplier.cnpj}</span></div>}
-                                        {supplier.address && <div className="text-sm text-slate-500"><span className="font-bold text-slate-400 text-xs uppercase">Endereço: </span>{supplier.address}</div>}
-                                        {supplier.contact && <div className="text-sm text-slate-500"><span className="font-bold text-slate-400 text-xs uppercase">Contato: </span>{supplier.contact}</div>}
-                                        {supplier.phone && <div className="text-sm text-slate-500"><span className="font-bold text-slate-400 text-xs uppercase">Telefone: </span>{supplier.phone}</div>}
-                                        {supplier.email && <div className="text-sm text-slate-500"><span className="font-bold text-slate-400 text-xs uppercase">E-mail: </span>{supplier.email}</div>}
+                                    <div className="text-center py-12 text-slate-400 bg-white rounded-2xl border">Nenhum fornecedor. Registre OS com terceiros para ver aqui.</div>
+                                ) : filteredSuppliers.map((s, idx) => (
+                                    <div key={idx} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-1.5">
+                                        <div className="font-bold text-slate-900">{s.name}</div>
+                                        {s.transportadora && <div className="text-sm text-slate-500"><span className="font-bold text-slate-400 text-xs uppercase">Transportadora: </span>{s.transportadora}</div>}
+                                        {s.tracking && <div className="text-sm text-slate-500"><span className="font-bold text-slate-400 text-xs uppercase">Rastreio: </span><span className="font-mono">{s.tracking}</span></div>}
+                                        {s.lastDate && <div className="text-sm text-slate-500"><span className="font-bold text-slate-400 text-xs uppercase">Última ocorrência: </span>{new Date(s.lastDate + 'T12:00:00').toLocaleDateString('pt-BR')}</div>}
                                     </div>
                                 ))}
                             </div>
@@ -8358,281 +8805,280 @@ export default function MainApp() {
             )}
 
             {isContractModalOpen && (
-  <div
-    className="fixed inset-0 z-[60]"
-    role="dialog"
-    aria-modal="true"
-    onClick={(e) => {
-      if (e.target === e.currentTarget) setIsContractModalOpen(false);
-    }}
-  >
-    <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md overflow-y-auto">
-      <div className="min-h-full flex items-start justify-center p-4 py-8">
-        <div className="bg-white rounded-[2.5rem] w-full max-w-4xl shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-200 my-8">
-          <form onSubmit={handleSaveContract} className="p-8 space-y-8">
-            <div className="flex justify-between items-center border-b pb-6">
-              <div>
-                <h2 className="text-2xl font-black text-slate-900 tracking-tight">
-                  {isContractViewMode 
-                    ? 'Visualizar Contrato' 
-                    : (isNewContractMode ? 'Novo Contrato' : 'Configurar Contrato')}
-                </h2>
-                <p className="text-slate-500 text-sm font-medium">
-                  {isContractViewMode ? contractForm.clientName : (isNewContractMode ? 'Preencha os dados do cliente e contrato' : contractForm.clientName)}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsContractModalOpen(false)}
-                className="p-2 hover:bg-slate-100 rounded-full text-slate-400"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="space-y-8">
-              {/* Dados do Cliente */}
-              <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-4">
-                <div className="flex items-center gap-2 text-blue-600 font-bold uppercase text-xs tracking-widest mb-2">
-                  <User size={16} /> Dados do Cliente
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">Nome do Cliente *</label>
-                  <input
-                    className={`w-full p-3 border rounded-xl font-bold ${isNewContractMode && !isContractViewMode ? 'bg-white border-slate-200' : 'bg-slate-100 border-slate-200 cursor-not-allowed'}`}
-                    value={contractForm.clientName}
-                    onChange={e => !isContractViewMode && isNewContractMode && setContractForm({ ...contractForm, clientName: e.target.value })}
-                    placeholder="Nome da Empresa / Hospital"
-                    readOnly={isContractViewMode || !isNewContractMode}
-                    required
-                  />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">CNPJ</label>
-                    <input
-                      className="w-full p-3 bg-white border border-slate-200 rounded-xl font-medium text-sm"
-                      value={contractForm.cnpj}
-                      onChange={e => !isContractViewMode && setContractForm({ ...contractForm, cnpj: e.target.value })}
-                      placeholder="00.000.000/0000-00"
-                      disabled={isContractViewMode}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">Contato</label>
-                    <input
-                      className="w-full p-3 bg-white border border-slate-200 rounded-xl font-medium text-sm"
-                      value={contractForm.contactPerson}
-                      onChange={e => !isContractViewMode && setContractForm({ ...contractForm, contactPerson: e.target.value })}
-                      placeholder="Nome do Responsável"
-                      disabled={isContractViewMode}
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">E-mail</label>
-                    <input
-                      className="w-full p-3 bg-white border border-slate-200 rounded-xl font-medium text-sm"
-                      value={contractForm.email}
-                      onChange={e => !isContractViewMode && setContractForm({ ...contractForm, email: e.target.value })}
-                      placeholder="financeiro@hospital.com"
-                      disabled={isContractViewMode}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">Endereço</label>
-                    <input
-                      className="w-full p-3 bg-white border border-slate-200 rounded-xl font-medium text-sm"
-                      value={contractForm.address}
-                      onChange={e => !isContractViewMode && setContractForm({ ...contractForm, address: e.target.value })}
-                      placeholder="Rua, Número, Cidade - UF"
-                      disabled={isContractViewMode}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div className="space-y-6">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">Vigência (Início - Fim)</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="date"
-                        className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-sm"
-                        value={contractForm.startDate}
-                        onChange={e => !isContractViewMode && setContractForm({ ...contractForm, startDate: e.target.value })}
-                        required
-                        disabled={isContractViewMode}
-                      />
-                      <input
-                        type="date"
-                        className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-sm"
-                        value={contractForm.endDate}
-                        onChange={e => !isContractViewMode && setContractForm({ ...contractForm, endDate: e.target.value })}
-                        required
-                        disabled={isContractViewMode}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Valor Mensal - visível apenas em modo edição */}
-                  {!isContractViewMode && (
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase">Valor Mensal (R$)</label>
-                      <input
-                        className="w-full p-3 bg-white border border-slate-200 rounded-xl font-black text-slate-800"
-                        value={contractForm.monthlyValue}
-                        onChange={e => {
-                          const val = e.target.value;
-                          const numVal = parseCurrency(val);
-                          setContractForm({
-                            ...contractForm,
-                            monthlyValue: val,
-                            annualValue: (numVal * 12).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
-                          });
-                        }}
-                        placeholder="0,00"
-                        disabled={isContractViewMode}
-                      />
-                    </div>
-                  )}
-
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">Observações</label>
-                    <textarea
-                      rows="3"
-                      className="w-full p-3 bg-white border border-slate-200 rounded-xl text-sm resize-none"
-                      value={contractForm.observations}
-                      onChange={e => !isContractViewMode && setContractForm({ ...contractForm, observations: e.target.value })}
-                      placeholder="Detalhes adicionais..."
-                      disabled={isContractViewMode}
-                    ></textarea>
-                  </div>
-
-                  {/* Status Ativo/Inativo */}
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">Status do Contrato</label>
-                    <div className="flex gap-2">
-                      {[{v:true,l:'Ativo'},{v:false,l:'Inativo'}].map(({v,l}) => (
-                        <button
-                          key={l}
-                          type="button"
-                          onClick={() => !isContractViewMode && setContractForm(p => ({...p, isActive: v}))}
-                          className={`flex-1 py-2.5 rounded-xl font-bold text-sm border transition-all ${
-                            contractForm.isActive === v 
-                              ? (v ? 'bg-green-600 text-white border-green-600' : 'bg-slate-600 text-white border-slate-600')
-                              : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
-                          }`}
-                          disabled={isContractViewMode}
-                        >
-                          {v ? '✓ ' : '✗ '}{l}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Anexos */}
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">Anexos (Fotos, Documentos)</label>
-                    {!isContractViewMode && (
-                      <label className="flex items-center gap-2 px-4 py-3 bg-white border-2 border-dashed border-slate-300 rounded-xl cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors">
-                        <Upload size={18} className="text-blue-500" />
-                        <span className="text-sm font-bold text-slate-600">
-                          {uploadingContractAttachments ? 'Enviando...' : 'Clique para adicionar anexos'}
-                        </span>
-                        <input type="file" multiple className="hidden" onChange={handleContractAttachmentUpload} disabled={uploadingContractAttachments || isContractViewMode} />
-                      </label>
-                    )}
-                    {contractForm.attachments && contractForm.attachments.length > 0 && (
-                      <div className="space-y-2">
-                        {contractForm.attachments.map((url, idx) => {
-                          const isImage = /\.(jpg|jpeg|png|gif|webp)/i.test(url.split('?')[0]);
-                          const filename = decodeURIComponent(url.split('/').pop().split('?')[0]).replace(/^\d+_/, '');
-                          return (
-                            <div key={idx} className="flex items-center gap-2 p-2.5 bg-blue-50 rounded-xl border border-blue-100">
-                              {isImage ? <ImageIcon size={14} className="text-blue-600 flex-shrink-0" /> : <FileText size={14} className="text-blue-600 flex-shrink-0" />}
-                              <a href={url} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-blue-700 truncate flex-1 hover:underline">{filename}</a>
-                              {!isContractViewMode && (
-                                <button type="button" onClick={() => handleContractAttachmentRemove(idx)} className="p-1 text-red-400 hover:text-red-600 rounded flex-shrink-0">
-                                  <X size={14} />
-                                </button>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Itens Cobertos */}
-                <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-4 h-fit">
-                  <div className="flex items-center gap-2 text-indigo-600 font-bold uppercase text-xs tracking-widest mb-2">
-                    <CheckSquare size={16} /> Itens Cobertos
-                  </div>
-                  <div className="space-y-3">
-                    {[
-                      { key: 'videoSurgeryInstruments', label: 'Instrumentais de Vídeo Cirurgia' },
-                      { key: 'openInstruments', label: 'Instrumentais Abertos' },
-                      { key: 'videoSurgeryEquipment', label: 'Equipamentos de Vídeo' },
-                      { key: 'endoscopes', label: 'Endoscópios' }
-                    ].map(item => (
-                      <label key={item.key} className="flex items-center gap-3 p-4 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-indigo-300 transition-colors">
-                        <input
-                          type="checkbox"
-                          className="w-5 h-5 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
-                          checked={contractForm.coveredItems[item.key]}
-                          onChange={e => !isContractViewMode && setContractForm({
-                            ...contractForm,
-                            coveredItems: { ...contractForm.coveredItems, [item.key]: e.target.checked }
-                          })}
-                          disabled={isContractViewMode}
-                        />
-                        <span className="text-sm font-bold text-slate-700">{item.label}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="pt-4 border-t flex justify-end gap-3">
-              {isContractViewMode ? (
-                <button
-                  type="button"
-                  onClick={() => setIsContractModalOpen(false)}
-                  className="px-8 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200"
+                <div
+                    className="fixed inset-0 z-[60]"
+                    role="dialog"
+                    aria-modal="true"
+                    onClick={(e) => {
+                        if (e.target === e.currentTarget) setIsContractModalOpen(false);
+                    }}
                 >
-                  Fechar
-                </button>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setIsContractModalOpen(false)}
-                    className="px-6 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-100"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isSaving}
-                    className="px-8 py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg hover:bg-blue-700 flex items-center gap-2"
-                  >
-                    {isSaving ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
-                    Salvar Contrato
-                  </button>
-                </>
-              )}
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
-  </div>
-)}
+                    <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md overflow-y-auto">
+                        <div className="min-h-full flex items-start justify-center p-4 py-8">
+                            <div className="bg-white rounded-[2.5rem] w-full max-w-4xl shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-200 my-8">
+                                <form onSubmit={handleSaveContract} className="p-8 space-y-8">
+                                    <div className="flex justify-between items-center border-b pb-6">
+                                        <div>
+                                            <h2 className="text-2xl font-black text-slate-900 tracking-tight">
+                                                {isContractViewMode
+                                                    ? 'Visualizar Contrato'
+                                                    : (isNewContractMode ? 'Novo Contrato' : 'Configurar Contrato')}
+                                            </h2>
+                                            <p className="text-slate-500 text-sm font-medium">
+                                                {isContractViewMode ? contractForm.clientName : (isNewContractMode ? 'Preencha os dados do cliente e contrato' : contractForm.clientName)}
+                                            </p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsContractModalOpen(false)}
+                                            className="p-2 hover:bg-slate-100 rounded-full text-slate-400"
+                                        >
+                                            <X size={20} />
+                                        </button>
+                                    </div>
+
+                                    <div className="space-y-8">
+                                        {/* Dados do Cliente */}
+                                        <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-4">
+                                            <div className="flex items-center gap-2 text-blue-600 font-bold uppercase text-xs tracking-widest mb-2">
+                                                <User size={16} /> Dados do Cliente
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase">Nome do Cliente *</label>
+                                                <input
+                                                    className={`w-full p-3 border rounded-xl font-bold ${isNewContractMode && !isContractViewMode ? 'bg-white border-slate-200' : 'bg-slate-100 border-slate-200 cursor-not-allowed'}`}
+                                                    value={contractForm.clientName}
+                                                    onChange={e => !isContractViewMode && isNewContractMode && setContractForm({ ...contractForm, clientName: e.target.value })}
+                                                    placeholder="Nome da Empresa / Hospital"
+                                                    readOnly={isContractViewMode || !isNewContractMode}
+                                                    required
+                                                />
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div className="space-y-2">
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase">CNPJ</label>
+                                                    <input
+                                                        className="w-full p-3 bg-white border border-slate-200 rounded-xl font-medium text-sm"
+                                                        value={contractForm.cnpj}
+                                                        onChange={e => !isContractViewMode && setContractForm({ ...contractForm, cnpj: e.target.value })}
+                                                        placeholder="00.000.000/0000-00"
+                                                        disabled={isContractViewMode}
+                                                    />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase">Contato</label>
+                                                    <input
+                                                        className="w-full p-3 bg-white border border-slate-200 rounded-xl font-medium text-sm"
+                                                        value={contractForm.contactPerson}
+                                                        onChange={e => !isContractViewMode && setContractForm({ ...contractForm, contactPerson: e.target.value })}
+                                                        placeholder="Nome do Responsável"
+                                                        disabled={isContractViewMode}
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div className="space-y-2">
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase">E-mail</label>
+                                                    <input
+                                                        className="w-full p-3 bg-white border border-slate-200 rounded-xl font-medium text-sm"
+                                                        value={contractForm.email}
+                                                        onChange={e => !isContractViewMode && setContractForm({ ...contractForm, email: e.target.value })}
+                                                        placeholder="financeiro@hospital.com"
+                                                        disabled={isContractViewMode}
+                                                    />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase">Endereço</label>
+                                                    <input
+                                                        className="w-full p-3 bg-white border border-slate-200 rounded-xl font-medium text-sm"
+                                                        value={contractForm.address}
+                                                        onChange={e => !isContractViewMode && setContractForm({ ...contractForm, address: e.target.value })}
+                                                        placeholder="Rua, Número, Cidade - UF"
+                                                        disabled={isContractViewMode}
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                            <div className="space-y-6">
+                                                <div className="space-y-2">
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase">Vigência (Início - Fim)</label>
+                                                    <div className="flex gap-2">
+                                                        <input
+                                                            type="date"
+                                                            className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-sm"
+                                                            value={contractForm.startDate}
+                                                            onChange={e => !isContractViewMode && setContractForm({ ...contractForm, startDate: e.target.value })}
+                                                            required
+                                                            disabled={isContractViewMode}
+                                                        />
+                                                        <input
+                                                            type="date"
+                                                            className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-sm"
+                                                            value={contractForm.endDate}
+                                                            onChange={e => !isContractViewMode && setContractForm({ ...contractForm, endDate: e.target.value })}
+                                                            required
+                                                            disabled={isContractViewMode}
+                                                        />
+                                                    </div>
+                                                </div>
+
+                                                {/* Valor Mensal - visível apenas em modo edição */}
+                                                {!isContractViewMode && (
+                                                    <div className="space-y-2">
+                                                        <label className="text-[10px] font-bold text-slate-400 uppercase">Valor Mensal (R$)</label>
+                                                        <input
+                                                            className="w-full p-3 bg-white border border-slate-200 rounded-xl font-black text-slate-800"
+                                                            value={contractForm.monthlyValue}
+                                                            onChange={e => {
+                                                                const val = e.target.value;
+                                                                const numVal = parseCurrency(val);
+                                                                setContractForm({
+                                                                    ...contractForm,
+                                                                    monthlyValue: val,
+                                                                    annualValue: (numVal * 12).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
+                                                                });
+                                                            }}
+                                                            placeholder="0,00"
+                                                            disabled={isContractViewMode}
+                                                        />
+                                                    </div>
+                                                )}
+
+                                                <div className="space-y-2">
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase">Observações</label>
+                                                    <textarea
+                                                        rows="3"
+                                                        className="w-full p-3 bg-white border border-slate-200 rounded-xl text-sm resize-none"
+                                                        value={contractForm.observations}
+                                                        onChange={e => !isContractViewMode && setContractForm({ ...contractForm, observations: e.target.value })}
+                                                        placeholder="Detalhes adicionais..."
+                                                        disabled={isContractViewMode}
+                                                    ></textarea>
+                                                </div>
+
+                                                {/* Status Ativo/Inativo */}
+                                                <div className="space-y-2">
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase">Status do Contrato</label>
+                                                    <div className="flex gap-2">
+                                                        {[{ v: true, l: 'Ativo' }, { v: false, l: 'Inativo' }].map(({ v, l }) => (
+                                                            <button
+                                                                key={l}
+                                                                type="button"
+                                                                onClick={() => !isContractViewMode && setContractForm(p => ({ ...p, isActive: v }))}
+                                                                className={`flex-1 py-2.5 rounded-xl font-bold text-sm border transition-all ${contractForm.isActive === v
+                                                                    ? (v ? 'bg-green-600 text-white border-green-600' : 'bg-slate-600 text-white border-slate-600')
+                                                                    : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                                                                    }`}
+                                                                disabled={isContractViewMode}
+                                                            >
+                                                                {v ? '✓ ' : '✗ '}{l}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+
+                                                {/* Anexos */}
+                                                <div className="space-y-2">
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase">Anexos (Fotos, Documentos)</label>
+                                                    {!isContractViewMode && (
+                                                        <label className="flex items-center gap-2 px-4 py-3 bg-white border-2 border-dashed border-slate-300 rounded-xl cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors">
+                                                            <Upload size={18} className="text-blue-500" />
+                                                            <span className="text-sm font-bold text-slate-600">
+                                                                {uploadingContractAttachments ? 'Enviando...' : 'Clique para adicionar anexos'}
+                                                            </span>
+                                                            <input type="file" multiple className="hidden" onChange={handleContractAttachmentUpload} disabled={uploadingContractAttachments || isContractViewMode} />
+                                                        </label>
+                                                    )}
+                                                    {contractForm.attachments && contractForm.attachments.length > 0 && (
+                                                        <div className="space-y-2">
+                                                            {contractForm.attachments.map((url, idx) => {
+                                                                const isImage = /\.(jpg|jpeg|png|gif|webp)/i.test(url.split('?')[0]);
+                                                                const filename = decodeURIComponent(url.split('/').pop().split('?')[0]).replace(/^\d+_/, '');
+                                                                return (
+                                                                    <div key={idx} className="flex items-center gap-2 p-2.5 bg-blue-50 rounded-xl border border-blue-100">
+                                                                        {isImage ? <ImageIcon size={14} className="text-blue-600 flex-shrink-0" /> : <FileText size={14} className="text-blue-600 flex-shrink-0" />}
+                                                                        <a href={url} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-blue-700 truncate flex-1 hover:underline">{filename}</a>
+                                                                        {!isContractViewMode && (
+                                                                            <button type="button" onClick={() => handleContractAttachmentRemove(idx)} className="p-1 text-red-400 hover:text-red-600 rounded flex-shrink-0">
+                                                                                <X size={14} />
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Itens Cobertos */}
+                                            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-4 h-fit">
+                                                <div className="flex items-center gap-2 text-indigo-600 font-bold uppercase text-xs tracking-widest mb-2">
+                                                    <CheckSquare size={16} /> Itens Cobertos
+                                                </div>
+                                                <div className="space-y-3">
+                                                    {[
+                                                        { key: 'videoSurgeryInstruments', label: 'Instrumentais de Vídeo Cirurgia' },
+                                                        { key: 'openInstruments', label: 'Instrumentais Abertos' },
+                                                        { key: 'videoSurgeryEquipment', label: 'Equipamentos de Vídeo' },
+                                                        { key: 'endoscopes', label: 'Endoscópios' }
+                                                    ].map(item => (
+                                                        <label key={item.key} className="flex items-center gap-3 p-4 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-indigo-300 transition-colors">
+                                                            <input
+                                                                type="checkbox"
+                                                                className="w-5 h-5 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                                                                checked={contractForm.coveredItems[item.key]}
+                                                                onChange={e => !isContractViewMode && setContractForm({
+                                                                    ...contractForm,
+                                                                    coveredItems: { ...contractForm.coveredItems, [item.key]: e.target.checked }
+                                                                })}
+                                                                disabled={isContractViewMode}
+                                                            />
+                                                            <span className="text-sm font-bold text-slate-700">{item.label}</span>
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="pt-4 border-t flex justify-end gap-3">
+                                        {isContractViewMode ? (
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsContractModalOpen(false)}
+                                                className="px-8 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200"
+                                            >
+                                                Fechar
+                                            </button>
+                                        ) : (
+                                            <>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setIsContractModalOpen(false)}
+                                                    className="px-6 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-100"
+                                                >
+                                                    Cancelar
+                                                </button>
+                                                <button
+                                                    type="submit"
+                                                    disabled={isSaving}
+                                                    className="px-8 py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg hover:bg-blue-700 flex items-center gap-2"
+                                                >
+                                                    {isSaving ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
+                                                    Salvar Contrato
+                                                </button>
+                                            </>
+                                        )}
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {isDeleteModalOpen && (
                 <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[60] flex items-center justify-center p-4">
@@ -8691,67 +9137,6 @@ export default function MainApp() {
                 order={orderToReject}
                 onConfirm={confirmRejectBudget}
             />
-
-            {/* Inventory Modal */}
-            {isInventoryModalOpen && (
-                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-                    <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border border-slate-200 animate-in zoom-in-95 space-y-5">
-                        <div className="flex justify-between items-center">
-                            <h3 className="text-xl font-black text-slate-900">{editingInventoryItem ? 'Editar Item' : 'Novo Item'}</h3>
-                            <button onClick={() => setIsInventoryModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400"><X size={20} /></button>
-                        </div>
-                        <div className="space-y-3">
-                            <div>
-                                <label className="text-xs font-bold text-slate-400 uppercase block mb-1">Categoria</label>
-                                <select value={inventoryForm.category} onChange={e => setInventoryForm(p => ({...p, category: e.target.value}))}
-                                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold">
-                                    <option value="consumables">Itens de Consumo</option>
-                                    <option value="parts">Peças</option>
-                                    <option value="tools">Ferramentas</option>
-                                </select>
-                            </div>
-                            {[{k:'item',l:'Item *'},{k:'brand',l:'Marca'},{k:'specification',l:'Especificação'},{k:'supplier',l:'Fornecedor'}].map(({k,l}) => (
-                                <div key={k}>
-                                    <label className="text-xs font-bold text-slate-400 uppercase block mb-1">{l}</label>
-                                    <input value={inventoryForm[k]} onChange={e => setInventoryForm(p => ({...p,[k]:e.target.value}))}
-                                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold focus:ring-2 focus:ring-blue-500/20"
-                                        placeholder={l.replace(' *','')} />
-                                </div>
-                            ))}
-                        </div>
-                        <div className="flex gap-3">
-                            <button onClick={() => setIsInventoryModalOpen(false)} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-colors">Cancelar</button>
-                            <button onClick={handleSaveInventoryItem} className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"><Save size={18}/> Salvar</button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Supplier Modal */}
-            {isSupplierModalOpen && (
-                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-                    <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border border-slate-200 animate-in zoom-in-95 space-y-5">
-                        <div className="flex justify-between items-center">
-                            <h3 className="text-xl font-black text-slate-900">{editingSupplier ? 'Editar Fornecedor' : 'Novo Fornecedor'}</h3>
-                            <button onClick={() => setIsSupplierModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400"><X size={20} /></button>
-                        </div>
-                        <div className="space-y-3">
-                            {[{k:'name',l:'Nome *'},{k:'cnpj',l:'CNPJ'},{k:'address',l:'Endereço'},{k:'contact',l:'Contato'},{k:'email',l:'E-mail'},{k:'phone',l:'Telefone'}].map(({k,l}) => (
-                                <div key={k}>
-                                    <label className="text-xs font-bold text-slate-400 uppercase block mb-1">{l}</label>
-                                    <input value={supplierForm[k]} onChange={e => setSupplierForm(p => ({...p,[k]:e.target.value}))}
-                                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold focus:ring-2 focus:ring-blue-500/20"
-                                        placeholder={l.replace(' *','')} />
-                                </div>
-                            ))}
-                        </div>
-                        <div className="flex gap-3">
-                            <button onClick={() => setIsSupplierModalOpen(false)} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-colors">Cancelar</button>
-                            <button onClick={handleSaveSupplier} className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"><Save size={18}/> Salvar</button>
-                        </div>
-                    </div>
-                </div>
-            )}
 
             {/* Toast Notification */}
             {notification.show && (
