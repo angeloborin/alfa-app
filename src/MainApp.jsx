@@ -909,6 +909,51 @@ const OrderActionsDropdown = ({ order, openModal, openViewModal, openNewWithClie
     );
 };
 
+const SupplierActionsDropdown = ({ supplier, onEdit, onDelete, userData }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const dropdownRef = useRef(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    return (
+        <div className="relative" ref={dropdownRef}>
+            <button
+                onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }}
+                className="p-2.5 bg-white border shadow-sm hover:bg-slate-50 rounded-xl transition-all"
+                title="Ações"
+            >
+                <MoreVertical size={18} />
+            </button>
+            {isOpen && (
+                <div className="absolute right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-[200] min-w-[140px] animate-in fade-in slide-in-from-top-2">
+                    <button
+                        onClick={(e) => { e.stopPropagation(); setIsOpen(false); onEdit(supplier); }}
+                        className="w-full flex items-center gap-3 px-4 py-3 text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors text-sm font-medium"
+                    >
+                        <Edit2 size={18} /> Editar
+                    </button>
+                    {userData?.role === 'admin' && supplier.isRegistered && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); setIsOpen(false); onDelete(supplier); }}
+                            className="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 transition-colors text-sm font-medium"
+                        >
+                            <Trash2 size={18} /> Excluir
+                        </button>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
+
 const SuggestionInput = ({
     value,
     onChange,
@@ -1041,8 +1086,6 @@ export default function MainApp() {
 
     // === AUTENTICAÇÃO ===
     const { user, userData, loading: authLoading, hasPermission, logout } = useAuth();
-
-    const [workshopFilter, setWorkshopFilter] = useState('all');
 
     // Estados para busca no Histórico do produto (três campos)
     const [historySearchSerial, setHistorySearchSerial] = useState('');
@@ -1334,6 +1377,14 @@ export default function MainApp() {
     // === ESTADOS INVENTÁRIO / FORNECEDORES (leitura das OS) ===
     const [inventorySearch, setInventorySearch] = useState('');
     const [supplierSearch, setSupplierSearch] = useState('');
+
+    // === ESTADOS FORNECEDORES (Firestore) ===
+    const [supplierRecords, setSupplierRecords] = useState([]);
+    const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
+    const [editingSupplier, setEditingSupplier] = useState(null);
+    const [supplierFormData, setSupplierFormData] = useState({
+        name: '', cpf: '', email: '', contactPerson: '', address: '', observations: ''
+    });
 
     // === ESTADOS DE VALIDAÇÃO ===
     const [fieldErrors, setFieldErrors] = useState({
@@ -2197,48 +2248,17 @@ export default function MainApp() {
 
     const equipmentHistory = useMemo(() => {
         const serial = formData.serial?.trim();
-        const item = formData.item?.trim().toLowerCase();
-        const manuf = formData.manufacturer?.trim().toLowerCase();
-        const model = formData.model?.trim().toLowerCase();
 
-        // Serial considerado inválido se for "-" ou vazio
+        // NS ausente ou "-" → não exibe histórico
         const hasValidSerial = serial && serial !== '-' && serial.length > 0;
+        if (!hasValidSerial) return null;
 
-        // Se não temos serial válido e não temos item, não há como identificar
-        if (!hasValidSerial && !item) return null;
-
-        const matchScore = (o) => {
-            // Ignora a própria OS em edição
-            if (editingOrder && o.firestoreId === editingOrder.firestoreId) return 0;
-
+        // Filtra apenas OS com exatamente o mesmo NS (ignora a própria OS em edição)
+        const related = orders.filter(o => {
+            if (editingOrder && o.firestoreId === editingOrder.firestoreId) return false;
             const oSerial = o.serial?.trim();
-            const oItem = o.item?.trim().toLowerCase();
-            const oManuf = o.manufacturer?.trim().toLowerCase();
-            const oModel = o.model?.trim().toLowerCase();
-
-            // 1) Serial válido e corresponde (score 10) – sempre o mais forte
-            if (hasValidSerial && oSerial && oSerial === serial && oSerial !== '-') return 10;
-
-            // 2) Item + Fabricante correspondem (score 8)
-            //    Requer que ambos existam nos dois registros
-            if (item && oItem === item && manuf && oManuf === manuf) return 8;
-
-            // 3) Item + Fabricante + Modelo (também 8, não precisa mais que isso)
-            if (item && oItem === item && manuf && oManuf === manuf && model && oModel === model) return 8;
-
-            // 4) Apenas item corresponde, mas SEM fabricante definido no formulário atual
-            //    (para não juntar itens de marcas diferentes quando a marca não foi preenchida)
-            if (item && oItem === item && !manuf && !model) return 2;
-
-            // 5) Qualquer outra combinação recebe 0 (não considera como relacionado)
-            return 0;
-        };
-
-        const related = orders
-            .map(o => ({ order: o, score: matchScore(o) }))
-            .filter(({ score }) => score > 0)
-            .sort((a, b) => b.score - a.score || new Date(b.order.statusDate || 0) - new Date(a.order.statusDate || 0))
-            .map(({ order }) => order);
+            return oSerial && oSerial !== '-' && oSerial === serial;
+        });
 
         if (related.length === 0) return null;
 
@@ -2251,16 +2271,15 @@ export default function MainApp() {
         if (!latestDate) return { latest, underWarranty: false, diffMonths: null, allOccurrences: sorted };
 
         const now = new Date();
-        const diffMs = now - latestDate;
-        const diffMonths = diffMs / (1000 * 60 * 60 * 24 * 30.44);
+        const diffMonths = (now - latestDate) / (1000 * 60 * 60 * 24 * 30.44);
 
         return {
             latest,
             underWarranty: diffMonths < 3,
             diffMonths,
-            allOccurrences: sorted
+            allOccurrences: sorted,
         };
-    }, [formData.serial, formData.item, formData.manufacturer, formData.model, orders, editingOrder]);
+    }, [formData.serial, orders, editingOrder]);
 
     // --- ORDENAÇÃO DE OS ---
     const sortedOrders = useMemo(() => {
@@ -2376,6 +2395,48 @@ export default function MainApp() {
         return combinedContracts.filter(c => c.alertStatus !== 'none').length;
     }, [combinedContracts]);
 
+    // === FORNECEDORES COMBINADOS (Firestore + OS) ===
+    const combinedSuppliers = useMemo(() => {
+        const supplierMap = new Map();
+
+        // Primeiro: fornecedores registrados no Firestore
+        supplierRecords.forEach(s => {
+            if (!s.name?.trim()) return;
+            const key = s.name.trim().toLowerCase();
+            supplierMap.set(key, { ...s, isRegistered: true });
+        });
+
+        // Depois: merge com dados derivados das OS
+        ordersForUser.filter(o => o.sentToThirdParty === 'Sim' && o.thirdPartyInfo?.trim()).forEach(o => {
+            const key = o.thirdPartyInfo.trim().toLowerCase();
+            if (!supplierMap.has(key)) {
+                supplierMap.set(key, {
+                    name: o.thirdPartyInfo,
+                    cpf: '',
+                    email: '',
+                    contactPerson: o.costThirdPartyName || '',
+                    address: '',
+                    observations: '',
+                    isRegistered: false
+                });
+            }
+        });
+
+        // Calcular contagens de OS por fornecedor
+        return Array.from(supplierMap.values()).map(supplier => {
+            const supplierOrders = ordersForUser.filter(o =>
+                o.thirdPartyInfo?.trim().toLowerCase() === supplier.name.trim().toLowerCase()
+            );
+            const osAbertas = supplierOrders.filter(o =>
+                o.status !== 'Finalizado' && o.status !== 'Orçamento recusado'
+            ).length;
+            const osFechadas = supplierOrders.filter(o =>
+                o.status === 'Finalizado' || o.status === 'Orçamento recusado'
+            ).length;
+            return { ...supplier, osAbertas, osFechadas };
+        }).sort((a, b) => a.name.localeCompare(b.name));
+    }, [supplierRecords, ordersForUser]);
+
     // === Verificar permissões de página ===
     const canAccessPage = () => {
         if (!userData) return false;
@@ -2441,9 +2502,18 @@ export default function MainApp() {
             }
         );
 
+        const unsubSuppliers = onSnapshot(
+            collection(db, 'artifacts', finalAppId, 'public', 'data', 'suppliers'),
+            (snap) => {
+                setSupplierRecords(snap.docs.map(d => ({ firestoreId: d.id, ...d.data() })));
+            },
+            (error) => { console.error("Erro ao buscar fornecedores:", error); }
+        );
+
         return () => {
             unsubOrders();
             unsubContracts();
+            unsubSuppliers();
         };
     }, [user, authLoading]);
 
@@ -3786,6 +3856,63 @@ export default function MainApp() {
         }
     };
 
+    // === CRUD FORNECEDORES ===
+    const handleOpenNewSupplier = () => {
+        setEditingSupplier(null);
+        setSupplierFormData({ name: '', cpf: '', email: '', contactPerson: '', address: '', observations: '' });
+        setIsSupplierModalOpen(true);
+    };
+
+    const handleOpenEditSupplier = (supplier) => {
+        setEditingSupplier(supplier);
+        setSupplierFormData({
+            name: supplier.name || '',
+            cpf: supplier.cpf || '',
+            email: supplier.email || '',
+            contactPerson: supplier.contactPerson || '',
+            address: supplier.address || '',
+            observations: supplier.observations || ''
+        });
+        setIsSupplierModalOpen(true);
+    };
+
+    const handleSaveSupplier = async () => {
+        if (!supplierFormData.name.trim()) {
+            showNotification('Nome do fornecedor é obrigatório', 'error');
+            return;
+        }
+        setIsSaving(true);
+        try {
+            const docId = (editingSupplier?.firestoreId) ||
+                supplierFormData.name.trim().toLowerCase().replace(/[^a-z0-9]/g, '_') + '_' + Date.now();
+            await setDoc(
+                doc(db, 'artifacts', finalAppId, 'public', 'data', 'suppliers', docId),
+                { ...supplierFormData, updatedAt: Date.now() },
+                { merge: true }
+            );
+            showNotification(editingSupplier ? 'Fornecedor atualizado!' : 'Fornecedor cadastrado!', 'success');
+            setIsSupplierModalOpen(false);
+        } catch (err) {
+            showNotification('Erro ao salvar fornecedor: ' + err.message, 'error');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleDeleteSupplier = async (supplier) => {
+        if (!supplier.firestoreId) {
+            showNotification('Este fornecedor não pode ser excluído (derivado de OS)', 'warning');
+            return;
+        }
+        if (!window.confirm(`Excluir o fornecedor "${supplier.name}"? Esta ação não pode ser desfeita.`)) return;
+        try {
+            await deleteDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'suppliers', supplier.firestoreId));
+            showNotification('Fornecedor excluído!', 'success');
+        } catch (err) {
+            showNotification('Erro ao excluir: ' + err.message, 'error');
+        }
+    };
+
     const handleConfirmPrintWithPayment = async (paymentData) => {
         const { selectedOrderId } = paymentData;
 
@@ -3844,17 +3971,45 @@ export default function MainApp() {
             const selectedData = ordersForUser.filter(o => selectedOrders.includes(o.firestoreId));
 
             try {
-                await Promise.all(selectedData.map(os =>
-                    updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', os.firestoreId), {
-                        paymentCondition: paymentData.paymentCondition,
-                        installments: paymentData.installments,
-                        discount5Days: paymentData.paymentCondition === 'Boleto' &&
-                            paymentData.installments === "5 dias (5% de desconto)",
-                        finalChargedAmount: paymentData.finalChargedAmount
-                    })
-                ));
+                const is5Days = paymentData.paymentCondition === 'Boleto' &&
+                    paymentData.installments === "5 dias (5% de desconto)";
+
+                // Salvar no Firestore: condições compartilhadas + valor individual de cada OS.
+                // NUNCA gravar o total do lote como finalChargedAmount de cada OS individual.
+                await Promise.all(selectedData.map(os => {
+                    const individualCharged = parseCurrency(os.chargedAmount);
+                    const individualFinal   = is5Days
+                        ? parseFloat((individualCharged * 0.95).toFixed(2))
+                        : individualCharged;
+                    return updateDoc(
+                        doc(db, 'artifacts', finalAppId, 'public', 'data', 'serviceOrders', os.firestoreId),
+                        {
+                            paymentCondition:   paymentData.paymentCondition,
+                            installments:       paymentData.installments,
+                            discount5Days:      is5Days,
+                            finalChargedAmount: individualFinal,
+                        }
+                    );
+                }));
+
+                // Montar customPaymentConditions com o total correto do lote
+                // para que o PDF use esses valores e não recalcule via calculateTotals.
+                const batchTotalOriginal = selectedData.reduce(
+                    (acc, os) => acc + parseCurrency(os.chargedAmount), 0
+                );
+                const batchTotalFinal = is5Days
+                    ? parseFloat((batchTotalOriginal * 0.95).toFixed(2))
+                    : batchTotalOriginal;
+
+                const batchPaymentConditions = {
+                    paymentCondition:   paymentData.paymentCondition,
+                    installments:       paymentData.installments,
+                    originalValue:      batchTotalOriginal,
+                    finalChargedAmount: batchTotalFinal,
+                };
+
                 setIsPaymentModalOpen(false);
-                handlePrint('client', paymentData);
+                handlePrint('client', batchPaymentConditions);
             } catch (error) {
                 console.error('Erro ao atualizar condições de pagamento:', error);
                 showNotification('Erro ao atualizar condições de pagamento.', 'error');
@@ -3865,9 +4020,31 @@ export default function MainApp() {
     const handlePrintForSingleOrder = async (groups, paymentConditions = null) => {
         const title = 'Proposta de orçamento';
         try {
-            const customFilename = getReportFilename(selectedData, 'pdf');
+            const itemsForFilename = Object.values(groups).flatMap(g => g.items);
+            const customFilename = getReportFilename(itemsForFilename, 'pdf');
+
+            let pdfPaymentConditions = null;
+            if (paymentConditions) {
+                const is5Days = paymentConditions.paymentCondition === 'Boleto' &&
+                    paymentConditions.installments === '5 dias (5% de desconto)';
+                const originalVal = parseCurrency(itemsForFilename[0]?.chargedAmount ?? 0);
+                const finalVal    = paymentConditions.finalChargedAmount ??
+                    (is5Days ? parseFloat((originalVal * 0.95).toFixed(2)) : originalVal);
+                pdfPaymentConditions = {
+                    paymentCondition:   paymentConditions.paymentCondition,
+                    installments:       paymentConditions.installments,
+                    originalValue:      originalVal,
+                    finalChargedAmount: finalVal,
+                };
+            }
+
             await openPdfBlob(
-                <DocumentoPDF groups={groups} printType={printType} title={title} />,
+                <DocumentoPDF
+                    groups={groups}
+                    printType="client"
+                    title={title}
+                    customPaymentConditions={pdfPaymentConditions}
+                />,
                 title,
                 customFilename
             );
@@ -3879,182 +4056,132 @@ export default function MainApp() {
 
     const handlePrintSupplier = () => handlePrint('supplier');
 
-    const handlePrintLabel = async () => {
+    const handlePrintLabel = () => {
         const selectedData = ordersForUser.filter(o => selectedOrders.includes(o.firestoreId));
         if (selectedData.length === 0) {
             showNotification('Selecione pelo menos uma OS para imprimir etiqueta', 'error');
             return;
         }
 
-        // ── Converte o logo para base64 (necessário para impressoras térmicas) ──
-        let logoBase64 = '';
-        try {
-            const resp = await fetch(logo);
-            const blob = await resp.blob();
-            logoBase64 = await new Promise(resolve => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result);
-                reader.readAsDataURL(blob);
-            });
-        } catch (e) {
-            console.warn('Falha ao carregar logo:', e);
-        }
+        // URL fixa do QR code
+        const qrData = "https://angeloborin.github.io/alfa-app/";
+        const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&ecc=M&data=${encodeURIComponent(qrData)}`;
 
-        const qrBaseUrl = 'https://api.qrserver.com/v1/create-qr-code/';
-        const qrTarget = 'https://angeloborin.github.io/alfa-app/';
+        // Data atual para exibição
         const today = new Date().toLocaleDateString('pt-BR');
 
-        // Cada etiqueta é gerada individualmente
+        // Gera cada etiqueta individualmente
         const labelsHtml = selectedData.map(os => {
             const osNum = os.osNumber || '---';
+            // Data da OS (statusDate) ou data atual
             const osDate = os.statusDate ? formatDateBR(os.statusDate) : today;
-            // QR individual por OS — codifica o número da OS no QR
-            const qrUrl = `${qrBaseUrl}?size=400x400&ecc=M&data=${encodeURIComponent(`${qrTarget}?os=${encodeURIComponent(osNum)}`)}`;
 
-            return `<div class="label">
-  <div class="logo-area">
-    ${logoBase64
-                    ? `<img class="logo" src="${logoBase64}" alt="Alfa Tecnologia Hospitalar" />`
-                    : `<p class="logo-text">ALFA TECNOLOGIA HOSPITALAR</p>`}
-  </div>
-  <div class="qr-area">
-    <img class="qr" src="${qrUrl}" alt="QR" />
-  </div>
-  <div class="info-area">
-    <p class="os-line">OS: ${osNum}</p>
-    <p class="date-line">Data: ${osDate}</p>
-  </div>
-</div>`;
+            return `
+      <div class="label">
+        <div class="logo-wrapper">
+          <img class="logo" src="${logo}" alt="Alfa Tecnologia Hospitalar" />
+        </div>
+        <div class="qr-wrapper">
+          <img class="qr" src="${qrSrc}" alt="QR Code" />
+        </div>
+        <div class="info">
+          <div class="os">OS: ${osNum}</div>
+          <div class="date">${osDate}</div>
+        </div>
+      </div>
+    `;
         }).join('\n');
 
-        // ── HTML completo para impressão ──
         const html = `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<title>Etiqueta OS</title>
+<title>Etiquetas OS - Alfa</title>
 <style>
-/* ── Reset ── */
-*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
- 
-/* ── Página: 57 × 40 mm, sem margens — Zebra ZD230 ── */
-@page {
-  size: 57mm 40mm;
-  margin: 0;
-}
- 
-html, body {
-  width:  57mm;
-  height: 40mm;
-  overflow: hidden;
-  background: #fff;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
-}
- 
-/* ── Container da etiqueta ── */
-.label {
-  width:  57mm;
-  height: 40mm;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: space-between;
- 
-  /* margens internas: topo, laterais, base */
-  padding: 2mm 2.5mm 1.5mm;
- 
-  page-break-after: always;
-  background: #fff;
-  font-family: Arial, Helvetica, sans-serif;
-}
- 
-/* ── Área do logo: ~25% da altura = 10mm ── */
-.logo-area {
-  width: 100%;
-  height: 10mm;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.logo {
-  max-width: 50mm;   /* não ultrapassa a largura da etiqueta */
-  max-height: 9.5mm; /* não extrapola a área do logo */
-  width: auto;
-  height: auto;
-  object-fit: contain;
-  display: block;
-}
-.logo-text {
-  font-size: 5.5pt;
-  font-weight: bold;
-  text-align: center;
-  color: #000;
-  letter-spacing: -.2px;
-}
- 
-/* ── Área do QR: ~50% da altura = 20mm ── */
-.qr-area {
-  width: 100%;
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.qr {
-  width:  20mm;
-  height: 20mm;
-  display: block;
-  image-rendering: pixelated; /* evita blur em baixa res */
-}
- 
-/* ── Área de texto: ~18% da altura = 7.5mm ── */
-.info-area {
-  width: 100%;
-  flex-shrink: 0;
-  text-align: center;
-  line-height: 1.25;
-}
-.os-line {
-  font-size: 9.5pt;
-  font-weight: bold;
-  color: #1e3a8a;
-  letter-spacing: .3px;
-}
-.date-line {
-  font-size: 7pt;
-  color: #555;
-  margin-top: .4mm;
-}
+  /* Configuração para impressora térmica ZD230 / etiqueta 57x40mm */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  @page {
+    size: 57mm 40mm;
+    margin: 0;
+  }
+  body {
+    background: white;
+    width: 57mm;
+    margin: 0 auto;
+  }
+  .label {
+    width: 57mm;
+    height: 40mm;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2mm 2mm 2mm 2mm;
+    page-break-after: always;
+    background: white;
+    font-family: 'Arial', sans-serif;
+  }
+  .logo-wrapper {
+    flex-shrink: 0;
+    height: 12mm;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .logo {
+    max-height: 10mm;
+    max-width: 50mm;
+    object-fit: contain;
+  }
+  .qr-wrapper {
+    flex-shrink: 0;
+    margin: 1mm 0;
+  }
+  .qr {
+    width: 24mm;
+    height: 24mm;
+    display: block;
+  }
+  .info {
+    text-align: center;
+    font-weight: bold;
+    width: 100%;
+    flex-shrink: 0;
+  }
+  .os {
+    font-size: 9pt;
+    letter-spacing: -0.5px;
+    color: #1e3a8a;
+    margin-bottom: 1mm;
+  }
+  .date {
+    font-size: 7pt;
+    color: #475569;
+    font-weight: normal;
+  }
 </style>
 </head>
 <body>
 ${labelsHtml}
 <script>
-  // Aguarda todas as imagens carregarem antes de abrir o diálogo de impressão
-  const imgs = Array.from(document.querySelectorAll('img'));
+  // Auto-print assim que todas as imagens (logo e QR) carregarem
+  const images = Array.from(document.querySelectorAll('img'));
   let loaded = 0;
-  function tryPrint() {
-    if (++loaded >= imgs.length) window.print();
-  }
-  if (imgs.length === 0) {
-    window.print();
-  } else {
-    imgs.forEach(function(img) {
-      if (img.complete && img.naturalWidth > 0) { tryPrint(); }
-      else { img.onload = tryPrint; img.onerror = tryPrint; }
-    });
-  }
-<\/script>
+  const tryPrint = () => { if (++loaded >= images.length) window.print(); };
+  images.forEach(img => {
+    if (img.complete) tryPrint();
+    else { img.onload = tryPrint; img.onerror = tryPrint; }
+  });
+  if (images.length === 0) window.print();
+</script>
 </body>
 </html>`;
 
         const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         window.open(url, '_blank');
-        setTimeout(() => URL.revokeObjectURL(url), 60_000);
-        showNotification(`${selectedData.length} etiqueta(s) gerada(s)! Confirme a impressão na janela que abriu.`, 'success');
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+        showNotification(`${selectedData.length} etiqueta(s) gerada(s). Confirme a impressão na janela aberta.`, 'success');
     };
 
     const handlePrint = async (printType, customPaymentConditions = null) => {
@@ -4097,7 +4224,12 @@ ${labelsHtml}
         try {
             const customFilename = getReportFilename(selectedData, 'pdf');
             await openPdfBlob(
-                <DocumentoPDF groups={groups} printType={printType} title={title} />,
+                <DocumentoPDF
+                    groups={groups}
+                    printType={printType}
+                    title={title}
+                    customPaymentConditions={customPaymentConditions || null}
+                />,
                 title,
                 customFilename
             );
@@ -4333,9 +4465,33 @@ ${labelsHtml}
         };
 
         try {
-            const customFilename = getReportFilename(selectedData, 'pdf');
+            const customFilename = getReportFilename([printData], 'pdf');
+
+            let modalPaymentConditions = null;
+            if (isBudgetStage) {
+                const originalVal = parseCurrency(printData.chargedAmount);
+                const is5Days = printData.paymentCondition === 'Boleto' &&
+                    printData.installments === '5 dias (5% de desconto)';
+                const finalVal = (printData.finalChargedAmount !== undefined &&
+                    printData.finalChargedAmount !== null &&
+                    printData.finalChargedAmount !== '')
+                    ? parseCurrency(printData.finalChargedAmount)
+                    : (is5Days ? parseFloat((originalVal * 0.95).toFixed(2)) : originalVal);
+                modalPaymentConditions = {
+                    paymentCondition:   printData.paymentCondition || 'À vista',
+                    installments:       printData.installments || '',
+                    originalValue:      originalVal,
+                    finalChargedAmount: finalVal,
+                };
+            }
+
             await openPdfBlob(
-                <DocumentoPDF groups={groups} printType={printType} title={title} />,
+                <DocumentoPDF
+                    groups={groups}
+                    printType={printType}
+                    title={title}
+                    customPaymentConditions={modalPaymentConditions}
+                />,
                 title,
                 customFilename
             );
@@ -4711,13 +4867,6 @@ ${labelsHtml}
                                     </span>
                                 )}
                             </div>
-                            <NavItem
-                                icon={<Hourglass size={isSidebarOpen ? 20 : 22} />}
-                                label="Materiais em conserto"
-                                active={currentPage === 'workshop'}
-                                onClick={() => setCurrentPage('workshop')}
-                                isSidebarOpen={isSidebarOpen}
-                            />
                             <NavItem icon={<DollarSign size={isSidebarOpen ? 20 : 22} />} label="Financeiro" active={currentPage === 'financial'} onClick={() => setCurrentPage('financial')} isSidebarOpen={isSidebarOpen} />
                             <div className="relative">
                                 <NavItem icon={<FileSignature size={isSidebarOpen ? 20 : 22} />} label="Contratos" active={currentPage === 'contracts'} onClick={() => setCurrentPage('contracts')} isSidebarOpen={isSidebarOpen} />
@@ -6278,16 +6427,16 @@ ${labelsHtml}
                                     {/* Campo NS com autocomplete completo (SuggestionInput) */}
                                     <div>
                                         <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Número de Série (NS)</label>
-                                        <SuggestionInput
-                                            value={historySearchSerial}
-                                            onChange={(e) => setHistorySearchSerial(e.target.value)}
-                                            suggestions={uniqueSerials}
-                                            placeholder="Digite o NS..."
-                                            className="bg-white"
-                                            style={{ backgroundColor: 'white' }}
-                                            userRole={userData?.role}
-                                            onRemoveSuggestion={userData?.role === 'admin' ? (value) => handleHideSuggestion('defect', value) : undefined}
-                                        />
+                                         <SuggestionInput
+    value={historySearchSerial}
+    onChange={(e) => setHistorySearchSerial(e.target.value)}
+    suggestions={uniqueSerials}
+    placeholder="Digite o NS..."
+    className="bg-white"
+    style={{ backgroundColor: 'white' }}   // força fundo branco
+    userRole={userData?.role}
+    onRemoveSuggestion={userData?.role === 'admin' ? (value) => handleHideSuggestion('defect', value) : undefined}
+  />
                                     </div>
 
                                     {/* Campo Item com sugestões manuais */}
@@ -6572,17 +6721,7 @@ ${labelsHtml}
                                                                         </div>
                                                                         <div className="col-span-3">
                                                                             <div className="font-medium text-slate-700 text-sm truncate">{order.item}</div>
-                                                                            {(order.manufacturer || order.model) && (
-                                                                                <div className="text-[10px] text-slate-400 truncate">
-                                                                                    {[order.manufacturer, order.model].filter(Boolean).join(' ')}
-                                                                                </div>
-                                                                            )}
-                                                                            {order.serial && (
-                                                                                <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1 mt-0.5">
-                                                                                    <span className="text-slate-300">NS:</span>
-                                                                                    <span className="font-bold text-slate-500">{order.serial}</span>
-                                                                                </div>
-                                                                            )}
+                                                                            <div className="text-[10px] text-slate-400 truncate">{order.manufacturer} {order.model}</div>
                                                                         </div>
                                                                         <div className="col-span-2">
                                                                             <span className="text-[10px] font-black px-2 py-1 rounded-lg border" style={{ backgroundColor: color + '18', borderColor: color + '40', color }}>
@@ -6646,18 +6785,12 @@ ${labelsHtml}
                                                                         <div className="font-bold text-slate-900 text-sm leading-tight truncate">{order.client}</div>
 
                                                                         {/* Linha 3: Equipamento */}
-                                                                        <div className="font-medium text-slate-700 text-sm truncate">{order.item}</div>
-                                                                        {(order.manufacturer || order.model) && (
-                                                                            <div className="text-[10px] text-slate-400 truncate">
-                                                                                {[order.manufacturer, order.model].filter(Boolean).join(' ')}
-                                                                            </div>
-                                                                        )}
-                                                                        {order.serial && (
-                                                                            <div className="flex items-center gap-1 mt-0.5">
-                                                                                <span className="text-[9px] text-slate-300 font-bold uppercase">NS</span>
-                                                                                <span className="text-[10px] font-mono font-bold text-slate-500">{order.serial}</span>
-                                                                            </div>
-                                                                        )}
+                                                                        <div className="text-sm text-slate-600 truncate">
+                                                                            {order.item}
+                                                                            {(order.manufacturer || order.model) && (
+                                                                                <span className="text-slate-400"> · {[order.manufacturer, order.model].filter(Boolean).join(' ')}</span>
+                                                                            )}
+                                                                        </div>
 
                                                                         {/* Linha 4: status + botão */}
                                                                         <div className="flex items-center justify-between pt-1 border-t border-white/60">
@@ -6782,269 +6915,6 @@ ${labelsHtml}
                         )}
                     </div>
                 )}
-
-                {currentPage === 'workshop' && userData?.role !== 'client' && (() => {
-
-                    // Statuses que entram na visão (tudo entre Recebido e Finalizado, exclusive)
-                    const WORKSHOP_STATUSES = [
-                        'Em inspeção',
-                        'Em orçamento',
-                        'Aguardando aprovação',
-                        'Em manutenção',
-                        'Em rota de entrega',
-                    ];
-
-                    const workshopOrders = ordersForUser.filter(o =>
-                        WORKSHOP_STATUSES.includes(o.status)
-                    );
-
-                    const filteredWorkshop = workshopOrders.filter(o => {
-                        if (workshopFilter === 'interno') return o.sentToThirdParty !== 'Sim';
-                        if (workshopFilter === 'externo') return o.sentToThirdParty === 'Sim';
-                        return true;
-                    });
-
-                    const internoCount = workshopOrders.filter(o => o.sentToThirdParty !== 'Sim').length;
-                    const externoCount = workshopOrders.filter(o => o.sentToThirdParty === 'Sim').length;
-
-                    return (
-                        <div className="space-y-6 animate-in fade-in duration-500 max-w-7xl mx-auto">
-
-                            {/* Header */}
-                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
-                                <div>
-                                    <h2 className="text-3xl font-black text-slate-900 tracking-tighter flex items-center gap-3">
-                                        <Hourglass className="text-amber-500" size={30} />
-                                        Materiais em conserto
-                                    </h2>
-                                    <p className="text-slate-500 font-medium text-sm">
-                                        OS em andamento — de inspeção até entrega
-                                    </p>
-                                </div>
-
-                                <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="text-sm font-bold text-slate-500">
-                                        {filteredWorkshop.length} OS exibida(s)
-                                    </span>
-                                </div>
-                            </div>
-
-                            {/* Filtros + contadores */}
-                            <div className="flex flex-wrap gap-3 items-center">
-                                {[
-                                    { key: 'all', label: 'Todos', count: workshopOrders.length, color: 'bg-slate-800 text-white' },
-                                    { key: 'interno', label: 'Interno', count: internoCount, color: 'bg-blue-600 text-white' },
-                                    { key: 'externo', label: 'Externo', count: externoCount, color: 'bg-teal-600 text-white' },
-                                ].map(({ key, label, count, color }) => (
-                                    <button
-                                        key={key}
-                                        onClick={() => setWorkshopFilter(key)}
-                                        className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl font-bold text-sm border-2 transition-all ${workshopFilter === key
-                                            ? `${color} border-transparent shadow-lg scale-105`
-                                            : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:scale-[1.02]'
-                                            }`}
-                                    >
-                                        {label}
-                                        <span className={`px-2 py-0.5 rounded-full text-xs font-black ${workshopFilter === key ? 'bg-white/20' : 'bg-slate-100 text-slate-600'
-                                            }`}>
-                                            {count}
-                                        </span>
-                                    </button>
-                                ))}
-                            </div>
-
-                            {/* Status pills — clique para filtrar */}
-                            <div className="flex flex-wrap gap-2">
-                                {WORKSHOP_STATUSES.map(s => {
-                                    const cnt = filteredWorkshop.filter(o => o.status === s).length;
-                                    const color = statusColors[s] ?? '#94a3b8';
-                                    return (
-                                        <div
-                                            key={s}
-                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold"
-                                            style={{ borderColor: color + '50', color, backgroundColor: color + '15' }}
-                                        >
-                                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
-                                            {s}
-                                            <span className="ml-1 font-black">{cnt}</span>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-
-                            {/* ── TABELA desktop ── */}
-                            <div className="hidden lg:block bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden">
-                                <div className="overflow-y-auto" style={{ maxHeight: 'calc(100vh - 320px)' }}>
-                                    <table className="w-full text-left min-w-[900px]">
-                                        <thead className="bg-slate-50 sticky top-0 z-10 shadow-sm">
-                                            <tr className="border-b text-[10px] font-black uppercase text-slate-400 tracking-widest">
-                                                <th className="px-6 py-5 bg-slate-50">OS</th>
-                                                <th className="px-6 py-5 bg-slate-50">Cliente</th>
-                                                <th className="px-6 py-5 bg-slate-50">Equipamento</th>
-                                                <th className="px-6 py-5 bg-slate-50">Status</th>
-                                                <th className="px-6 py-5 bg-slate-50">Tipo</th>
-                                                <th className="px-6 py-5 bg-slate-50">Terceiro</th>
-                                                <th className="px-6 py-5 bg-slate-50 text-right">Ações</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-50">
-                                            {filteredWorkshop.length === 0 ? (
-                                                <tr>
-                                                    <td colSpan="7" className="p-20 text-center text-slate-400">
-                                                        Nenhuma OS encontrada para este filtro.
-                                                    </td>
-                                                </tr>
-                                            ) : (
-                                                filteredWorkshop.map(o => {
-                                                    const isExterno = o.sentToThirdParty === 'Sim';
-                                                    const color = statusColors[o.status] ?? '#94a3b8';
-                                                    return (
-                                                        <tr
-                                                            key={o.firestoreId}
-                                                            className="hover:bg-amber-50/30 transition-colors group cursor-pointer"
-                                                            onClick={() => openModal(o)}
-                                                        >
-                                                            <td className="px-6 py-4">
-                                                                <div className="font-black text-blue-700 text-base">{o.osNumber}</div>
-                                                                <div className="text-[10px] text-slate-400 mt-0.5">{formatDateBR(o.statusDate)}</div>
-                                                            </td>
-                                                            <td className="px-6 py-4">
-                                                                <div className="font-bold text-slate-900 text-sm">{o.client}</div>
-                                                            </td>
-                                                            <td className="px-6 py-4">
-                                                                <div className="font-bold text-slate-800 text-sm">{o.item}</div>
-                                                                {(o.manufacturer || o.model) && (
-                                                                    <div className="text-xs text-slate-400">{o.manufacturer} {o.model}</div>
-                                                                )}
-                                                                <div className="text-[10px] text-slate-400 font-mono">NS: {o.serial || 'N/D'}</div>
-                                                            </td>
-                                                            <td className="px-6 py-4">
-                                                                <span
-                                                                    className="px-3 py-1.5 rounded-xl text-[10px] font-black uppercase inline-block border"
-                                                                    style={{
-                                                                        backgroundColor: color + '20',
-                                                                        borderColor: color + '40',
-                                                                        color,
-                                                                    }}
-                                                                >
-                                                                    {o.status}
-                                                                </span>
-                                                            </td>
-                                                            <td className="px-6 py-4">
-                                                                <span className="text-xs font-bold text-slate-500 uppercase">{o.billingType}</span>
-                                                            </td>
-                                                            <td className="px-6 py-4">
-                                                                {isExterno ? (
-                                                                    <span className="flex items-center gap-1.5 text-teal-700 bg-teal-50 border border-teal-200 px-3 py-1.5 rounded-xl text-xs font-black w-fit">
-                                                                        <Truck size={13} /> Externo
-                                                                        {o.thirdPartyInfo && (
-                                                                            <span className="font-normal text-teal-600 truncate max-w-[80px]">{o.thirdPartyInfo}</span>
-                                                                        )}
-                                                                    </span>
-                                                                ) : (
-                                                                    <span className="flex items-center gap-1.5 text-blue-700 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-xl text-xs font-black w-fit">
-                                                                        <Wrench size={13} /> Interno
-                                                                    </span>
-                                                                )}
-                                                            </td>
-                                                            <td className="px-6 py-4 text-right">
-                                                                <OrderActionsDropdown
-                                                                    order={o}
-                                                                    openModal={openModal}
-                                                                    openViewModal={openViewModal}
-                                                                    openNewWithClient={handleNewOSWithClient}
-                                                                    confirmDelete={confirmDelete}
-                                                                    userData={userData}
-                                                                    handleNewAssociatedOS={handleNewAssociatedOS}
-                                                                    hasPermission={hasPermission}
-                                                                    openHistoryModal={order => {
-                                                                        setSelectedOrderForHistory(order);
-                                                                        setIsHistoryModalOpen(true);
-                                                                    }}
-                                                                />
-                                                            </td>
-                                                        </tr>
-                                                    );
-                                                })
-                                            )}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-
-                            {/* ── CARDS mobile ── */}
-                            <div className="lg:hidden space-y-3 pb-24">
-                                {filteredWorkshop.length === 0 ? (
-                                    <div className="text-center py-16 bg-white rounded-2xl border border-slate-100 text-slate-400">
-                                        Nenhuma OS encontrada.
-                                    </div>
-                                ) : (
-                                    filteredWorkshop.map(o => {
-                                        const isExterno = o.sentToThirdParty === 'Sim';
-                                        const color = statusColors[o.status] ?? '#94a3b8';
-                                        return (
-                                            <div
-                                                key={o.firestoreId}
-                                                className="relative bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden"
-                                                onClick={() => openModal(o)}
-                                            >
-                                                {/* Barra lateral colorida */}
-                                                <div
-                                                    className="absolute left-0 top-0 bottom-0 w-1.5"
-                                                    style={{ backgroundColor: color }}
-                                                />
-
-                                                <div className="pl-5 pr-4 pt-4 pb-3 space-y-2">
-                                                    {/* Linha 1 */}
-                                                    <div className="flex items-start justify-between gap-2">
-                                                        <span className="font-black text-blue-700 text-base">{o.osNumber}</span>
-                                                        <span
-                                                            className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase border flex-shrink-0"
-                                                            style={{
-                                                                backgroundColor: color + '20',
-                                                                borderColor: color + '40',
-                                                                color,
-                                                            }}
-                                                        >
-                                                            {o.status}
-                                                        </span>
-                                                    </div>
-
-                                                    {/* Cliente */}
-                                                    <div className="font-bold text-slate-900 text-sm leading-tight">{o.client}</div>
-
-                                                    {/* Equipamento */}
-                                                    <div className="text-sm text-slate-600 leading-tight">
-                                                        {o.item}
-                                                        {(o.manufacturer || o.model) && (
-                                                            <span className="text-slate-400"> · {[o.manufacturer, o.model].filter(Boolean).join(' ')}</span>
-                                                        )}
-                                                    </div>
-
-                                                    {/* Rodapé do card */}
-                                                    <div className="flex items-center justify-between pt-2 border-t border-slate-50">
-                                                        {isExterno ? (
-                                                            <span className="flex items-center gap-1.5 text-teal-700 bg-teal-50 border border-teal-200 px-2.5 py-1 rounded-lg text-[10px] font-black">
-                                                                <Truck size={11} /> Externo
-                                                                {o.thirdPartyInfo && ` · ${o.thirdPartyInfo}`}
-                                                            </span>
-                                                        ) : (
-                                                            <span className="flex items-center gap-1.5 text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-lg text-[10px] font-black">
-                                                                <Wrench size={11} /> Interno
-                                                            </span>
-                                                        )}
-                                                        <span className="text-[10px] text-slate-400 font-medium">{formatDateBR(o.statusDate)}</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        );
-                                    })
-                                )}
-                            </div>
-                        </div>
-                    );
-                })()}
-
 
                 {currentPage === 'financial' && canAccessPage() && (
                     <div className="space-y-8 animate-in fade-in duration-500 max-w-7xl mx-auto h-full">
@@ -7271,43 +7141,32 @@ ${labelsHtml}
                 })()}
                 {currentPage === 'clients' && canAccessPage() && <div className="p-20 text-center"><Users size={80} className="mx-auto text-slate-200 mb-6" /><h3 className="text-2xl font-black">Módulo de Clientes em breve</h3></div>}
                 {currentPage === 'suppliers' && canAccessPage() && (() => {
-                    // Deduplica por thirdPartyInfo (nome do terceiro), caso não vazio
-                    const seenSuppliers = new Map();
-                    ordersForUser.filter(o => o.sentToThirdParty === 'Sim' && o.thirdPartyInfo?.trim()).forEach(o => {
-                        const key = o.thirdPartyInfo.trim().toLowerCase();
-                        if (!seenSuppliers.has(key)) {
-                            seenSuppliers.set(key, {
-                                name: o.thirdPartyInfo,
-                                transportadora: o.costThirdPartyName || '',
-                                tracking: o.thirdPartyTracking || '',
-                                lastDate: o.thirdPartyDate || ''
-                            });
-                        } else {
-                            // atualiza com a OS mais recente se tiver data
-                            const existing = seenSuppliers.get(key);
-                            if (!existing.transportadora && o.costThirdPartyName) existing.transportadora = o.costThirdPartyName;
-                            if (!existing.tracking && o.thirdPartyTracking) existing.tracking = o.thirdPartyTracking;
-                            if (o.thirdPartyDate && (!existing.lastDate || o.thirdPartyDate > existing.lastDate)) existing.lastDate = o.thirdPartyDate;
-                        }
-                    });
-                    const supplierList = Array.from(seenSuppliers.values()).sort((a, b) => a.name.localeCompare(b.name));
-                    const filteredSuppliers = supplierList.filter(s =>
+                    const filteredCombinedSuppliers = combinedSuppliers.filter(s =>
                         !supplierSearch ||
                         s.name.toLowerCase().includes(supplierSearch.toLowerCase()) ||
-                        s.transportadora.toLowerCase().includes(supplierSearch.toLowerCase())
+                        (s.address || '').toLowerCase().includes(supplierSearch.toLowerCase()) ||
+                        (s.contactPerson || '').toLowerCase().includes(supplierSearch.toLowerCase())
                     );
                     return (
                         <div className="space-y-8 animate-in fade-in duration-500 max-w-7xl mx-auto">
                             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
                                 <div>
                                     <h2 className="text-3xl font-black text-slate-900 tracking-tighter">Fornecedores / Terceiros</h2>
-                                    <p className="text-slate-500 text-sm font-medium">{supplierList.length} fornecedor(es) registrado(s) nas OS</p>
+                                    <p className="text-slate-500 text-sm font-medium">{combinedSuppliers.length} fornecedor(es) registrado(s)</p>
                                 </div>
+                                {userData?.role !== 'client' && (
+                                    <button
+                                        onClick={handleOpenNewSupplier}
+                                        className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-black flex items-center gap-2 shadow-xl shadow-blue-200 hover:bg-blue-700 transition-colors"
+                                    >
+                                        <Plus size={20} /> Novo Fornecedor
+                                    </button>
+                                )}
                             </div>
                             <div className="relative">
                                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                                 <input className="w-full pl-12 pr-4 py-3 bg-white rounded-2xl border border-slate-200 shadow-sm outline-none font-medium focus:ring-2 focus:ring-blue-500/20"
-                                    placeholder="Buscar por nome ou transportadora..." value={supplierSearch} onChange={e => setSupplierSearch(e.target.value)} />
+                                    placeholder="Buscar por nome, endereço, responsável..." value={supplierSearch} onChange={e => setSupplierSearch(e.target.value)} />
                             </div>
                             {/* Desktop Table */}
                             <div className="hidden md:block bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden">
@@ -7315,20 +7174,42 @@ ${labelsHtml}
                                     <thead className="bg-slate-50 border-b border-slate-100">
                                         <tr className="text-[10px] font-black uppercase text-slate-400 tracking-widest">
                                             <th className="px-6 py-4">Nome / Empresa</th>
-                                            <th className="px-6 py-4">Transportadora</th>
-                                            <th className="px-6 py-4">Rastreio</th>
-                                            <th className="px-6 py-4">Última Ocorrência</th>
+                                            <th className="px-6 py-4">Endereço</th>
+                                            <th className="px-6 py-4 text-center">OS Abertas</th>
+                                            <th className="px-6 py-4 text-center">OS Fechadas</th>
+                                            <th className="px-6 py-4 text-right">Ações</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-50">
-                                        {filteredSuppliers.length === 0 ? (
-                                            <tr><td colSpan="4" className="p-16 text-center text-slate-400">Nenhum fornecedor encontrado. Registre OS com "Enviado para Terceiro" para ver aqui.</td></tr>
-                                        ) : filteredSuppliers.map((s, idx) => (
+                                        {filteredCombinedSuppliers.length === 0 ? (
+                                            <tr><td colSpan="5" className="p-16 text-center text-slate-400">Nenhum fornecedor encontrado.</td></tr>
+                                        ) : filteredCombinedSuppliers.map((s, idx) => (
                                             <tr key={idx} className="hover:bg-blue-50/20 transition-colors">
-                                                <td className="px-6 py-4 font-bold text-slate-900">{s.name}</td>
-                                                <td className="px-6 py-4 text-slate-600 text-sm">{s.transportadora || <span className="text-slate-300">---</span>}</td>
-                                                <td className="px-6 py-4 text-slate-600 font-mono text-sm">{s.tracking || <span className="text-slate-300">---</span>}</td>
-                                                <td className="px-6 py-4 text-slate-600 text-sm">{s.lastDate ? new Date(s.lastDate + 'T12:00:00').toLocaleDateString('pt-BR') : <span className="text-slate-300">---</span>}</td>
+                                                <td className="px-6 py-4">
+                                                    <div className="font-bold text-slate-900">{s.name}</div>
+                                                    {s.contactPerson && <div className="text-xs text-slate-500 mt-0.5">{s.contactPerson}</div>}
+                                                    {s.email && <div className="text-xs text-blue-500 mt-0.5">{s.email}</div>}
+                                                    {!s.isRegistered && (
+                                                        <span className="text-[9px] bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded border border-amber-100 font-bold mt-1 inline-block">Derivado de OS</span>
+                                                    )}
+                                                </td>
+                                                <td className="px-6 py-4 text-slate-600 text-sm">{s.address || <span className="text-slate-300">---</span>}</td>
+                                                <td className="px-6 py-4 text-center">
+                                                    <span className="text-xl font-black text-blue-600">{s.osAbertas}</span>
+                                                </td>
+                                                <td className="px-6 py-4 text-center">
+                                                    <span className="text-xl font-black text-green-600">{s.osFechadas}</span>
+                                                </td>
+                                                <td className="px-6 py-4 text-right">
+                                                    {userData?.role !== 'client' && (
+                                                        <SupplierActionsDropdown
+                                                            supplier={s}
+                                                            onEdit={handleOpenEditSupplier}
+                                                            onDelete={handleDeleteSupplier}
+                                                            userData={userData}
+                                                        />
+                                                    )}
+                                                </td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -7336,14 +7217,40 @@ ${labelsHtml}
                             </div>
                             {/* Mobile Cards */}
                             <div className="md:hidden space-y-3">
-                                {filteredSuppliers.length === 0 ? (
-                                    <div className="text-center py-12 text-slate-400 bg-white rounded-2xl border">Nenhum fornecedor. Registre OS com terceiros para ver aqui.</div>
-                                ) : filteredSuppliers.map((s, idx) => (
-                                    <div key={idx} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-1.5">
-                                        <div className="font-bold text-slate-900">{s.name}</div>
-                                        {s.transportadora && <div className="text-sm text-slate-500"><span className="font-bold text-slate-400 text-xs uppercase">Transportadora: </span>{s.transportadora}</div>}
-                                        {s.tracking && <div className="text-sm text-slate-500"><span className="font-bold text-slate-400 text-xs uppercase">Rastreio: </span><span className="font-mono">{s.tracking}</span></div>}
-                                        {s.lastDate && <div className="text-sm text-slate-500"><span className="font-bold text-slate-400 text-xs uppercase">Última ocorrência: </span>{new Date(s.lastDate + 'T12:00:00').toLocaleDateString('pt-BR')}</div>}
+                                {filteredCombinedSuppliers.length === 0 ? (
+                                    <div className="text-center py-12 text-slate-400 bg-white rounded-2xl border">Nenhum fornecedor encontrado.</div>
+                                ) : filteredCombinedSuppliers.map((s, idx) => (
+                                    <div key={idx} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-2">
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div className="min-w-0">
+                                                <div className="font-bold text-slate-900">{s.name}</div>
+                                                {s.contactPerson && <div className="text-sm text-slate-500">{s.contactPerson}</div>}
+                                                {s.email && <div className="text-xs text-blue-500">{s.email}</div>}
+                                                {!s.isRegistered && (
+                                                    <span className="text-[9px] bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded border border-amber-100 font-bold mt-1 inline-block">Derivado de OS</span>
+                                                )}
+                                            </div>
+                                            {userData?.role !== 'client' && (
+                                                <SupplierActionsDropdown
+                                                    supplier={s}
+                                                    onEdit={handleOpenEditSupplier}
+                                                    onDelete={handleDeleteSupplier}
+                                                    userData={userData}
+                                                />
+                                            )}
+                                        </div>
+                                        {s.address && <div className="text-sm text-slate-500"><span className="font-bold text-slate-400 text-xs uppercase">Endereço: </span>{s.address}</div>}
+                                        {s.observations && <div className="text-sm text-slate-500"><span className="font-bold text-slate-400 text-xs uppercase">Obs: </span>{s.observations}</div>}
+                                        <div className="flex gap-6 pt-2 border-t border-slate-100">
+                                            <div className="text-center">
+                                                <div className="text-2xl font-black text-blue-600">{s.osAbertas}</div>
+                                                <div className="text-[10px] text-slate-400 font-bold uppercase">OS Abertas</div>
+                                            </div>
+                                            <div className="text-center">
+                                                <div className="text-2xl font-black text-green-600">{s.osFechadas}</div>
+                                                <div className="text-[10px] text-slate-400 font-bold uppercase">OS Fechadas</div>
+                                            </div>
+                                        </div>
                                     </div>
                                 ))}
                             </div>
@@ -9137,6 +9044,104 @@ ${labelsHtml}
                 order={orderToReject}
                 onConfirm={confirmRejectBudget}
             />
+
+            {/* MODAL FORNECEDOR */}
+            {isSupplierModalOpen && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[80] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-3xl p-8 max-w-lg w-full shadow-2xl border border-slate-200 animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+                        <div className="flex justify-between items-start mb-6">
+                            <div>
+                                <h2 className="text-2xl font-black text-slate-900">
+                                    {editingSupplier ? 'Editar Fornecedor' : 'Novo Fornecedor'}
+                                </h2>
+                                <p className="text-slate-500 text-sm mt-1">Dados do fornecedor / terceiro</p>
+                            </div>
+                            <button
+                                onClick={() => setIsSupplierModalOpen(false)}
+                                className="p-2 hover:bg-slate-100 rounded-full text-slate-400 transition-colors"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="text-xs font-bold text-slate-400 uppercase block mb-1">Nome / Empresa *</label>
+                                <input
+                                    className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none font-bold focus:ring-4 focus:ring-blue-500/10 transition-all"
+                                    value={supplierFormData.name}
+                                    onChange={e => setSupplierFormData({ ...supplierFormData, name: e.target.value })}
+                                    placeholder="Nome do fornecedor ou empresa"
+                                />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-xs font-bold text-slate-400 uppercase block mb-1">CPF / CNPJ</label>
+                                    <input
+                                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold focus:ring-4 focus:ring-blue-500/10 transition-all"
+                                        value={supplierFormData.cpf}
+                                        onChange={e => setSupplierFormData({ ...supplierFormData, cpf: e.target.value })}
+                                        placeholder="000.000.000-00"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-slate-400 uppercase block mb-1">Responsável</label>
+                                    <input
+                                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold focus:ring-4 focus:ring-blue-500/10 transition-all"
+                                        value={supplierFormData.contactPerson}
+                                        onChange={e => setSupplierFormData({ ...supplierFormData, contactPerson: e.target.value })}
+                                        placeholder="Nome do contato"
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-400 uppercase block mb-1">E-mail</label>
+                                <input
+                                    type="email"
+                                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold focus:ring-4 focus:ring-blue-500/10 transition-all"
+                                    value={supplierFormData.email}
+                                    onChange={e => setSupplierFormData({ ...supplierFormData, email: e.target.value })}
+                                    placeholder="contato@fornecedor.com"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-400 uppercase block mb-1">Endereço</label>
+                                <input
+                                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold focus:ring-4 focus:ring-blue-500/10 transition-all"
+                                    value={supplierFormData.address}
+                                    onChange={e => setSupplierFormData({ ...supplierFormData, address: e.target.value })}
+                                    placeholder="Rua, Número, Cidade - UF"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-400 uppercase block mb-1">Observações</label>
+                                <textarea
+                                    rows={3}
+                                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold focus:ring-4 focus:ring-blue-500/10 transition-all resize-none"
+                                    value={supplierFormData.observations}
+                                    onChange={e => setSupplierFormData({ ...supplierFormData, observations: e.target.value })}
+                                    placeholder="Especialidade, condições, observações..."
+                                />
+                            </div>
+                        </div>
+                        <div className="flex gap-3 mt-6">
+                            <button
+                                onClick={() => setIsSupplierModalOpen(false)}
+                                className="flex-1 py-4 rounded-xl font-bold text-slate-500 hover:bg-slate-100 transition-colors"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={handleSaveSupplier}
+                                disabled={isSaving || !supplierFormData.name.trim()}
+                                className="flex-1 py-4 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-xl shadow-blue-200 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                            >
+                                {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                                Salvar Fornecedor
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Toast Notification */}
             {notification.show && (
