@@ -1378,6 +1378,13 @@ export default function MainApp() {
     const [inventorySearch, setInventorySearch] = useState('');
     const [supplierSearch, setSupplierSearch] = useState('');
 
+     // === ESTADOS INVENTÁRIO ===
+    const [inventory, setInventory] = useState([]);
+    const [inventoryCategory, setInventoryCategory] = useState('consumables');
+    const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false);
+    const [editingInventoryItem, setEditingInventoryItem] = useState(null);
+    const [inventoryForm, setInventoryForm] = useState({ category: 'consumables', item: '', brand: '', specification: '', supplier: '' });
+
     // === ESTADOS FORNECEDORES (Firestore) ===
     const [supplierRecords, setSupplierRecords] = useState([]);
     const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
@@ -2502,6 +2509,12 @@ export default function MainApp() {
             }
         );
 
+        const unsubInventory = onSnapshot(
+            collection(db, 'artifacts', finalAppId, 'public', 'data', 'inventory'),
+            (snap) => { setInventory(snap.docs.map(d => ({ firestoreId: d.id, ...d.data() }))); },
+            (error) => console.error('Erro ao buscar inventário:', error)
+        );
+
         const unsubSuppliers = onSnapshot(
             collection(db, 'artifacts', finalAppId, 'public', 'data', 'suppliers'),
             (snap) => {
@@ -2513,6 +2526,7 @@ export default function MainApp() {
         return () => {
             unsubOrders();
             unsubContracts();
+            unsubInventory();
             unsubSuppliers();
         };
     }, [user, authLoading]);
@@ -3854,6 +3868,43 @@ export default function MainApp() {
             console.error('Erro ao ocultar sugestão:', error);
             showNotification('Erro ao remover sugestão.', 'error');
         }
+    };
+
+    // === HANDLERS: INVENTÁRIO ===
+    const handleSaveInventoryItem = async () => {
+        if (!inventoryForm.item.trim()) { showNotification('Item é obrigatório', 'error'); return; }
+        try {
+            const data = { ...inventoryForm, updatedAt: Date.now() };
+            if (editingInventoryItem) {
+                await updateDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'inventory', editingInventoryItem.firestoreId), data);
+                showNotification('Item atualizado!', 'success');
+            } else {
+                await addDoc(collection(db, 'artifacts', finalAppId, 'public', 'data', 'inventory'), { ...data, createdAt: Date.now() });
+                showNotification('Item adicionado!', 'success');
+            }
+            setIsInventoryModalOpen(false);
+            setEditingInventoryItem(null);
+            setInventoryForm({ category: inventoryCategory, item: '', brand: '', specification: '', supplier: '' });
+        } catch (err) { showNotification('Erro: ' + err.message, 'error'); }
+    };
+
+    const handleDeleteInventoryItem = async (item) => {
+        if (!window.confirm(`Excluir "${item.item}"?`)) return;
+        try {
+            await deleteDoc(doc(db, 'artifacts', finalAppId, 'public', 'data', 'inventory', item.firestoreId));
+            showNotification('Item excluído!', 'success');
+        } catch (err) { showNotification('Erro: ' + err.message, 'error'); }
+    };
+
+    const openInventoryModal = (item = null) => {
+        if (item) {
+            setEditingInventoryItem(item);
+            setInventoryForm({ category: item.category || 'consumables', item: item.item, brand: item.brand || '', specification: item.specification || '', supplier: item.supplier || '' });
+        } else {
+            setEditingInventoryItem(null);
+            setInventoryForm({ category: inventoryCategory, item: '', brand: '', specification: '', supplier: '' });
+        }
+        setIsInventoryModalOpen(true);
     };
 
     // === CRUD FORNECEDORES ===
@@ -7063,40 +7114,37 @@ ${labelsHtml}
                 )}
 
                 {currentPage === 'inventory' && canAccessPage() && (() => {
-                    // Deduplica equipamentos por nome do item (case-insensitive)
-                    const seenItems = new Map();
-                    ordersForUser.forEach(o => {
-                        if (!o.item) return;
-                        const key = o.item.trim().toLowerCase();
-                        if (!seenItems.has(key)) {
-                            seenItems.set(key, {
-                                item: o.item,
-                                brand: o.manufacturer || '',
-                                specification: o.model || '',
-                                supplier: o.costThirdPartyName || o.thirdPartyInfo || ''
-                            });
-                        }
-                    });
-                    const equipmentList = Array.from(seenItems.values()).sort((a, b) => a.item.localeCompare(b.item));
-                    const filteredEquipment = equipmentList.filter(e =>
+                    const filteredInventory = inventory.filter(i => i.category === inventoryCategory && (
                         !inventorySearch ||
-                        e.item.toLowerCase().includes(inventorySearch.toLowerCase()) ||
-                        e.brand.toLowerCase().includes(inventorySearch.toLowerCase()) ||
-                        e.specification.toLowerCase().includes(inventorySearch.toLowerCase()) ||
-                        e.supplier.toLowerCase().includes(inventorySearch.toLowerCase())
-                    );
+                        i.item?.toLowerCase().includes(inventorySearch.toLowerCase()) ||
+                        i.brand?.toLowerCase().includes(inventorySearch.toLowerCase()) ||
+                        i.specification?.toLowerCase().includes(inventorySearch.toLowerCase()) ||
+                        i.supplier?.toLowerCase().includes(inventorySearch.toLowerCase())
+                    ));
                     return (
                         <div className="space-y-8 animate-in fade-in duration-500 max-w-7xl mx-auto">
                             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
                                 <div>
-                                    <h2 className="text-3xl font-black text-slate-900 tracking-tighter">Inventário de Equipamentos</h2>
-                                    <p className="text-slate-500 text-sm font-medium">{equipmentList.length} equipamento(s) únicos registrados nas OS</p>
+                                    <h2 className="text-3xl font-black text-slate-900 tracking-tighter">Inventário</h2>
+                                    <p className="text-slate-500 text-sm font-medium">Controle de itens de consumo, peças e ferramentas</p>
                                 </div>
+                                <button onClick={() => openInventoryModal()} className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-black flex items-center gap-2 shadow-xl shadow-blue-200 hover:bg-blue-700 transition-colors">
+                                    <Plus size={20} /> Adicionar
+                                </button>
+                            </div>
+                            {/* Category tabs */}
+                            <div className="flex gap-2 bg-slate-100 p-1.5 rounded-2xl w-fit">
+                                {[{id:'consumables',label:'Itens de Consumo'},{id:'parts',label:'Peças'},{id:'tools',label:'Ferramentas'}].map(cat => (
+                                    <button key={cat.id} onClick={() => setInventoryCategory(cat.id)}
+                                        className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-all ${inventoryCategory === cat.id ? 'bg-white text-slate-900 shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>
+                                        {cat.label}
+                                    </button>
+                                ))}
                             </div>
                             <div className="relative">
                                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                                 <input className="w-full pl-12 pr-4 py-3 bg-white rounded-2xl border border-slate-200 shadow-sm outline-none font-medium focus:ring-2 focus:ring-blue-500/20"
-                                    placeholder="Buscar item, marca, modelo..." value={inventorySearch} onChange={e => setInventorySearch(e.target.value)} />
+                                    placeholder="Buscar item, marca, especificação, fornecedor..." value={inventorySearch} onChange={e => setInventorySearch(e.target.value)} />
                             </div>
                             {/* Desktop Table */}
                             <div className="hidden md:block bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden">
@@ -7105,19 +7153,26 @@ ${labelsHtml}
                                         <tr className="text-[10px] font-black uppercase text-slate-400 tracking-widest">
                                             <th className="px-6 py-4">Item</th>
                                             <th className="px-6 py-4">Marca</th>
-                                            <th className="px-6 py-4">Especificação / Modelo</th>
+                                            <th className="px-6 py-4">Especificação</th>
                                             <th className="px-6 py-4">Fornecedor</th>
+                                            <th className="px-6 py-4 text-right">Ações</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-50">
-                                        {filteredEquipment.length === 0 ? (
-                                            <tr><td colSpan="4" className="p-16 text-center text-slate-400">Nenhum equipamento encontrado.</td></tr>
-                                        ) : filteredEquipment.map((eq, idx) => (
-                                            <tr key={idx} className="hover:bg-blue-50/20 transition-colors">
-                                                <td className="px-6 py-4 font-bold text-slate-900">{eq.item}</td>
-                                                <td className="px-6 py-4 text-slate-600 text-sm">{eq.brand || <span className="text-slate-300">---</span>}</td>
-                                                <td className="px-6 py-4 text-slate-600 text-sm">{eq.specification || <span className="text-slate-300">---</span>}</td>
-                                                <td className="px-6 py-4 text-slate-600 text-sm">{eq.supplier || <span className="text-slate-300">---</span>}</td>
+                                        {filteredInventory.length === 0 ? (
+                                            <tr><td colSpan="5" className="p-16 text-center text-slate-400">Nenhum item. Clique em "Adicionar Item" para começar.</td></tr>
+                                        ) : filteredInventory.map(item => (
+                                            <tr key={item.firestoreId} className="hover:bg-blue-50/20 transition-colors">
+                                                <td className="px-6 py-4 font-bold text-slate-900">{item.item}</td>
+                                                <td className="px-6 py-4 text-slate-600 text-sm">{item.brand || <span className="text-slate-300">---</span>}</td>
+                                                <td className="px-6 py-4 text-slate-600 text-sm">{item.specification || <span className="text-slate-300">---</span>}</td>
+                                                <td className="px-6 py-4 text-slate-600 text-sm">{item.supplier || <span className="text-slate-300">---</span>}</td>
+                                                <td className="px-6 py-4 text-right">
+                                                    <div className="flex justify-end gap-2">
+                                                        <button onClick={() => openInventoryModal(item)} className="p-2 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors" title="Editar"><Edit2 size={16} /></button>
+                                                        <button onClick={() => handleDeleteInventoryItem(item)} className="p-2 bg-red-50 text-red-500 rounded-xl hover:bg-red-100 transition-colors" title="Excluir"><Trash2 size={16} /></button>
+                                                    </div>
+                                                </td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -7125,14 +7180,20 @@ ${labelsHtml}
                             </div>
                             {/* Mobile Cards */}
                             <div className="md:hidden space-y-3">
-                                {filteredEquipment.length === 0 ? (
-                                    <div className="text-center py-12 text-slate-400 bg-white rounded-2xl border">Nenhum equipamento encontrado.</div>
-                                ) : filteredEquipment.map((eq, idx) => (
-                                    <div key={idx} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-1.5">
-                                        <div className="font-bold text-slate-900">{eq.item}</div>
-                                        {eq.brand && <div className="text-sm text-slate-500"><span className="font-bold text-slate-400 text-xs uppercase">Marca: </span>{eq.brand}</div>}
-                                        {eq.specification && <div className="text-sm text-slate-500"><span className="font-bold text-slate-400 text-xs uppercase">Modelo: </span>{eq.specification}</div>}
-                                        {eq.supplier && <div className="text-sm text-slate-500"><span className="font-bold text-slate-400 text-xs uppercase">Fornecedor: </span>{eq.supplier}</div>}
+                                {filteredInventory.length === 0 ? (
+                                    <div className="text-center py-12 text-slate-400 bg-white rounded-2xl border">Nenhum item. Adicione um novo item.</div>
+                                ) : filteredInventory.map(item => (
+                                    <div key={item.firestoreId} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-2">
+                                        <div className="flex justify-between items-start">
+                                            <div className="font-bold text-slate-900">{item.item}</div>
+                                            <div className="flex gap-2">
+                                                <button onClick={() => openInventoryModal(item)} className="p-1.5 bg-blue-50 text-blue-600 rounded-lg"><Edit2 size={14} /></button>
+                                                <button onClick={() => handleDeleteInventoryItem(item)} className="p-1.5 bg-red-50 text-red-500 rounded-lg"><Trash2 size={14} /></button>
+                                            </div>
+                                        </div>
+                                        {item.brand && <div className="text-sm text-slate-500"><span className="font-bold text-slate-400 text-xs uppercase">Marca: </span>{item.brand}</div>}
+                                        {item.specification && <div className="text-sm text-slate-500"><span className="font-bold text-slate-400 text-xs uppercase">Especificação: </span>{item.specification}</div>}
+                                        {item.supplier && <div className="text-sm text-slate-500"><span className="font-bold text-slate-400 text-xs uppercase">Fornecedor: </span>{item.supplier}</div>}
                                     </div>
                                 ))}
                             </div>
